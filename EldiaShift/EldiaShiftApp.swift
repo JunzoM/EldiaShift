@@ -38,7 +38,9 @@ struct RootView: View {
                 if let error = db.loadError ?? store.lastError {
                     ContentUnavailableView("読み込めませんでした", systemImage: "exclamationmark.triangle", description: Text(error))
                 } else if store.book.isEmpty {
-                    EmptyBookView(importing: $importing)
+                    StartView(importing: $importing)
+                } else if store.book.staff.isEmpty {
+                    NoStaffView()
                 } else {
                     MonthGridView(month: month)
                 }
@@ -112,22 +114,6 @@ struct GlassCapsule: ViewModifier {
         } else {
             content.background(.regularMaterial, in: Capsule())
                 .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
-        }
-    }
-}
-
-/// まだ何も入っていないとき
-struct EmptyBookView: View {
-    @Binding var importing: Bool
-
-    var body: some View {
-        ContentUnavailableView {
-            Label("シフト表がまだありません", systemImage: "calendar.badge.plus")
-        } description: {
-            Text("今使っているシフト表のバックアップ（.json）を取り込むと、スタッフ・ひな形・シフトがそのまま表示されます。")
-        } actions: {
-            Button("バックアップを取り込む") { importing = true }
-                .buttonStyle(.borderedProminent)
         }
     }
 }

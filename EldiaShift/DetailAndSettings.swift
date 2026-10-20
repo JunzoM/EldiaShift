@@ -138,6 +138,12 @@ struct SettingsView: View {
                     Text("同じ Apple ID の iPad・iPhone で同じシフト表を使えます。ほかの管理者との共同編集は、次の更新で使えるようになります。")
                 }
 
+                Section("シフト表の中身") {
+                    NavigationLink("スタッフ") { StaffListView() }
+                    NavigationLink("部門") { DepartmentListView() }
+                    NavigationLink("時間のひな形") { TemplateListView() }
+                }
+
                 Section {
                     Button("バックアップを取り込む") { importing = true }
                     Button("バックアップを書き出す") { export() }

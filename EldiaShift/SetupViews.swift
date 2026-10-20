@@ -1,0 +1,520 @@
+import SwiftUI
+
+// MARK: - 初めて開いたとき
+
+struct StartView: View {
+    @Binding var importing: Bool
+    @Environment(ShiftStore.self) private var store
+    @State private var error: String?
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("シフト表をはじめる", systemImage: "calendar.badge.plus")
+        } description: {
+            Text("新しく作るか、ほかの端末・PC版で作ったバックアップ（.json）を取り込んでください。")
+        } actions: {
+            VStack(spacing: 12) {
+                Button {
+                    do { try store.startNew() } catch { self.error = error.localizedDescription }
+                } label: {
+                    Text("新しく作る").frame(minWidth: 220)
+                }
+                .buttonStyle(.borderedProminent)
+                Button {
+                    importing = true
+                } label: {
+                    Text("バックアップを取り込む").frame(minWidth: 220)
+                }
+                .buttonStyle(.bordered)
+                Text("「新しく作る」は、部門と時間のひな形の例が入った状態で始まります。名前や時間はあとで変えられます。")
+                    .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .frame(maxWidth: 360)
+            }
+        }
+        .alert("始められませんでした", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+            Button("OK") { error = nil }
+        } message: { Text(error ?? "") }
+    }
+}
+
+/// スタッフがまだいないときの表の代わり
+struct NoStaffView: View {
+    @Environment(ShiftStore.self) private var store
+    @State private var adding: StaffMember?
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("スタッフがいません", systemImage: "person.2.badge.plus")
+        } description: {
+            Text("スタッフを追加すると、ここにシフト表が表示されます。")
+        } actions: {
+            Button("スタッフを追加") {
+                adding = store.newStaff(in: store.book.departments.first?.id ?? "")
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .sheet(item: $adding) { s in StaffEditView(member: s, isNew: true) }
+    }
+}
+
+// MARK: - スタッフ
+
+struct StaffListView: View {
+    @Environment(ShiftStore.self) private var store
+    @State private var adding: StaffMember?
+    @State private var showInactive = false
+    @State private var error: String?
+
+    var body: some View {
+        let book = store.book
+        List {
+            ForEach(sections(book)) { group in
+                Section(group.department.name) {
+                    ForEach(group.members) { m in
+                        NavigationLink {
+                            StaffEditView(member: m, isNew: false)
+                        } label: {
+                            HStack {
+                                Text(m.name)
+                                Spacer()
+                                if !m.leaveDate.isEmpty {
+                                    Text("退職 \(m.leaveDate)").font(.caption).foregroundStyle(.secondary)
+                                } else if !m.active {
+                                    Text("休止中").font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                    .onMove { from, to in
+                        var list = group.members
+                        list.move(fromOffsets: from, toOffset: to)
+                        run { try store.reorderStaff(list) }
+                    }
+                }
+            }
+            Section {
+                Toggle("退職・休止中の人も表示", isOn: $showInactive)
+            }
+        }
+        .navigationTitle("スタッフ")
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                EditButton()
+                Button {
+                    adding = store.newStaff(in: book.departments.first?.id ?? "")
+                } label: { Image(systemName: "plus") }
+                    .accessibilityLabel("スタッフを追加")
+            }
+        }
+        .sheet(item: $adding) { s in StaffEditView(member: s, isNew: true) }
+        .errorAlert($error)
+    }
+
+    private func sections(_ book: ShiftBook) -> [DepartmentGroup] {
+        let shown = book.staff.filter { showInactive || ($0.active && $0.leaveDate.isEmpty) }
+        var result: [DepartmentGroup] = book.departments.sorted { $0.sortOrder < $1.sortOrder }.compactMap { d -> DepartmentGroup? in
+            let m = shown.filter { $0.departmentID == d.id }.sorted(by: StaffMember.order)
+            return m.isEmpty ? nil : DepartmentGroup(department: d, members: m)
+        }
+        let known = Set(book.departments.map(\.id))
+        let others = shown.filter { !known.contains($0.departmentID) }.sorted(by: StaffMember.order)
+        if !others.isEmpty {
+            result.append(DepartmentGroup(department: Department(id: "", name: "部門なし", colorIndex: 8, sortOrder: .max), members: others))
+        }
+        return result
+    }
+
+    private func run(_ f: () throws -> Void) {
+        do { try f() } catch { self.error = error.localizedDescription }
+    }
+}
+
+struct StaffEditView: View {
+    @State var member: StaffMember
+    let isNew: Bool
+
+    @Environment(ShiftStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @State private var error: String?
+    @State private var confirmDelete = false
+
+    /// 表に並べる曜日の順（月曜はじまり）。値は days の位置（0＝日曜）
+    private let weekOrder = [1, 2, 3, 4, 5, 6, 0]
+    private let weekNames = ["日", "月", "火", "水", "木", "金", "土"]
+
+    var body: some View {
+        let book = store.book
+        let blocks = member.timeBlocks + book.templates
+        let form = Form {
+            Section {
+                TextField("名前", text: $member.name)
+                    .textContentType(.name)
+                Picker("部門", selection: $member.departmentID) {
+                    if !book.departments.contains(where: { $0.id == member.departmentID }) {
+                        Text("なし").tag(member.departmentID)
+                    }
+                    ForEach(book.departments.sorted { $0.sortOrder < $1.sortOrder }) { d in
+                        Text(d.name).tag(d.id)
+                    }
+                }
+            }
+
+            Section {
+                if member.patterns.count > 1 {
+                    Picker("使うくり返し", selection: Binding(
+                        get: { member.activePatternID ?? member.patterns.first?.id ?? "" },
+                        set: { member.activePatternID = $0 })) {
+                        ForEach(member.patterns) { p in Text(p.label.isEmpty ? "くり返し" : p.label).tag(p.id) }
+                    }
+                }
+                ForEach(weekOrder, id: \.self) { w in
+                    Picker(weekNames[w] + "曜", selection: dayBinding(w)) {
+                        Text("なし").tag(String?.none)
+                        ForEach(blocks) { b in
+                            Text(b.isOff ? b.label : "\(b.label)（\(b.inTime)〜\(b.outTime)）").tag(String?.some(b.id))
+                        }
+                    }
+                    .foregroundStyle(w == 0 ? Color.red : w == 6 ? Color.blue : Color.primary)
+                }
+            } header: {
+                Text("週のくり返し")
+            } footer: {
+                Text("ここで決めた勤務が毎週自動で入ります。日ごとに変えたいときは、表のマスで変えてください（そちらが優先されます）。")
+            }
+
+            Section("在籍") {
+                Toggle("在籍中", isOn: $member.active)
+                dateRow("入社日", $member.joinDate)
+                dateRow("退職日", $member.leaveDate)
+            }
+
+            if !isNew {
+                Section {
+                    Button("このスタッフを削除", role: .destructive) { confirmDelete = true }
+                } footer: {
+                    Text("辞めた人は、削除せずに退職日を入れると、それまでのシフトが残ります。")
+                }
+            }
+        }
+
+        let content = form
+            .navigationTitle(isNew ? "スタッフを追加" : (member.name.isEmpty ? "スタッフ" : member.name))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") { save() }
+                        .disabled(member.name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                if isNew {
+                    ToolbarItem(placement: .cancellationAction) { Button("やめる") { dismiss() } }
+                }
+            }
+            .confirmationDialog("\(member.name)さんを削除しますか？", isPresented: $confirmDelete, titleVisibility: .visible) {
+                Button("削除する", role: .destructive) {
+                    do { try store.deleteStaff(member); dismiss() } catch { self.error = error.localizedDescription }
+                }
+            } message: {
+                Text("この人のシフトもすべて消えます。元には戻せません。")
+            }
+            .errorAlert($error)
+
+        if isNew {
+            NavigationStack { content }
+        } else {
+            content
+        }
+    }
+
+    /// 曜日の勤務（使っているくり返しを書き換える。無ければ「通常」を作る）
+    private func dayBinding(_ w: Int) -> Binding<String?> {
+        Binding(
+            get: {
+                guard let p = activePattern, p.days.indices.contains(w) else { return nil }
+                return p.days[w]
+            },
+            set: { value in
+                if let i = activePatternIndex {
+                    while member.patterns[i].days.count < 7 { member.patterns[i].days.append(nil) }
+                    member.patterns[i].days[w] = value
+                } else {
+                    var days = [String?](repeating: nil, count: 7)
+                    days[w] = value
+                    let p = WeekPattern(id: UUID().uuidString, label: "通常", colorIndex: 0, days: days, activeFrom: nil)
+                    member.patterns.append(p)
+                    member.activePatternID = p.id
+                }
+            })
+    }
+
+    private var activePatternIndex: Int? {
+        if let id = member.activePatternID, let i = member.patterns.firstIndex(where: { $0.id == id }) { return i }
+        return member.patterns.isEmpty ? nil : 0
+    }
+
+    private var activePattern: WeekPattern? { activePatternIndex.map { member.patterns[$0] } }
+
+    private func dateRow(_ title: String, _ text: Binding<String>) -> some View {
+        let has = Binding(get: { DayKey(text.wrappedValue) != nil },
+                          set: { text.wrappedValue = $0 ? DayKey.today.description : "" })
+        let date = Binding(get: { DayKey(text.wrappedValue)?.date ?? Date() },
+                           set: { text.wrappedValue = DayKey($0).description })
+        return VStack(alignment: .leading) {
+            Toggle(title, isOn: has)
+            if has.wrappedValue {
+                DatePicker(title, selection: date, displayedComponents: .date)
+                    .labelsHidden()
+                    .environment(\.locale, Locale(identifier: "ja_JP"))
+            }
+        }
+    }
+
+    private func save() {
+        member.name = member.name.trimmingCharacters(in: .whitespaces)
+        if let leave = DayKey(member.leaveDate), leave < DayKey.today { member.active = false }
+        do {
+            try store.save(member)
+            dismiss()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}
+
+// MARK: - 部門
+
+struct DepartmentListView: View {
+    @Environment(ShiftStore.self) private var store
+    @State private var editing: Department?
+    @State private var error: String?
+
+    var body: some View {
+        let depts = store.book.departments.sorted { $0.sortOrder < $1.sortOrder }
+        List {
+            Section {
+                ForEach(depts) { d in
+                    Button { editing = d } label: {
+                        HStack {
+                            Circle().fill(PaletteColor.fg(d.colorIndex)).frame(width: 12, height: 12)
+                            Text(d.name).foregroundStyle(.primary)
+                            Spacer()
+                            Text("\(store.book.staff.filter { $0.departmentID == d.id }.count)人")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .onMove { from, to in
+                    var list = depts
+                    list.move(fromOffsets: from, toOffset: to)
+                    do { try store.reorderDepartments(list) } catch { self.error = error.localizedDescription }
+                }
+            } footer: {
+                Text("表では、この順に上から並びます。")
+            }
+        }
+        .navigationTitle("部門")
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                EditButton()
+                Button { editing = store.newDepartment() } label: { Image(systemName: "plus") }
+                    .accessibilityLabel("部門を追加")
+            }
+        }
+        .sheet(item: $editing) { d in DepartmentEditView(department: d) }
+        .errorAlert($error)
+    }
+}
+
+struct DepartmentEditView: View {
+    @State var department: Department
+    @Environment(ShiftStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @State private var error: String?
+
+    private var isNew: Bool { !store.book.departments.contains { $0.id == department.id } }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("部門の名前（例：ホール）", text: $department.name)
+                Section("色") { ColorChoice(index: $department.colorIndex) }
+                if !isNew {
+                    Section {
+                        Button("この部門を削除", role: .destructive) {
+                            do { try store.deleteDepartment(department); dismiss() } catch { self.error = error.localizedDescription }
+                        }
+                    }
+                }
+            }
+            .navigationTitle(isNew ? "部門を追加" : "部門")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("やめる") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") {
+                        department.name = department.name.trimmingCharacters(in: .whitespaces)
+                        do { try store.save(department); dismiss() } catch { self.error = error.localizedDescription }
+                    }
+                    .disabled(department.name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+            .errorAlert($error)
+        }
+        .presentationDetents([.medium])
+    }
+}
+
+// MARK: - 時間のひな形
+
+struct TemplateListView: View {
+    @Environment(ShiftStore.self) private var store
+    @State private var editing: TimeBlock?
+    @State private var error: String?
+
+    var body: some View {
+        let all = store.book.templates
+        List {
+            section("勤務", all.filter { !$0.isOff }, all: all)
+            section("休み", all.filter(\.isOff), all: all)
+        }
+        .navigationTitle("時間のひな形")
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                EditButton()
+                Menu {
+                    Button("勤務のひな形") { editing = store.newTemplate(off: false) }
+                    Button("休みのひな形") { editing = store.newTemplate(off: true) }
+                } label: { Image(systemName: "plus") }
+                    .accessibilityLabel("ひな形を追加")
+            }
+        }
+        .sheet(item: $editing) { t in TemplateEditView(template: t) }
+        .errorAlert($error)
+    }
+
+    private func section(_ title: String, _ items: [TimeBlock], all: [TimeBlock]) -> some View {
+        Section(title) {
+            ForEach(items) { t in
+                Button { editing = t } label: {
+                    HStack(spacing: 12) {
+                        Text(t.short.isEmpty ? "・" : t.short).font(.headline)
+                            .foregroundStyle(PaletteColor.fg(t.colorIndex))
+                            .frame(width: 44, height: 32)
+                            .background(PaletteColor.bg(t.colorIndex), in: RoundedRectangle(cornerRadius: 8))
+                        Text(t.label).foregroundStyle(.primary)
+                        Spacer()
+                        if !t.isOff {
+                            Text("\(t.inTime)〜\(t.outTime)").font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            .onMove { from, to in
+                // この区分の中で並べ替え、もう一方の区分はそのままの順で後ろにつなぐ
+                var list = items
+                list.move(fromOffsets: from, toOffset: to)
+                let rest = all.filter { t in !items.contains { $0.id == t.id } }
+                do { try store.reorderTemplates(list + rest) } catch { self.error = error.localizedDescription }
+            }
+        }
+    }
+}
+
+struct TemplateEditView: View {
+    @State var template: TimeBlock
+    @Environment(ShiftStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @State private var error: String?
+    @State private var confirmDelete = false
+
+    private var isNew: Bool { !store.book.templates.contains { $0.id == template.id } }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("名前（例：早番）", text: $template.label)
+                    TextField("表に出す略称（1〜3文字）", text: Binding(get: { template.short },
+                                                                set: { template.short = String($0.prefix(3)) }))
+                }
+                if !template.isOff {
+                    Section("時間") {
+                        Picker("出勤", selection: Binding(get: { template.inMinutes ?? 540 }, set: { template.inMinutes = $0 })) {
+                            ForEach(Array(stride(from: 0, to: 1440, by: 30)), id: \.self) { Text(ClockTime.format($0)).tag($0) }
+                        }
+                        Picker("退勤", selection: Binding(get: { template.outMinutes ?? 1080 }, set: { template.outMinutes = $0 })) {
+                            ForEach(Array(stride(from: 0, through: 1440, by: 30)), id: \.self) { m in
+                                Text(ClockTime.format(m) + (m <= (template.inMinutes ?? 0) ? "（翌日）" : "")).tag(m)
+                            }
+                        }
+                        LabeledContent("勤務時間", value: String(format: "%.1f 時間",
+                                                              ClockTime.hours(from: template.inMinutes ?? 0, to: template.outMinutes ?? 0)))
+                    }
+                }
+                Section("色") { ColorChoice(index: $template.colorIndex) }
+                if !isNew {
+                    Section {
+                        Button("このひな形を削除", role: .destructive) { confirmDelete = true }
+                    }
+                }
+            }
+            .navigationTitle(isNew ? "ひな形を追加" : "ひな形")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("やめる") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") {
+                        template.label = template.label.trimmingCharacters(in: .whitespaces)
+                        if template.short.isEmpty { template.short = String(template.label.prefix(1)) }
+                        do { try store.save(template); dismiss() } catch { self.error = error.localizedDescription }
+                    }
+                    .disabled(template.label.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+            .confirmationDialog("「\(template.label)」を削除しますか？", isPresented: $confirmDelete, titleVisibility: .visible) {
+                Button("削除する", role: .destructive) {
+                    do { try store.deleteTemplate(template); dismiss() } catch { self.error = error.localizedDescription }
+                }
+            } message: {
+                let n = store.usageCount(of: template.id)
+                Text(n == 0 ? "どこにも使われていません。"
+                     : "\(n)か所で使われています。削除すると、週のくり返しでこのひな形を選んでいた日は空きになります（手で入れた時刻は残ります）。")
+            }
+            .errorAlert($error)
+        }
+    }
+}
+
+// MARK: - 部品
+
+/// 10色から選ぶ
+struct ColorChoice: View {
+    @Binding var index: Int
+
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 12) {
+            ForEach(Palette.colors.indices, id: \.self) { i in
+                Button { index = i } label: {
+                    Circle().fill(PaletteColor.fg(i)).frame(width: 30, height: 30)
+                        .overlay(Circle().strokeBorder(Color.primary, lineWidth: index == i ? 3 : 0).padding(-4))
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("色\(i + 1)")
+                .accessibilityAddTraits(index == i ? .isSelected : [])
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+extension View {
+    /// 失敗したときのお知らせ
+    func errorAlert(_ message: Binding<String?>) -> some View {
+        alert("うまくいきませんでした", isPresented: Binding(get: { message.wrappedValue != nil },
+                                                    set: { if !$0 { message.wrappedValue = nil } })) {
+            Button("OK") { message.wrappedValue = nil }
+        } message: {
+            Text(message.wrappedValue ?? "")
+        }
+    }
+}
