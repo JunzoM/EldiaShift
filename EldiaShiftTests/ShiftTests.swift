@@ -401,3 +401,21 @@ struct SetupTests {
         #expect(store.book.staff.sorted(by: StaffMember.order).map(\.name) == ["C", "A", "B"])
     }
 }
+
+@Suite("月・週の表示")
+struct GridModeTests {
+    @Test("週は月曜はじまりの7日（月をまたいでもよい）")
+    func weekDays() {
+        let w = GridMode.week.days(around: DayKey(2026, 11, 1))   // 日曜
+        #expect(w.first == DayKey(2026, 10, 26) && w.last == DayKey(2026, 11, 1))
+        #expect(GridMode.week.title(around: DayKey(2026, 11, 1)) == "10/26 〜 11/1")
+        #expect(GridMode.week.step(DayKey(2026, 11, 1), by: 1) == DayKey(2026, 11, 8))
+    }
+
+    @Test("月は1日〜末日")
+    func monthDays() {
+        let m = GridMode.month.days(around: DayKey(2026, 2, 14))
+        #expect(m.count == 28 && m.first == DayKey(2026, 2, 1))
+        #expect(GridMode.month.step(DayKey(2026, 12, 31), by: 1) == DayKey(2027, 1, 1))
+    }
+}

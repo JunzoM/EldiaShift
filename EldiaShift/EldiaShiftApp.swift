@@ -28,7 +28,8 @@ struct RootView: View {
     @Environment(ShiftStore.self) private var store
     @Environment(\.scenePhase) private var scenePhase
 
-    @State private var month = MonthKey.current
+    @AppStorage("viewMode") private var mode: GridMode = .month
+    @State private var anchor = DayKey.today
     @State private var showSettings = false
     @State private var importing = false
 
@@ -42,19 +43,29 @@ struct RootView: View {
                 } else if store.book.staff.isEmpty {
                     NoStaffView()
                 } else {
-                    MonthGridView(month: month)
+                    MonthGridView(mode: mode, days: mode.days(around: anchor))
                 }
             }
-            .navigationTitle(month.description)
+            .navigationTitle(mode.title(around: anchor))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarLeading) {
-                    Button { month = month.adding(months: -1) } label: { Image(systemName: "chevron.left") }
-                        .accessibilityLabel("前の月")
-                    Button("今月") { month = .current }
-                        .disabled(month == .current)
-                    Button { month = month.adding(months: 1) } label: { Image(systemName: "chevron.right") }
-                        .accessibilityLabel("次の月")
+                    Button { anchor = mode.step(anchor, by: -1) } label: { Image(systemName: "chevron.left") }
+                        .accessibilityLabel(mode == .month ? "前の月" : "前の週")
+                    Button(mode == .month ? "今月" : "今週") { anchor = .today }
+                        .disabled(mode.days(around: anchor).contains(.today))
+                    Button { anchor = mode.step(anchor, by: 1) } label: { Image(systemName: "chevron.right") }
+                        .accessibilityLabel(mode == .month ? "次の月" : "次の週")
+                }
+                ToolbarItem(placement: .principal) {
+                    if !store.book.staff.isEmpty {
+                        Picker("表示", selection: $mode) {
+                            Text("月").tag(GridMode.month)
+                            Text("週").tag(GridMode.week)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 120)
+                    }
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     if !store.book.isEmpty { EditToggle() }
@@ -69,6 +80,38 @@ struct RootView: View {
         .onChange(of: db.changeToken) { store.refreshIfNeeded() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { store.refreshIfNeeded() }
+        }
+    }
+}
+
+/// 表の見せ方（月・週）
+enum GridMode: String {
+    case month, week
+
+    /// その日を含む月、またはその日を含む週（月曜はじまり）の日付
+    func days(around d: DayKey) -> [DayKey] {
+        switch self {
+        case .month: return MonthKey(d).days
+        case .week:
+            let monday = d.adding(days: -((d.weekday + 6) % 7))
+            return (0..<7).map { monday.adding(days: $0) }
+        }
+    }
+
+    func step(_ d: DayKey, by n: Int) -> DayKey {
+        switch self {
+        case .month: return DayKey(MonthKey(d).adding(months: n).year, MonthKey(d).adding(months: n).month, 1)
+        case .week: return d.adding(days: 7 * n)
+        }
+    }
+
+    func title(around d: DayKey) -> String {
+        switch self {
+        case .month: return MonthKey(d).description
+        case .week:
+            let w = days(around: d)
+            let a = w.first!, b = w.last!
+            return "\(a.month)/\(a.day) 〜 \(b.month)/\(b.day)"
         }
     }
 }

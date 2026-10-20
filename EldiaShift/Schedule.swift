@@ -95,8 +95,13 @@ struct MonthSummary: Hashable, Sendable {
     var hours: Double = 0
 
     static func of(_ member: StaffMember, month: MonthKey, in book: ShiftBook) -> MonthSummary {
+        of(member, days: month.days, in: book)
+    }
+
+    /// 指定した日々（週など）の集計
+    static func of(_ member: StaffMember, days: [DayKey], in book: ShiftBook) -> MonthSummary {
         var s = MonthSummary()
-        for day in month.days {
+        for day in days {
             guard let r = Schedule.resolve(member, on: day, in: book) else { continue }
             if r.isOff {
                 s.offDays += 1

@@ -1,8 +1,10 @@
 import SwiftUI
 
-/// 月のシフト表（左に名前、右に日付。横に動かして見る）
+/// シフト表（月・週。左に名前、右に日付）
+/// 月は横に動かして見る。週は7日を画面の幅に収め、マスを大きくして勤務時間も出す
 struct MonthGridView: View {
-    let month: MonthKey
+    let mode: GridMode
+    let days: [DayKey]
 
     @Environment(ShiftStore.self) private var store
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -17,8 +19,13 @@ struct MonthGridView: View {
 
     private var compact: Bool { sizeClass == .compact }
     private var nameWidth: CGFloat { compact ? 76 : 116 }
-    private var cellWidth: CGFloat { compact ? 46 : 54 }
-    private let rowHeight: CGFloat = 52
+    @State private var availableWidth: CGFloat = 0
+    private var isWeek: Bool { mode == .week }
+    private var cellWidth: CGFloat {
+        guard isWeek else { return compact ? 46 : 54 }
+        return max(compact ? 64 : 96, (availableWidth - nameWidth - summaryWidth) / 7)
+    }
+    private var rowHeight: CGFloat { isWeek ? 70 : 52 }
     private let headerHeight: CGFloat = 46
     private let sectionHeight: CGFloat = 28
     private let summaryWidth: CGFloat = 70
@@ -27,8 +34,7 @@ struct MonthGridView: View {
 
     var body: some View {
         let book = store.book
-        let days = month.days
-        let groups = book.staffByDepartment(visibleIn: month)
+        let groups = book.staffByDepartment(visibleIn: MonthKey(days[0]))
         let today = DayKey.today
 
         // 縦横どちらにも動く1枚の表。日付の行は上に、名前の列は左に貼り付けて見せる
@@ -52,12 +58,12 @@ struct MonthGridView: View {
                                     Color.clear.frame(width: nameWidth)
                                     ForEach(days, id: \.self) { d in
                                         ShiftCellView(member: m, day: d, resolved: Schedule.resolve(m, on: d, in: book),
-                                                      book: book, isToday: d == today, compact: compact)
+                                                      book: book, isToday: d == today, compact: compact, large: isWeek)
                                             .frame(width: cellWidth, height: rowHeight)
                                             .contentShape(Rectangle())
                                             .onTapGesture { selected = Selection(member: m, day: d) }
                                     }
-                                    summaryCell(MonthSummary.of(m, month: month, in: book))
+                                    summaryCell(MonthSummary.of(m, days: days, in: book))
                                 }
                                 .overlay(alignment: .bottom) { Divider() }
                             }
@@ -99,7 +105,7 @@ struct MonthGridView: View {
 
                     // 左上の角（どちらに動かしても残る）
                     PinnedView(tracker: scroll, axis: nil) {
-                        Text("\(month.month)月").font(.subheadline.weight(.bold))
+                        Text(isWeek ? "週" : "\(days[0].month)月").font(.subheadline.weight(.bold))
                             .frame(width: nameWidth, height: headerHeight)
                             .background(.bar)
                             .overlay(alignment: .trailing) { Divider() }
@@ -117,8 +123,13 @@ struct MonthGridView: View {
                     scroll.offset = CGPoint(x: max(0, -origin.x), y: max(0, -origin.y))
                 }
             }
+            .background(GeometryReader { g in
+                Color.clear
+                    .onAppear { availableWidth = g.size.width }
+                    .onChange(of: g.size.width) { availableWidth = g.size.width }
+            })
             .onAppear { scrollToToday(proxy, days: days, today: today) }
-            .onChange(of: month) { scrollToToday(proxy, days: days, today: today) }
+            .onChange(of: days) { scrollToToday(proxy, days: days, today: today) }
         }
         .sheet(item: $selected) { s in
             if store.editing {
@@ -134,7 +145,7 @@ struct MonthGridView: View {
 
     private func scrollToToday(_ proxy: ScrollViewProxy, days: [DayKey], today: DayKey) {
         // 左には名前の列が重なるので、今日の数日前を左端に合わせる
-        let target = days.contains(today) ? today.adding(days: -(compact ? 2 : 3)) : nil
+        let target = !isWeek && days.contains(today) ? today.adding(days: -(compact ? 2 : 3)) : nil
         if let target, days.contains(target) { proxy.scrollTo(target, anchor: .topLeading) }
         else if let first = days.first { proxy.scrollTo(first, anchor: .topLeading) }
     }
@@ -166,9 +177,15 @@ struct MonthGridView: View {
     private func dayHeader(_ d: DayKey, today: DayKey) -> some View {
         let holiday = JapaneseHolidays.name(d)
         let color: Color = (d.weekday == 0 || holiday != nil) ? .red : d.weekday == 6 ? .blue : .primary
+        let wd = ["日", "月", "火", "水", "木", "金", "土"][d.weekday]
         return VStack(spacing: 1) {
-            Text("\(d.day)").font(.subheadline.weight(.bold)).monospacedDigit()
-            Text(["日", "月", "火", "水", "木", "金", "土"][d.weekday]).font(.caption2)
+            if isWeek {
+                Text("\(d.month)/\(d.day)（\(wd)）").font(.subheadline.weight(.bold)).monospacedDigit()
+                if let holiday { Text(holiday).font(.caption2).lineLimit(1) }
+            } else {
+                Text("\(d.day)").font(.subheadline.weight(.bold)).monospacedDigit()
+                Text(wd).font(.caption2)
+            }
         }
         .foregroundStyle(color)
         .frame(width: cellWidth, height: headerHeight)
@@ -227,6 +244,8 @@ struct ShiftCellView: View {
     let book: ShiftBook
     let isToday: Bool
     let compact: Bool
+    /// 週表示（マスが大きい）：時刻を大きく、勤務時間とひな形の名前も出す
+    var large = false
 
     var body: some View {
         let block = book.block(resolved?.blockID, for: member)
@@ -266,10 +285,27 @@ struct ShiftCellView: View {
             Text("－").font(.caption2).foregroundStyle(.tertiary)
         } else if let r = resolved {
             if r.isOff {
-                Text(block?.short ?? "休")
-                    .font(.subheadline.weight(.bold))
+                Text(large ? (block?.label ?? "休み") : (block?.short ?? "休"))
+                    .font(large ? .headline : .subheadline.weight(.bold))
                     .foregroundStyle(PaletteColor.fg(block?.colorIndex ?? 8))
             } else {
+                if large {
+                    VStack(spacing: 2) {
+                        Text("\(r.inTime.isEmpty ? "—" : r.inTime)〜\(r.outTime.isEmpty ? "—" : r.outTime)")
+                            .font(.system(size: compact ? 12 : 14, weight: .bold))
+                        HStack(spacing: 4) {
+                            if let block {
+                                Text(block.label).foregroundStyle(PaletteColor.fg(block.colorIndex)).fontWeight(.bold)
+                            }
+                            if let h = r.hours { Text(String(format: "%.1fh", h)).foregroundStyle(.secondary) }
+                        }
+                        .font(.caption2)
+                    }
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .padding(.horizontal, 2)
+                } else {
                 VStack(spacing: 0) {
                     Text(r.inTime.isEmpty ? "—" : r.inTime).font(.system(size: compact ? 11 : 12, weight: .bold))
                     Text(r.outTime.isEmpty ? "—" : r.outTime).font(.system(size: compact ? 11 : 12))
@@ -282,6 +318,7 @@ struct ShiftCellView: View {
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
+                }
             }
         }
     }
