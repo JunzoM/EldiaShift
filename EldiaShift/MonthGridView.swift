@@ -102,6 +102,8 @@ struct MonthGridView: View {
                             })
                         }
                         .coordinateSpace(name: "gridH")
+                        // 横に動く表の幅は「画面の幅 − 名前の列」に固定する（中身の幅に合わせて広がると、名前の列が画面の外に押し出される）
+                        .frame(width: max(0, availableWidth - nameWidth))
                         .scrollDisabled(isWeek && cellWidth * 7 + summaryWidth <= availableWidth - nameWidth + 1)
                         .onPreferenceChange(ScrollOffsetKey.self) { x in
                             MainActor.assumeIsolated { scroll.x = max(0, -x) }
@@ -215,9 +217,12 @@ private struct FollowingHeader<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        content
-            .offset(x: -tracker.x)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        // 重ねて置くだけにして、日付の行の幅が画面の幅に影響しないようにする
+        Color.clear
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .leading) {
+                content.fixedSize().offset(x: -tracker.x)
+            }
             .clipped()
     }
 }
@@ -235,11 +240,14 @@ struct ShiftCellView: View {
 
     var body: some View {
         let block = book.block(resolved?.blockID, for: member)
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             background(block)
             content(block)
+        }
+        .overlay(alignment: large ? .bottomTrailing : .topTrailing) {
+            // 自動（くり返し・期間の予定）で決まったマスの印。時刻に重ならないよう隅に小さく
             if resolved?.isAuto == true {
-                Circle().fill(Color.orange).frame(width: 5, height: 5).padding(3)
+                Circle().fill(Color.orange.opacity(0.8)).frame(width: 5, height: 5).padding(large ? 5 : 2)
                     .accessibilityHidden(true)
             }
         }
