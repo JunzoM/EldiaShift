@@ -7,6 +7,18 @@ import Observation
 final class ShiftStore {
     private(set) var book = ShiftBook()
     private(set) var lastError: String?
+    /// 編集できる状態か（初期値：見るだけ。うっかり変えないように）
+    var editing = false
+    /// 直前の変更（「元に戻す」に使う）
+    private(set) var lastChange: CellChange?
+
+    struct CellChange: Equatable {
+        let key: CellKey
+        let before: CellEntry?
+        let after: CellEntry?
+        let staffName: String
+        let id = UUID()
+    }
 
     @ObservationIgnored let db: ShiftDatabase
     @ObservationIgnored private var loadedToken = -1
@@ -37,6 +49,28 @@ final class ShiftStore {
         try db.save()
         reload()
     }
+
+    /// 1人×1日を変える（nil は手入力を消して、くり返し・期間の予定に戻す）
+    func setCell(_ key: CellKey, to entry: CellEntry?) throws {
+        let before = book.cells[key]
+        guard before != entry else { return }
+        try ShiftRecords.upsertCell(key, entry, in: db.viewContext)
+        try db.save()
+        if let entry { book.cells[key] = entry } else { book.cells.removeValue(forKey: key) }
+        let name = book.staff.first { $0.id == key.staffID }?.name ?? ""
+        lastChange = CellChange(key: key, before: before, after: entry, staffName: name)
+    }
+
+    /// 直前の変更を取り消す
+    func undo() throws {
+        guard let c = lastChange else { return }
+        try ShiftRecords.upsertCell(c.key, c.before, in: db.viewContext)
+        try db.save()
+        if let b = c.before { book.cells[c.key] = b } else { book.cells.removeValue(forKey: c.key) }
+        lastChange = nil
+    }
+
+    func clearLastChange() { lastChange = nil }
 
     func exportData() throws -> Data {
         try BackupFile.write(book)
@@ -138,6 +172,31 @@ enum ShiftRecords {
             r.setValue(c.blockID ?? "", forKey: "blockKey")
             r.setValue(c.isOff, forKey: "isOff")
         }
+    }
+
+    /// 1人×1日の記録を書き換える（nil なら消す）。同じ人・同じ日の記録が複数あれば1つにまとめる
+    static func upsertCell(_ key: CellKey, _ entry: CellEntry?, in ctx: NSManagedObjectContext) throws {
+        let req = NSFetchRequest<NSManagedObject>(entityName: ShiftModel.Entity.cell)
+        req.predicate = NSPredicate(format: "staffKey == %@ AND day == %@", key.staffID, key.day.description)
+        let rows = try ctx.fetch(req)
+        guard let entry else {
+            rows.forEach(ctx.delete)
+            return
+        }
+        let r: NSManagedObject
+        if let first = rows.first {
+            r = first
+            rows.dropFirst().forEach(ctx.delete)
+        } else {
+            r = insert(ShiftModel.Entity.cell, ctx, team: try currentTeam(ctx), now: Date())
+            r.setValue(key.staffID, forKey: "staffKey")
+            r.setValue(key.day.description, forKey: "day")
+        }
+        r.setValue(entry.inTime, forKey: "inTime")
+        r.setValue(entry.outTime, forKey: "outTime")
+        r.setValue(entry.blockID ?? "", forKey: "blockKey")
+        r.setValue(entry.isOff, forKey: "isOff")
+        r.setValue(Date(), forKey: "updatedAt")
     }
 
     /// このアプリのチーム（無ければ作る。複数あれば一番古いもの）

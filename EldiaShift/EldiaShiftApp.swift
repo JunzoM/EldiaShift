@@ -54,7 +54,8 @@ struct RootView: View {
                     Button { month = month.adding(months: 1) } label: { Image(systemName: "chevron.right") }
                         .accessibilityLabel("次の月")
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if !store.book.isEmpty { EditToggle() }
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
                         .accessibilityLabel("設定")
                 }
@@ -62,9 +63,55 @@ struct RootView: View {
             .sheet(isPresented: $showSettings) { SettingsView() }
             .backupImporter(isPresented: $importing)
         }
+        .overlay(alignment: .bottom) { UndoBar() }
         .onChange(of: db.changeToken) { store.refreshIfNeeded() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { store.refreshIfNeeded() }
+        }
+    }
+}
+
+/// 変えた直後に下に出る「元に戻す」（数秒で消える）
+struct UndoBar: View {
+    @Environment(ShiftStore.self) private var store
+    @State private var error: String?
+
+    var body: some View {
+        Group {
+            if let c = store.lastChange {
+                HStack(spacing: 12) {
+                    Text("\(c.staffName) \(c.key.day.month)/\(c.key.day.day) を変更しました")
+                        .font(.subheadline).lineLimit(1)
+                    Button("元に戻す") {
+                        do { try store.undo() } catch { self.error = error.localizedDescription }
+                    }
+                    .font(.subheadline.weight(.bold))
+                }
+                .padding(.horizontal, 18).padding(.vertical, 12)
+                .modifier(GlassCapsule())
+                .padding(.bottom, 12)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .task(id: c.id) {
+                    try? await Task.sleep(nanoseconds: 5_000_000_000)
+                    if store.lastChange?.id == c.id { store.clearLastChange() }
+                }
+            }
+        }
+        .animation(.snappy, value: store.lastChange?.id)
+        .alert("元に戻せませんでした", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+            Button("OK") { error = nil }
+        } message: { Text(error ?? "") }
+    }
+}
+
+/// iOS 26 以降は Liquid Glass、それより前はすりガラス
+struct GlassCapsule: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular, in: .capsule)
+        } else {
+            content.background(.regularMaterial, in: Capsule())
+                .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
         }
     }
 }
