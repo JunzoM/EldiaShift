@@ -1,0 +1,75 @@
+name: Screenshots
+
+# 画面の見た目を確かめるためのスクリーンショット（見本のデータ -demoLayout で表示）。
+# 撮った画像は screenshots ブランチに置く。PR を出す・更新するたび、または手動で実行。
+on:
+  workflow_dispatch:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  shots:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select newest Xcode
+        run: |
+          xc=$(ls -d /Applications/Xcode_*.app | grep -vi beta | sort -V | tail -1)
+          sudo xcode-select -s "$xc"
+      - name: Pick simulators
+        run: |
+          xcrun simctl list devices available -j > devices.json
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json
+          d = json.load(open("devices.json"))["devices"]
+          runtimes = sorted([k for k in d if "iOS" in k], reverse=True)
+          def pick(prefixes):
+              for rt in runtimes:
+                  for p in prefixes:
+                      for x in d[rt]:
+                          if x["name"].startswith(p):
+                              return x["udid"]
+          print(f"PHONE={pick(['iPhone 17 Pro', 'iPhone 16 Pro', 'iPhone'])}")
+          print(f"PAD={pick(['iPad (', 'iPad Air', 'iPad'])}")
+          PY
+      - name: Build
+        run: |
+          xcodebuild -project EldiaShift.xcodeproj -scheme EldiaShift \
+            -destination "id=$PHONE" -configuration Debug -derivedDataPath dd \
+            CODE_SIGNING_ALLOWED=NO build | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
+          test -d dd/Build/Products/Debug-iphonesimulator/EldiaShift.app
+      - name: Take screenshots
+        run: |
+          app=dd/Build/Products/Debug-iphonesimulator/EldiaShift.app
+          bid=com.bestdelight.eldiashift
+          mkdir -p shots
+          shoot() {  # 端末 ファイル名 起動オプション…
+            dev=$1; name=$2; shift 2
+            xcrun simctl terminate "$dev" $bid >/dev/null 2>&1 || true
+            xcrun simctl launch "$dev" $bid -demoLayout "$@"
+            sleep 8
+            xcrun simctl io "$dev" screenshot "shots/$name.png"
+          }
+          for dev in "$PHONE" "$PAD"; do
+            xcrun simctl boot "$dev" || true
+            xcrun simctl bootstatus "$dev" -b
+            xcrun simctl status_bar "$dev" override --time "9:41" || true
+            xcrun simctl install "$dev" "$app"
+          done
+          shoot "$PAD" ipad-month
+          shoot "$PAD" ipad-week -demoWeek
+          shoot "$PHONE" iphone-month
+          shoot "$PHONE" iphone-week -demoWeek
+          mkdir -p shots/crash
+          find ~/Library/Logs/DiagnosticReports -name 'EldiaShift*' -newer dd -exec cp {} shots/crash/ \; 2>/dev/null || true
+      - name: Push to screenshots branch
+        run: |
+          cd shots
+          git init -q
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -qm "Screenshots for ${GITHUB_SHA::7}"
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" HEAD:screenshots

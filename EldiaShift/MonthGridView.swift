@@ -37,100 +37,86 @@ struct MonthGridView: View {
         let groups = book.staffByDepartment(visibleIn: MonthKey(days[0]))
         let today = DayKey.today
 
-        // 縦横どちらにも動く1枚の表。日付の行は上に、名前の列は左に貼り付けて見せる
-        // （動いた量は ScrollTracker だけが持ち、表の本体は動かすたびに作り直さない）
-        ScrollViewReader { proxy in
-            ScrollView([.horizontal, .vertical]) {
-                ZStack(alignment: .topLeading) {
+        // 上：日付の行（縦には動かない。横は下の表と同じだけずらす）
+        // 下：縦に動く。左に名前の列、右に横に動く表
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                Text(isWeek ? "週" : "\(days[0].month)月").font(.subheadline.weight(.bold))
+                    .frame(width: nameWidth, height: headerHeight)
+                    .overlay(alignment: .trailing) { Divider() }
+                FollowingHeader(tracker: scroll) {
+                    HStack(spacing: 0) {
+                        ForEach(days, id: \.self) { d in
+                            dayHeader(d, today: today)
+                                .contentShape(Rectangle())
+                                .onTapGesture { timelineDay = d }
+                                .accessibilityAddTraits(.isButton)
+                                .accessibilityHint("その日のタイムラインを開きます")
+                        }
+                        summaryHeader
+                    }
+                }
+            }
+            .frame(height: headerHeight)
+            .background(.bar)
+            .overlay(alignment: .bottom) { Divider() }
+
+            ScrollView(.vertical) {
+                HStack(alignment: .top, spacing: 0) {
                     VStack(spacing: 0) {
-                        // スクロール位置を合わせるための目印（日付ごと）
-                        HStack(spacing: 0) {
-                            Color.clear.frame(width: nameWidth)
-                            ForEach(days, id: \.self) { d in Color.clear.frame(width: cellWidth).id(d) }
-                            Color.clear.frame(width: summaryWidth)
-                        }
-                        .frame(height: headerHeight)
                         ForEach(groups) { g in
-                            Rectangle().fill(Color(.secondarySystemBackground))
-                                .frame(height: sectionHeight)
-                            ForEach(g.members) { m in
+                            sectionLabel(g.department)
+                            ForEach(g.members) { m in nameCell(m) }
+                        }
+                    }
+                    .frame(width: nameWidth)
+                    .overlay(alignment: .trailing) { Divider() }
+
+                    ScrollViewReader { proxy in
+                        ScrollView(.horizontal) {
+                            VStack(spacing: 0) {
+                                // スクロール位置を合わせるための目印（日付ごと）
                                 HStack(spacing: 0) {
-                                    Color.clear.frame(width: nameWidth)
-                                    ForEach(days, id: \.self) { d in
-                                        ShiftCellView(member: m, day: d, resolved: Schedule.resolve(m, on: d, in: book),
-                                                      book: book, isToday: d == today, compact: compact, large: isWeek)
-                                            .frame(width: cellWidth, height: rowHeight)
-                                            .contentShape(Rectangle())
-                                            .onTapGesture { selected = Selection(member: m, day: d) }
-                                    }
-                                    summaryCell(MonthSummary.of(m, days: days, in: book))
+                                    ForEach(days, id: \.self) { d in Color.clear.frame(width: cellWidth, height: 0).id(d) }
                                 }
-                                .overlay(alignment: .bottom) { Divider() }
+                                ForEach(groups) { g in
+                                    Rectangle().fill(Color(.secondarySystemBackground))
+                                        .frame(height: sectionHeight)
+                                    ForEach(g.members) { m in
+                                        HStack(spacing: 0) {
+                                            ForEach(days, id: \.self) { d in
+                                                ShiftCellView(member: m, day: d, resolved: Schedule.resolve(m, on: d, in: book),
+                                                              book: book, isToday: d == today, compact: compact, large: isWeek)
+                                                    .frame(width: cellWidth, height: rowHeight)
+                                                    .contentShape(Rectangle())
+                                                    .onTapGesture { selected = Selection(member: m, day: d) }
+                                            }
+                                            summaryCell(MonthSummary.of(m, days: days, in: book))
+                                        }
+                                        .overlay(alignment: .bottom) { Divider() }
+                                    }
+                                }
                             }
+                            .background(GeometryReader { g in
+                                Color.clear.preference(key: ScrollOffsetKey.self, value: g.frame(in: .named("gridH")).minX)
+                            })
                         }
-                    }
-
-                    // 名前の列（横に動かしても左に残る）
-                    PinnedView(tracker: scroll, axis: .horizontal) {
-                        VStack(spacing: 0) {
-                            Color.clear.frame(height: headerHeight)
-                            ForEach(groups) { g in
-                                sectionLabel(g.department)
-                                ForEach(g.members) { m in nameCell(m) }
-                            }
+                        .coordinateSpace(name: "gridH")
+                        .scrollDisabled(isWeek && cellWidth * 7 + summaryWidth <= availableWidth - nameWidth + 1)
+                        .onPreferenceChange(ScrollOffsetKey.self) { x in
+                            MainActor.assumeIsolated { scroll.x = max(0, -x) }
                         }
-                        .frame(width: nameWidth)
-                        .background(Color(.systemBackground))
-                        .overlay(alignment: .trailing) { Divider() }
+                        .onAppear { scrollToToday(proxy, days: days, today: today) }
+                        .onChange(of: days) { scrollToToday(proxy, days: days, today: today) }
                     }
-                    .zIndex(1)
-
-                    // 日付の行（縦に動かしても上に残る）
-                    PinnedView(tracker: scroll, axis: .vertical) {
-                        HStack(spacing: 0) {
-                            Color.clear.frame(width: nameWidth)
-                            ForEach(days, id: \.self) { d in
-                                dayHeader(d, today: today)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture { timelineDay = d }
-                                    .accessibilityAddTraits(.isButton)
-                                    .accessibilityHint("その日のタイムラインを開きます")
-                            }
-                            summaryHeader
-                        }
-                        .background(.bar)
-                        .overlay(alignment: .bottom) { Divider() }
-                    }
-                    .zIndex(2)
-
-                    // 左上の角（どちらに動かしても残る）
-                    PinnedView(tracker: scroll, axis: nil) {
-                        Text(isWeek ? "週" : "\(days[0].month)月").font(.subheadline.weight(.bold))
-                            .frame(width: nameWidth, height: headerHeight)
-                            .background(.bar)
-                            .overlay(alignment: .trailing) { Divider() }
-                            .overlay(alignment: .bottom) { Divider() }
-                    }
-                    .zIndex(3)
-                }
-                .background(GeometryReader { g in
-                    Color.clear.preference(key: ScrollOffsetKey.self, value: g.frame(in: .named("monthGrid")).origin)
-                })
-            }
-            .coordinateSpace(name: "monthGrid")
-            .onPreferenceChange(ScrollOffsetKey.self) { origin in
-                MainActor.assumeIsolated {
-                    scroll.offset = CGPoint(x: max(0, -origin.x), y: max(0, -origin.y))
                 }
             }
-            .background(GeometryReader { g in
-                Color.clear
-                    .onAppear { availableWidth = g.size.width }
-                    .onChange(of: g.size.width) { availableWidth = g.size.width }
-            })
-            .onAppear { scrollToToday(proxy, days: days, today: today) }
-            .onChange(of: days) { scrollToToday(proxy, days: days, today: today) }
         }
+        .background(GeometryReader { g in
+            Color.clear
+                .onAppear { availableWidth = g.size.width }
+                .onChange(of: g.size.width) { availableWidth = g.size.width }
+        })
         .sheet(item: $selected) { s in
             if store.editing {
                 CellEditorSheet(member: s.member, day: s.day)
@@ -211,28 +197,28 @@ struct MonthGridView: View {
     }
 }
 
-/// スクロールした量（表の本体ではなく、貼り付ける部分だけがこれを見る）
+/// 表を横に動かした量（日付の行だけがこれを見る。表の本体は動かすたびに作り直さない）
 @MainActor
 @Observable
 final class ScrollTracker {
-    var offset: CGPoint = .zero
+    var x: CGFloat = 0
 }
 
 private struct ScrollOffsetKey: PreferenceKey {
-    static let defaultValue: CGPoint = .zero
-    static func reduce(value: inout CGPoint, nextValue: () -> CGPoint) { value = nextValue() }
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
-/// スクロールした分だけずらして、画面の端に貼り付いて見せる
-/// axis: .horizontal＝左に貼り付く、.vertical＝上に貼り付く、nil＝左上に貼り付く
-private struct PinnedView<Content: View>: View {
+/// 下の表を横に動かした分だけ、日付の行をずらす
+private struct FollowingHeader<Content: View>: View {
     let tracker: ScrollTracker
-    let axis: Axis?
     @ViewBuilder let content: Content
 
     var body: some View {
-        let o = tracker.offset
-        content.offset(x: axis == .vertical ? 0 : o.x, y: axis == .horizontal ? 0 : o.y)
+        content
+            .offset(x: -tracker.x)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .clipped()
     }
 }
 

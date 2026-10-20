@@ -9,7 +9,11 @@ struct EldiaShiftApp: App {
         // 画面確認用（CI のスクリーンショット）は、保存しないデータベースに見本を入れて表示する
         let d = ShiftDatabase(inMemory: DemoMode.enabled)
         let s = ShiftStore(db: d)
-        if DemoMode.enabled { try? s.replaceAll(with: DemoMode.book()) }
+        if DemoMode.enabled {
+            try? s.replaceAll(with: DemoMode.book())
+            let week = ProcessInfo.processInfo.arguments.contains("-demoWeek")
+            UserDefaults.standard.set(week ? GridMode.week.rawValue : GridMode.month.rawValue, forKey: "viewMode")
+        }
         _db = State(initialValue: d)
         _store = State(initialValue: s)
     }
