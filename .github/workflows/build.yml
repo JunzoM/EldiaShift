@@ -1,0 +1,77 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select newest Xcode
+        run: |
+          # 入っている中で一番新しい正式版の Xcode（iOS 27 SDK があればそれ）でビルドする
+          ls -d /Applications/Xcode*.app
+          xc=$(ls -d /Applications/Xcode_*.app | grep -vi beta | sort -V | tail -1)
+          sudo xcode-select -s "$xc"
+          echo "::notice title=Xcode::$(xcodebuild -version | tr '\n' ' ') / $(xcodebuild -showsdks | grep -o 'iphoneos[0-9.]*' | tr '\n' ' ')"
+      - name: Build for iOS Simulator
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project EldiaShift.xcodeproj \
+            -scheme EldiaShift \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee build.log | grep -E "error:|warning: .*deprecated|BUILD (SUCCEEDED|FAILED)" || true
+          # コンパイルエラーは注記にも出す（ログを開かなくても原因が分かるように）
+          grep -E "^/.*: error: " build.log | sort -u | head -20 | sed -E 's#^.*/(EldiaShift[A-Za-z]*/[A-Za-z]+\.swift):([0-9]+):[0-9]+: error: (.*)$#::error file=\1,line=\2::\3#' || true
+          grep -q "BUILD SUCCEEDED" build.log
+      - name: Run tests
+        run: |
+          set -o pipefail
+          udid=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          print(next(d["udid"] for runtime, ds in devices.items() if "iOS" in runtime for d in ds if d["name"].startswith("iPhone")))
+          ')
+          echo "simulator: $udid"
+          xcodebuild test \
+            -project EldiaShift.xcodeproj \
+            -scheme EldiaShift \
+            -destination "id=$udid" \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee test.log | grep -E "error:|Test Case .* failed|Executed [0-9]+ test|TEST (SUCCEEDED|FAILED)" || true
+          grep -E "Executed [0-9]+ tests?" test.log | tail -1 | sed 's/^/::notice title=Tests::/'
+          # Swift Testing（集計のテスト）の件数も残し、1件も動いていなければ失敗にする
+          summary=$(grep -E "Test run with [0-9]+ tests?" test.log | tail -1)
+          echo "::notice title=Swift Testing::${summary:-実行結果が見つかりません}"
+          grep -q "TEST SUCCEEDED" test.log
+          echo "$summary" | grep -qE "with [1-9][0-9]* tests?.*passed"
+      - name: Concurrency check (Swift 6)
+        if: always()
+        run: |
+          xcodebuild \
+            -project EldiaShift.xcodeproj \
+            -scheme EldiaShift \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            SWIFT_STRICT_CONCURRENCY=complete \
+            build 2>&1 | grep -E "/EldiaShift/[A-Za-z]+\.swift:[0-9]+:[0-9]+: (warning|error):" | sort -u > concurrency.log || true
+          echo "::notice title=Concurrency::Swift 6 で問題になる警告 $(wc -l < concurrency.log | tr -d ' ') 件"
+          sed -E 's#^.*/(EldiaShift/[A-Za-z]+\.swift):([0-9]+):[0-9]+: (warning|error): (.*)$#::warning file=\1,line=\2::\4#' concurrency.log | head -40
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: |
+            build.log
+            test.log
