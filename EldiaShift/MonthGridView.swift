@@ -22,61 +22,96 @@ struct MonthGridView: View {
     private let sectionHeight: CGFloat = 28
     private let summaryWidth: CGFloat = 70
 
+    @State private var scroll = ScrollTracker()
+
     var body: some View {
         let book = store.book
         let days = month.days
         let groups = book.staffByDepartment(visibleIn: month)
         let today = DayKey.today
 
-        ScrollView(.vertical) {
-            HStack(alignment: .top, spacing: 0) {
-                // 名前の列（横には動かない）
-                VStack(spacing: 0) {
-                    Color.clear.frame(height: headerHeight)
-                    ForEach(groups) { g in
-                        sectionLabel(g.department)
-                        ForEach(g.members) { m in
-                            nameCell(m)
+        // 縦横どちらにも動く1枚の表。日付の行は上に、名前の列は左に貼り付けて見せる
+        // （動いた量は ScrollTracker だけが持ち、表の本体は動かすたびに作り直さない）
+        ScrollViewReader { proxy in
+            ScrollView([.horizontal, .vertical]) {
+                ZStack(alignment: .topLeading) {
+                    VStack(spacing: 0) {
+                        // スクロール位置を合わせるための目印（日付ごと）
+                        HStack(spacing: 0) {
+                            Color.clear.frame(width: nameWidth)
+                            ForEach(days, id: \.self) { d in Color.clear.frame(width: cellWidth).id(d) }
+                            Color.clear.frame(width: summaryWidth)
                         }
-                    }
-                }
-                .frame(width: nameWidth)
-                .background(Color(.systemBackground))
-                .overlay(alignment: .trailing) { Divider() }
-                .zIndex(1)
-
-                // 日付の列（横に動く）
-                ScrollViewReader { proxy in
-                    ScrollView(.horizontal) {
-                        VStack(spacing: 0) {
-                            HStack(spacing: 0) {
-                                ForEach(days, id: \.self) { d in dayHeader(d, today: today).id(d) }
-                                summaryHeader
-                            }
-                            ForEach(groups) { g in
-                                Rectangle().fill(Color(.secondarySystemBackground))
-                                    .frame(height: sectionHeight)
-                                ForEach(g.members) { m in
-                                    HStack(spacing: 0) {
-                                        ForEach(days, id: \.self) { d in
-                                            ShiftCellView(member: m, day: d, resolved: Schedule.resolve(m, on: d, in: book),
-                                                          book: book, isToday: d == today, compact: compact)
-                                                .frame(width: cellWidth, height: rowHeight)
-                                                .contentShape(Rectangle())
-                                                .onTapGesture { selected = Selection(member: m, day: d) }
-                                        }
-                                        summaryCell(MonthSummary.of(m, month: month, in: book))
+                        .frame(height: headerHeight)
+                        ForEach(groups) { g in
+                            Rectangle().fill(Color(.secondarySystemBackground))
+                                .frame(height: sectionHeight)
+                            ForEach(g.members) { m in
+                                HStack(spacing: 0) {
+                                    Color.clear.frame(width: nameWidth)
+                                    ForEach(days, id: \.self) { d in
+                                        ShiftCellView(member: m, day: d, resolved: Schedule.resolve(m, on: d, in: book),
+                                                      book: book, isToday: d == today, compact: compact)
+                                            .frame(width: cellWidth, height: rowHeight)
+                                            .contentShape(Rectangle())
+                                            .onTapGesture { selected = Selection(member: m, day: d) }
                                     }
-                                    .overlay(alignment: .bottom) { Divider() }
+                                    summaryCell(MonthSummary.of(m, month: month, in: book))
                                 }
+                                .overlay(alignment: .bottom) { Divider() }
                             }
                         }
                     }
-                    .scrollIndicators(.visible)
-                    .onAppear { scrollToToday(proxy, days: days, today: today) }
-                    .onChange(of: month) { scrollToToday(proxy, days: days, today: today) }
+
+                    // 名前の列（横に動かしても左に残る）
+                    PinnedView(tracker: scroll, axis: .horizontal) {
+                        VStack(spacing: 0) {
+                            Color.clear.frame(height: headerHeight)
+                            ForEach(groups) { g in
+                                sectionLabel(g.department)
+                                ForEach(g.members) { m in nameCell(m) }
+                            }
+                        }
+                        .frame(width: nameWidth)
+                        .background(Color(.systemBackground))
+                        .overlay(alignment: .trailing) { Divider() }
+                    }
+                    .zIndex(1)
+
+                    // 日付の行（縦に動かしても上に残る）
+                    PinnedView(tracker: scroll, axis: .vertical) {
+                        HStack(spacing: 0) {
+                            Color.clear.frame(width: nameWidth)
+                            ForEach(days, id: \.self) { d in dayHeader(d, today: today) }
+                            summaryHeader
+                        }
+                        .background(.bar)
+                        .overlay(alignment: .bottom) { Divider() }
+                    }
+                    .zIndex(2)
+
+                    // 左上の角（どちらに動かしても残る）
+                    PinnedView(tracker: scroll, axis: nil) {
+                        Text("\(month.month)月").font(.subheadline.weight(.bold))
+                            .frame(width: nameWidth, height: headerHeight)
+                            .background(.bar)
+                            .overlay(alignment: .trailing) { Divider() }
+                            .overlay(alignment: .bottom) { Divider() }
+                    }
+                    .zIndex(3)
+                }
+                .background(GeometryReader { g in
+                    Color.clear.preference(key: ScrollOffsetKey.self, value: g.frame(in: .named("monthGrid")).origin)
+                })
+            }
+            .coordinateSpace(name: "monthGrid")
+            .onPreferenceChange(ScrollOffsetKey.self) { origin in
+                MainActor.assumeIsolated {
+                    scroll.offset = CGPoint(x: max(0, -origin.x), y: max(0, -origin.y))
                 }
             }
+            .onAppear { scrollToToday(proxy, days: days, today: today) }
+            .onChange(of: month) { scrollToToday(proxy, days: days, today: today) }
         }
         .sheet(item: $selected) { s in
             CellDetailSheet(member: s.member, day: s.day)
@@ -85,9 +120,10 @@ struct MonthGridView: View {
     }
 
     private func scrollToToday(_ proxy: ScrollViewProxy, days: [DayKey], today: DayKey) {
-        let target = days.contains(today) ? today.adding(days: -2) : days.first
-        if let target, days.contains(target) { proxy.scrollTo(target, anchor: .leading) }
-        else if let first = days.first { proxy.scrollTo(first, anchor: .leading) }
+        // 左には名前の列が重なるので、今日の数日前を左端に合わせる
+        let target = days.contains(today) ? today.adding(days: -(compact ? 2 : 3)) : nil
+        if let target, days.contains(target) { proxy.scrollTo(target, anchor: .topLeading) }
+        else if let first = days.first { proxy.scrollTo(first, anchor: .topLeading) }
     }
 
     // MARK: 部品
@@ -142,6 +178,31 @@ struct MonthGridView: View {
         .frame(width: summaryWidth, height: rowHeight)
         .background(Color(.secondarySystemBackground).opacity(0.5))
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// スクロールした量（表の本体ではなく、貼り付ける部分だけがこれを見る）
+@MainActor
+@Observable
+final class ScrollTracker {
+    var offset: CGPoint = .zero
+}
+
+private struct ScrollOffsetKey: PreferenceKey {
+    static let defaultValue: CGPoint = .zero
+    static func reduce(value: inout CGPoint, nextValue: () -> CGPoint) { value = nextValue() }
+}
+
+/// スクロールした分だけずらして、画面の端に貼り付いて見せる
+/// axis: .horizontal＝左に貼り付く、.vertical＝上に貼り付く、nil＝左上に貼り付く
+private struct PinnedView<Content: View>: View {
+    let tracker: ScrollTracker
+    let axis: Axis?
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        let o = tracker.offset
+        content.offset(x: axis == .vertical ? 0 : o.x, y: axis == .horizontal ? 0 : o.y)
     }
 }
 
