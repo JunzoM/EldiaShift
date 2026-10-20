@@ -100,7 +100,8 @@ struct ShiftBook: Sendable, Equatable {
     var staff: [StaffMember] = []
     var cells: [CellKey: CellEntry] = [:]
 
-    var isEmpty: Bool { staff.isEmpty && cells.isEmpty }
+    /// まだ何も作っていない（スタッフ・部門・ひな形・シフトのどれも無い）
+    var isEmpty: Bool { staff.isEmpty && cells.isEmpty && departments.isEmpty && templates.isEmpty }
 
     func block(_ id: String?, for member: StaffMember) -> TimeBlock? {
         guard let id, !id.isEmpty else { return nil }

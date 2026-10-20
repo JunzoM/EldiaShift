@@ -321,3 +321,83 @@ struct EditTests {
         #expect(store.lastChange == nil)
     }
 }
+
+@Suite("一から作る")
+@MainActor
+struct SetupTests {
+    @Test("新しく作ると、部門と休みを含むひな形の例が入る")
+    func startNew() throws {
+        let store = ShiftStore(db: ShiftDatabase(inMemory: true))
+        #expect(store.book.isEmpty)
+        try store.startNew()
+        #expect(!store.book.isEmpty)
+        #expect(store.book.staff.isEmpty)
+        #expect(store.book.departments.map(\.name) == ["ホール", "キッチン"])
+        #expect(store.book.templates.contains { $0.isOff })
+    }
+
+    @Test("スタッフを追加し、週のくり返しを決めるとシフトに出る")
+    func addStaffWithPattern() throws {
+        let store = ShiftStore(db: ShiftDatabase(inMemory: true))
+        try store.startNew()
+        let early = try #require(store.book.templates.first { $0.label == "早番" })
+        let off = try #require(store.book.templates.first { $0.isOff })
+        var m = store.newStaff(in: store.book.departments[0].id)
+        m.name = "新人"
+        let p = WeekPattern(id: "p", label: "通常", colorIndex: 0,
+                            days: [off.id, early.id, early.id, early.id, early.id, early.id, off.id], activeFrom: nil)
+        m.patterns = [p]
+        m.activePatternID = "p"
+        try store.save(m)
+
+        let saved = try #require(store.book.staff.first { $0.name == "新人" })
+        #expect(saved.number == 1)
+        let monday = try #require(Schedule.resolve(saved, on: DayKey(2026, 10, 5), in: store.book))
+        #expect(monday.inTime == "09:00" && monday.outTime == "18:00")
+        #expect(Schedule.resolve(saved, on: DayKey(2026, 10, 4), in: store.book)?.isOff == true)
+        #expect(store.usageCount(of: early.id) == 5)
+
+        // 名前を変えても1人のまま
+        var renamed = saved
+        renamed.name = "新人A"
+        try store.save(renamed)
+        #expect(store.book.staff.map(\.name) == ["新人A"])
+    }
+
+    @Test("スタッフのいる部門は消せない。スタッフを消すとその人のシフトも消える")
+    func deleting() throws {
+        let store = ShiftStore(db: ShiftDatabase(inMemory: true))
+        try store.startNew()
+        let dept = store.book.departments[0]
+        var m = store.newStaff(in: dept.id)
+        m.name = "A"
+        try store.save(m)
+        try store.setCell(CellKey(staffID: m.id, day: DayKey(2026, 10, 1)),
+                          to: CellEntry(inTime: "09:00", outTime: "17:00", blockID: nil, isOff: false))
+        #expect(throws: SetupError.self) { try store.deleteDepartment(dept) }
+
+        try store.deleteStaff(m)
+        #expect(store.book.staff.isEmpty)
+        #expect(store.book.cells.isEmpty)
+        try store.deleteDepartment(dept)
+        #expect(store.book.departments.map(\.name) == ["キッチン"])
+    }
+
+    @Test("部門・スタッフの並べ替え")
+    func reorder() throws {
+        let store = ShiftStore(db: ShiftDatabase(inMemory: true))
+        try store.startNew()
+        try store.reorderDepartments(store.book.departments.reversed())
+        #expect(store.book.departments.map(\.name) == ["キッチン", "ホール"])
+
+        let d = store.book.departments[0].id
+        for n in ["A", "B", "C"] {
+            var m = store.newStaff(in: d)
+            m.name = n
+            try store.save(m)
+        }
+        let ordered = store.book.staff.sorted(by: StaffMember.order)
+        try store.reorderStaff([ordered[2], ordered[0], ordered[1]])
+        #expect(store.book.staff.sorted(by: StaffMember.order).map(\.name) == ["C", "A", "B"])
+    }
+}

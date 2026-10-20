@@ -213,11 +213,11 @@ enum ShiftRecords {
 
     // MARK: 部品
 
-    private static func fetch(_ name: String, _ ctx: NSManagedObjectContext) throws -> [NSManagedObject] {
+    static func fetch(_ name: String, _ ctx: NSManagedObjectContext) throws -> [NSManagedObject] {
         try ctx.fetch(NSFetchRequest<NSManagedObject>(entityName: name))
     }
 
-    private static func insert(_ name: String, _ ctx: NSManagedObjectContext, team: NSManagedObject, now: Date) -> NSManagedObject {
+    static func insert(_ name: String, _ ctx: NSManagedObjectContext, team: NSManagedObject, now: Date) -> NSManagedObject {
         let r = NSEntityDescription.insertNewObject(forEntityName: name, into: ctx)
         r.setValue(team, forKey: "team")
         r.setValue(now, forKey: "updatedAt")
