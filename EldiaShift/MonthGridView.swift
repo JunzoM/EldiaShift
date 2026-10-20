@@ -25,7 +25,7 @@ struct MonthGridView: View {
         guard isWeek else { return compact ? 46 : 54 }
         return max(compact ? 64 : 96, (availableWidth - nameWidth - summaryWidth) / 7)
     }
-    private var rowHeight: CGFloat { isWeek ? 70 : 52 }
+    private var rowHeight: CGFloat { isWeek ? (compact ? 78 : 70) : 52 }
     private let headerHeight: CGFloat = 46
     private let sectionHeight: CGFloat = 28
     private let summaryWidth: CGFloat = 70
@@ -37,100 +37,90 @@ struct MonthGridView: View {
         let groups = book.staffByDepartment(visibleIn: MonthKey(days[0]))
         let today = DayKey.today
 
-        // 縦横どちらにも動く1枚の表。日付の行は上に、名前の列は左に貼り付けて見せる
-        // （動いた量は ScrollTracker だけが持ち、表の本体は動かすたびに作り直さない）
-        ScrollViewReader { proxy in
-            ScrollView([.horizontal, .vertical]) {
-                ZStack(alignment: .topLeading) {
+        // 上：日付の行（縦には動かない。横は下の表と同じだけずらす）
+        // 下：縦に動く。左に名前の列、右に横に動く表
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                Text(isWeek ? "週" : "\(days[0].month)月").font(.subheadline.weight(.bold))
+                    .frame(width: nameWidth, height: headerHeight)
+                    .overlay(alignment: .trailing) { Divider() }
+                FollowingHeader(tracker: scroll) {
+                    HStack(spacing: 0) {
+                        ForEach(days, id: \.self) { d in
+                            dayHeader(d, today: today)
+                                .contentShape(Rectangle())
+                                .onTapGesture { timelineDay = d }
+                                .accessibilityAddTraits(.isButton)
+                                .accessibilityHint("その日のタイムラインを開きます")
+                        }
+                        summaryHeader
+                    }
+                }
+            }
+            .frame(height: headerHeight)
+            .background(.bar)
+            .overlay(alignment: .bottom) { Divider() }
+
+            ScrollView(.vertical) {
+                HStack(alignment: .top, spacing: 0) {
                     VStack(spacing: 0) {
-                        // スクロール位置を合わせるための目印（日付ごと）
-                        HStack(spacing: 0) {
-                            Color.clear.frame(width: nameWidth)
-                            ForEach(days, id: \.self) { d in Color.clear.frame(width: cellWidth).id(d) }
-                            Color.clear.frame(width: summaryWidth)
-                        }
-                        .frame(height: headerHeight)
                         ForEach(groups) { g in
-                            Rectangle().fill(Color(.secondarySystemBackground))
-                                .frame(height: sectionHeight)
-                            ForEach(g.members) { m in
+                            sectionLabel(g.department)
+                            ForEach(g.members) { m in nameCell(m) }
+                        }
+                    }
+                    .frame(width: nameWidth)
+                    .overlay(alignment: .trailing) { Divider() }
+
+                    ScrollViewReader { proxy in
+                        ScrollView(.horizontal) {
+                            VStack(spacing: 0) {
+                                // スクロール位置を合わせるための目印（日付ごと）
                                 HStack(spacing: 0) {
-                                    Color.clear.frame(width: nameWidth)
-                                    ForEach(days, id: \.self) { d in
-                                        ShiftCellView(member: m, day: d, resolved: Schedule.resolve(m, on: d, in: book),
-                                                      book: book, isToday: d == today, compact: compact, large: isWeek)
-                                            .frame(width: cellWidth, height: rowHeight)
-                                            .contentShape(Rectangle())
-                                            .onTapGesture { selected = Selection(member: m, day: d) }
-                                    }
-                                    summaryCell(MonthSummary.of(m, days: days, in: book))
+                                    ForEach(days, id: \.self) { d in Color.clear.frame(width: cellWidth, height: 1).id(d) }
                                 }
-                                .overlay(alignment: .bottom) { Divider() }
+                                ForEach(groups) { g in
+                                    Rectangle().fill(Color(.secondarySystemBackground))
+                                        .frame(height: sectionHeight)
+                                    ForEach(g.members) { m in
+                                        HStack(spacing: 0) {
+                                            ForEach(days, id: \.self) { d in
+                                                ShiftCellView(member: m, day: d, resolved: Schedule.resolve(m, on: d, in: book),
+                                                              book: book, isToday: d == today, compact: compact, large: isWeek)
+                                                    .frame(width: cellWidth, height: rowHeight)
+                                                    .contentShape(Rectangle())
+                                                    .onTapGesture { selected = Selection(member: m, day: d) }
+                                            }
+                                            summaryCell(MonthSummary.of(m, days: days, in: book))
+                                        }
+                                        .overlay(alignment: .bottom) { Divider() }
+                                    }
+                                }
                             }
+                            .background(GeometryReader { g in
+                                // iOS 17 用：表の位置が変わったら日付の行を合わせる（iOS 18 以降は下の onScrollGeometryChange）
+                                let x = g.frame(in: .named("gridH")).minX
+                                Color.clear
+                                    .onAppear { scroll.x = max(0, -x) }
+                                    .onChange(of: x) { scroll.x = max(0, -x) }
+                            })
                         }
+                        .coordinateSpace(name: "gridH")
+                        // 横に動く表の幅は「画面の幅 − 名前の列」に固定する（中身の幅に合わせて広がると、名前の列が画面の外に押し出される）
+                        .frame(width: max(0, availableWidth - nameWidth))
+                        .scrollDisabled(isWeek && cellWidth * 7 + summaryWidth <= availableWidth - nameWidth + 1)
+                        .modifier(TrackHorizontalScroll(tracker: scroll))
+                        .onAppear { scrollToToday(proxy, days: days, today: today) }
+                        .onChange(of: days) { scrollToToday(proxy, days: days, today: today) }
                     }
-
-                    // 名前の列（横に動かしても左に残る）
-                    PinnedView(tracker: scroll, axis: .horizontal) {
-                        VStack(spacing: 0) {
-                            Color.clear.frame(height: headerHeight)
-                            ForEach(groups) { g in
-                                sectionLabel(g.department)
-                                ForEach(g.members) { m in nameCell(m) }
-                            }
-                        }
-                        .frame(width: nameWidth)
-                        .background(Color(.systemBackground))
-                        .overlay(alignment: .trailing) { Divider() }
-                    }
-                    .zIndex(1)
-
-                    // 日付の行（縦に動かしても上に残る）
-                    PinnedView(tracker: scroll, axis: .vertical) {
-                        HStack(spacing: 0) {
-                            Color.clear.frame(width: nameWidth)
-                            ForEach(days, id: \.self) { d in
-                                dayHeader(d, today: today)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture { timelineDay = d }
-                                    .accessibilityAddTraits(.isButton)
-                                    .accessibilityHint("その日のタイムラインを開きます")
-                            }
-                            summaryHeader
-                        }
-                        .background(.bar)
-                        .overlay(alignment: .bottom) { Divider() }
-                    }
-                    .zIndex(2)
-
-                    // 左上の角（どちらに動かしても残る）
-                    PinnedView(tracker: scroll, axis: nil) {
-                        Text(isWeek ? "週" : "\(days[0].month)月").font(.subheadline.weight(.bold))
-                            .frame(width: nameWidth, height: headerHeight)
-                            .background(.bar)
-                            .overlay(alignment: .trailing) { Divider() }
-                            .overlay(alignment: .bottom) { Divider() }
-                    }
-                    .zIndex(3)
-                }
-                .background(GeometryReader { g in
-                    Color.clear.preference(key: ScrollOffsetKey.self, value: g.frame(in: .named("monthGrid")).origin)
-                })
-            }
-            .coordinateSpace(name: "monthGrid")
-            .onPreferenceChange(ScrollOffsetKey.self) { origin in
-                MainActor.assumeIsolated {
-                    scroll.offset = CGPoint(x: max(0, -origin.x), y: max(0, -origin.y))
                 }
             }
-            .background(GeometryReader { g in
-                Color.clear
-                    .onAppear { availableWidth = g.size.width }
-                    .onChange(of: g.size.width) { availableWidth = g.size.width }
-            })
-            .onAppear { scrollToToday(proxy, days: days, today: today) }
-            .onChange(of: days) { scrollToToday(proxy, days: days, today: today) }
         }
+        .background(GeometryReader { g in
+            Color.clear
+                .onAppear { availableWidth = g.size.width }
+                .onChange(of: g.size.width) { availableWidth = g.size.width }
+        })
         .sheet(item: $selected) { s in
             if store.editing {
                 CellEditorSheet(member: s.member, day: s.day)
@@ -145,9 +135,11 @@ struct MonthGridView: View {
 
     private func scrollToToday(_ proxy: ScrollViewProxy, days: [DayKey], today: DayKey) {
         // 左には名前の列が重なるので、今日の数日前を左端に合わせる
-        let target = !isWeek && days.contains(today) ? today.adding(days: -(compact ? 2 : 3)) : nil
-        if let target, days.contains(target) { proxy.scrollTo(target, anchor: .topLeading) }
-        else if let first = days.first { proxy.scrollTo(first, anchor: .topLeading) }
+        // 週は月曜から見せる（動かさない）。月は今日の数日前を左端に
+        guard !isWeek else { return }
+        let target = days.contains(today) ? today.adding(days: -(compact ? 2 : 3)) : nil
+        if let target, days.contains(target) { proxy.scrollTo(target, anchor: .leading) }
+        else if let first = days.first { proxy.scrollTo(first, anchor: .leading) }
     }
 
     // MARK: 部品
@@ -211,28 +203,43 @@ struct MonthGridView: View {
     }
 }
 
-/// スクロールした量（表の本体ではなく、貼り付ける部分だけがこれを見る）
+/// 表を横に動かした量（日付の行だけがこれを見る。表の本体は動かすたびに作り直さない）
 @MainActor
 @Observable
 final class ScrollTracker {
-    var offset: CGPoint = .zero
+    var x: CGFloat = 0
 }
 
-private struct ScrollOffsetKey: PreferenceKey {
-    static let defaultValue: CGPoint = .zero
-    static func reduce(value: inout CGPoint, nextValue: () -> CGPoint) { value = nextValue() }
-}
-
-/// スクロールした分だけずらして、画面の端に貼り付いて見せる
-/// axis: .horizontal＝左に貼り付く、.vertical＝上に貼り付く、nil＝左上に貼り付く
-private struct PinnedView<Content: View>: View {
+/// iOS 18 以降は、スクロールの位置をそのまま受け取る（確実で軽い）
+private struct TrackHorizontalScroll: ViewModifier {
     let tracker: ScrollTracker
-    let axis: Axis?
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.onScrollGeometryChange(for: CGFloat.self) { geo in
+                geo.contentOffset.x + geo.contentInsets.leading
+            } action: { _, x in
+                tracker.x = max(0, x)
+            }
+        } else {
+            content
+        }
+    }
+}
+
+/// 下の表を横に動かした分だけ、日付の行をずらす
+private struct FollowingHeader<Content: View>: View {
+    let tracker: ScrollTracker
     @ViewBuilder let content: Content
 
     var body: some View {
-        let o = tracker.offset
-        content.offset(x: axis == .vertical ? 0 : o.x, y: axis == .horizontal ? 0 : o.y)
+        // 重ねて置くだけにして、日付の行の幅が画面の幅に影響しないようにする
+        Color.clear
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .leading) {
+                content.fixedSize().offset(x: -tracker.x)
+            }
+            .clipped()
     }
 }
 
@@ -249,11 +256,14 @@ struct ShiftCellView: View {
 
     var body: some View {
         let block = book.block(resolved?.blockID, for: member)
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             background(block)
             content(block)
+        }
+        .overlay(alignment: large ? .bottomTrailing : .topTrailing) {
+            // 自動（くり返し・期間の予定）で決まったマスの印。時刻に重ならないよう隅に小さく
             if resolved?.isAuto == true {
-                Circle().fill(Color.orange).frame(width: 5, height: 5).padding(3)
+                Circle().fill(Color.orange.opacity(0.8)).frame(width: 5, height: 5).padding(large ? 5 : 2)
                     .accessibilityHidden(true)
             }
         }
@@ -291,8 +301,14 @@ struct ShiftCellView: View {
             } else {
                 if large {
                     VStack(spacing: 2) {
-                        Text("\(r.inTime.isEmpty ? "—" : r.inTime)〜\(r.outTime.isEmpty ? "—" : r.outTime)")
-                            .font(.system(size: compact ? 12 : 14, weight: .bold))
+                        if compact {
+                            // iPhone は幅が狭いので、出勤・退勤を2行に
+                            Text(r.inTime.isEmpty ? "—" : r.inTime).font(.system(size: 13, weight: .bold))
+                            Text(r.outTime.isEmpty ? "—" : r.outTime).font(.system(size: 13)).foregroundStyle(.secondary)
+                        } else {
+                            Text("\(r.inTime.isEmpty ? "—" : r.inTime)〜\(r.outTime.isEmpty ? "—" : r.outTime)")
+                                .font(.system(size: 14, weight: .bold))
+                        }
                         HStack(spacing: 4) {
                             if let block {
                                 Text(block.label).foregroundStyle(PaletteColor.fg(block.colorIndex)).fontWeight(.bold)
