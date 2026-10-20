@@ -56,7 +56,11 @@ jobs:
           { grep -E "recorded an issue|Expectation failed|failed after|Test Case .* failed|error:|Fatal error|crashed" test.log || true; } \
             | sed -E 's/^.*(EldiaShiftTests\/[A-Za-z]+\.swift:[0-9]+)/\1/' | sort -u | head -30 \
             | while IFS= read -r line; do echo "::error title=Test::$line"; done || true
-          grep -q "TEST SUCCEEDED" test.log
+          if ! grep -q "TEST SUCCEEDED" test.log; then
+            # 原因が上で拾えないとき用に、ログの最後を注記に出す
+            tail -12 test.log | while IFS= read -r line; do echo "::error title=Test log::$line"; done
+            exit 1
+          fi
           echo "$summary" | grep -qE "with [1-9][0-9]* tests?.*passed"
       - name: Concurrency check (Swift 6)
         if: always()
