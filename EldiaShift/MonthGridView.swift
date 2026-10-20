@@ -136,10 +136,7 @@ struct MonthGridView: View {
     private func scrollToToday(_ proxy: ScrollViewProxy, days: [DayKey], today: DayKey) {
         // 左には名前の列が重なるので、今日の数日前を左端に合わせる
         // 週は月曜から見せる（動かさない）。月は今日の数日前を左端に
-        guard !isWeek else {
-            if let first = days.first { proxy.scrollTo(first, anchor: .leading) }
-            return
-        }
+        guard !isWeek else { return }
         let target = days.contains(today) ? today.adding(days: -(compact ? 2 : 3)) : nil
         if let target, days.contains(target) { proxy.scrollTo(target, anchor: .leading) }
         else if let first = days.first { proxy.scrollTo(first, anchor: .leading) }
