@@ -25,7 +25,7 @@ struct MonthGridView: View {
         guard isWeek else { return compact ? 46 : 54 }
         return max(compact ? 64 : 96, (availableWidth - nameWidth - summaryWidth) / 7)
     }
-    private var rowHeight: CGFloat { isWeek ? 70 : 52 }
+    private var rowHeight: CGFloat { isWeek ? (compact ? 78 : 70) : 52 }
     private let headerHeight: CGFloat = 46
     private let sectionHeight: CGFloat = 28
     private let summaryWidth: CGFloat = 70
@@ -77,7 +77,7 @@ struct MonthGridView: View {
                             VStack(spacing: 0) {
                                 // スクロール位置を合わせるための目印（日付ごと）
                                 HStack(spacing: 0) {
-                                    ForEach(days, id: \.self) { d in Color.clear.frame(width: cellWidth, height: 0).id(d) }
+                                    ForEach(days, id: \.self) { d in Color.clear.frame(width: cellWidth, height: 1).id(d) }
                                 }
                                 ForEach(groups) { g in
                                     Rectangle().fill(Color(.secondarySystemBackground))
@@ -135,9 +135,14 @@ struct MonthGridView: View {
 
     private func scrollToToday(_ proxy: ScrollViewProxy, days: [DayKey], today: DayKey) {
         // 左には名前の列が重なるので、今日の数日前を左端に合わせる
-        let target = !isWeek && days.contains(today) ? today.adding(days: -(compact ? 2 : 3)) : nil
-        if let target, days.contains(target) { proxy.scrollTo(target, anchor: .topLeading) }
-        else if let first = days.first { proxy.scrollTo(first, anchor: .topLeading) }
+        // 週は月曜から見せる（動かさない）。月は今日の数日前を左端に
+        guard !isWeek else {
+            if let first = days.first { proxy.scrollTo(first, anchor: .leading) }
+            return
+        }
+        let target = days.contains(today) ? today.adding(days: -(compact ? 2 : 3)) : nil
+        if let target, days.contains(target) { proxy.scrollTo(target, anchor: .leading) }
+        else if let first = days.first { proxy.scrollTo(first, anchor: .leading) }
     }
 
     // MARK: 部品
@@ -299,8 +304,14 @@ struct ShiftCellView: View {
             } else {
                 if large {
                     VStack(spacing: 2) {
-                        Text("\(r.inTime.isEmpty ? "—" : r.inTime)〜\(r.outTime.isEmpty ? "—" : r.outTime)")
-                            .font(.system(size: compact ? 12 : 14, weight: .bold))
+                        if compact {
+                            // iPhone は幅が狭いので、出勤・退勤を2行に
+                            Text(r.inTime.isEmpty ? "—" : r.inTime).font(.system(size: 13, weight: .bold))
+                            Text(r.outTime.isEmpty ? "—" : r.outTime).font(.system(size: 13)).foregroundStyle(.secondary)
+                        } else {
+                            Text("\(r.inTime.isEmpty ? "—" : r.inTime)〜\(r.outTime.isEmpty ? "—" : r.outTime)")
+                                .font(.system(size: 14, weight: .bold))
+                        }
                         HStack(spacing: 4) {
                             if let block {
                                 Text(block.label).foregroundStyle(PaletteColor.fg(block.colorIndex)).fontWeight(.bold)
