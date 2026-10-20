@@ -98,16 +98,18 @@ struct MonthGridView: View {
                                 }
                             }
                             .background(GeometryReader { g in
-                                Color.clear.preference(key: ScrollOffsetKey.self, value: g.frame(in: .named("gridH")).minX)
+                                // iOS 17 用：表の位置が変わったら日付の行を合わせる（iOS 18 以降は下の onScrollGeometryChange）
+                                let x = g.frame(in: .named("gridH")).minX
+                                Color.clear
+                                    .onAppear { scroll.x = max(0, -x) }
+                                    .onChange(of: x) { scroll.x = max(0, -x) }
                             })
                         }
                         .coordinateSpace(name: "gridH")
                         // 横に動く表の幅は「画面の幅 − 名前の列」に固定する（中身の幅に合わせて広がると、名前の列が画面の外に押し出される）
                         .frame(width: max(0, availableWidth - nameWidth))
                         .scrollDisabled(isWeek && cellWidth * 7 + summaryWidth <= availableWidth - nameWidth + 1)
-                        .onPreferenceChange(ScrollOffsetKey.self) { x in
-                            MainActor.assumeIsolated { scroll.x = max(0, -x) }
-                        }
+                        .modifier(TrackHorizontalScroll(tracker: scroll))
                         .onAppear { scrollToToday(proxy, days: days, today: today) }
                         .onChange(of: days) { scrollToToday(proxy, days: days, today: today) }
                     }
@@ -206,9 +208,21 @@ final class ScrollTracker {
     var x: CGFloat = 0
 }
 
-private struct ScrollOffsetKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+/// iOS 18 以降は、スクロールの位置をそのまま受け取る（確実で軽い）
+private struct TrackHorizontalScroll: ViewModifier {
+    let tracker: ScrollTracker
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.onScrollGeometryChange(for: CGFloat.self) { geo in
+                geo.contentOffset.x + geo.contentInsets.leading
+            } action: { _, x in
+                tracker.x = max(0, x)
+            }
+        } else {
+            content
+        }
+    }
 }
 
 /// 下の表を横に動かした分だけ、日付の行をずらす
