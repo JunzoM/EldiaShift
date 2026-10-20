@@ -7,6 +7,7 @@ struct MonthGridView: View {
     @Environment(ShiftStore.self) private var store
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var selected: Selection?
+    @State private var timelineDay: DayKey?
 
     private struct Selection: Identifiable {
         let member: StaffMember
@@ -82,7 +83,13 @@ struct MonthGridView: View {
                     PinnedView(tracker: scroll, axis: .vertical) {
                         HStack(spacing: 0) {
                             Color.clear.frame(width: nameWidth)
-                            ForEach(days, id: \.self) { d in dayHeader(d, today: today) }
+                            ForEach(days, id: \.self) { d in
+                                dayHeader(d, today: today)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { timelineDay = d }
+                                    .accessibilityAddTraits(.isButton)
+                                    .accessibilityHint("その日のタイムラインを開きます")
+                            }
                             summaryHeader
                         }
                         .background(.bar)
@@ -114,9 +121,15 @@ struct MonthGridView: View {
             .onChange(of: month) { scrollToToday(proxy, days: days, today: today) }
         }
         .sheet(item: $selected) { s in
-            CellDetailSheet(member: s.member, day: s.day)
-                .presentationDetents([.medium])
+            if store.editing {
+                CellEditorSheet(member: s.member, day: s.day)
+                    .presentationDetents([.medium, .large])
+            } else {
+                CellDetailSheet(member: s.member, day: s.day)
+                    .presentationDetents([.medium])
+            }
         }
+        .navigationDestination(item: $timelineDay) { d in DayTimelineView(day: d) }
     }
 
     private func scrollToToday(_ proxy: ScrollViewProxy, days: [DayKey], today: DayKey) {

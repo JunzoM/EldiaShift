@@ -227,3 +227,97 @@ struct HolidayTests {
         #expect(JapaneseHolidays.name(DayKey(2026, 5, 6)) == "振替休日")
     }
 }
+
+@Suite("タイムラインの計算")
+struct TimelineTests {
+    @Test("30分単位にそろえる")
+    func snap() {
+        #expect(TimelineMath.snap(44) == 30)
+        #expect(TimelineMath.snap(46) == 60)
+        #expect(TimelineMath.snap(-20) == -30)
+    }
+
+    @Test("移動：出勤は当日 23:30 まで、退勤は翌10:00まで")
+    func move() {
+        // 9:00〜18:00 を 3時間後ろへ
+        #expect(TimelineMath.drag(.move, in0: 540, out0: 1080, delta: 180) == (720, 1260))
+        // 夜勤 22:00〜翌10:00 はそれ以上後ろへ動かない
+        #expect(TimelineMath.drag(.move, in0: 1320, out0: 2040, delta: 120) == (1320, 2040))
+        // 朝5:00より前には動かない
+        #expect(TimelineMath.drag(.move, in0: 360, out0: 900, delta: -300) == (300, 840))
+    }
+
+    @Test("長さを変える：30分より短く・24時間より長くはならない")
+    func resize() {
+        #expect(TimelineMath.drag(.left, in0: 540, out0: 1080, delta: 600) == (1050, 1080))
+        #expect(TimelineMath.drag(.right, in0: 540, out0: 1080, delta: -900) == (540, 570))
+        #expect(TimelineMath.drag(.right, in0: 540, out0: 1080, delta: 3000) == (540, 1980))
+    }
+
+    @Test("空きを押すと8時間（翌10:00まで）")
+    func newSpan() {
+        #expect(TimelineMath.newSpan(at: 600)! == (600, 1080))
+        #expect(TimelineMath.newSpan(at: 1380)! == (1380, 1860))
+        #expect(TimelineMath.newSpan(at: 1800) == nil)
+        #expect(TimelineMath.newSpan(at: 100)! == (300, 780))
+    }
+
+    @Test("保存する形：日をまたぐ時刻は 0〜24時に戻し、読み直すと同じ位置になる")
+    func entryRoundTrip() {
+        let e = TimelineMath.entry(inM: 1320, outM: 2040)
+        #expect(e.inTime == "22:00" && e.outTime == "10:00")
+        let r = ResolvedShift(inTime: e.inTime, outTime: e.outTime, blockID: nil, isOff: false, isAuto: false)
+        #expect(TimelineMath.span(of: r)! == (1320, 2040))
+        #expect(TimelineMath.entry(inM: 960, outM: 1440).outTime == "00:00")
+    }
+
+    @Test("時間帯ごとの人数")
+    func headcount() {
+        let spans = [(inM: 540, outM: 1080), (inM: 1320, outM: 2040)]
+        #expect(TimelineMath.headcount(spans, hour: 9) == 1)
+        #expect(TimelineMath.headcount(spans, hour: 18) == 0)
+        #expect(TimelineMath.headcount(spans, hour: 25) == 1)
+    }
+}
+
+@Suite("1マスの編集")
+@MainActor
+struct EditTests {
+    @Test("変える・自動に戻す・元に戻す が保存に反映される")
+    func editAndUndo() throws {
+        let (book, _) = try BackupFile.read(Data(legacyJSON.utf8))
+        let db = ShiftDatabase(inMemory: true)
+        let store = ShiftStore(db: db)
+        try store.replaceAll(with: book)
+        let key = CellKey(staffID: "1", day: DayKey(2026, 10, 5))
+
+        // くり返しで 9:00〜15:00 の日を 10:00〜19:00 に
+        try store.setCell(key, to: CellEntry(inTime: "10:00", outTime: "19:00", blockID: nil, isOff: false))
+        #expect(store.book.cells[key]?.inTime == "10:00")
+        #expect(try ShiftRecords.load(db.viewContext).cells[key]?.outTime == "19:00")
+        #expect(store.lastChange?.before == nil)
+
+        // 元に戻す → 手入力が消えて、くり返しに戻る
+        try store.undo()
+        #expect(store.book.cells[key] == nil)
+        #expect(Schedule.resolve(store.book.staff.first { $0.id == "1" }!, on: key.day, in: store.book)?.isAuto == true)
+        #expect(try ShiftRecords.load(db.viewContext).cells[key] == nil)
+
+        // 手入力のある日を自動に戻す
+        let manual = CellKey(staffID: "1", day: DayKey(2026, 10, 7))
+        try store.setCell(manual, to: nil)
+        #expect(store.book.cells[manual] == nil)
+        try store.undo()
+        #expect(store.book.cells[manual]?.outTime == "19:30")
+    }
+
+    @Test("同じ内容にしたときは何も変えない")
+    func noChange() throws {
+        let (book, _) = try BackupFile.read(Data(legacyJSON.utf8))
+        let store = ShiftStore(db: ShiftDatabase(inMemory: true))
+        try store.replaceAll(with: book)
+        let key = CellKey(staffID: "1", day: DayKey(2026, 10, 7))
+        try store.setCell(key, to: book.cells[key])
+        #expect(store.lastChange == nil)
+    }
+}
