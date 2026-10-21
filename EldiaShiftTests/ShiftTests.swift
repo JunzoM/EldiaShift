@@ -532,3 +532,43 @@ struct StaffSettingTests {
         #expect(Schedule.resolve(saved, on: DayKey(2026, 12, 31), in: s.book) == nil)   // 期間内で未設定は空き
     }
 }
+
+@Suite("印刷・データ管理")
+@MainActor
+struct PrintAndDataTests {
+    @Test("印刷の枚数（PC版と同じ）")
+    func pageCounts() {
+        let d = [Department(id: "a", name: "A", colorIndex: 0, sortOrder: 0), Department(id: "b", name: "B", colorIndex: 1, sortOrder: 1)]
+        let day = DayKey(2026, 10, 22)
+        #expect(PrintPlanner.pages(format: .weekByDepartment, half: .both, departments: d, anchor: day).count == 2)
+        #expect(PrintPlanner.pages(format: .monthByDepartment, half: .both, departments: d, anchor: day).count == 4)
+        #expect(PrintPlanner.pages(format: .monthByDepartment, half: .first, departments: d, anchor: day).count == 2)
+        #expect(PrintPlanner.pages(format: .monthCombined, half: .both, departments: d, anchor: day).count == 2)
+        let ls = PrintPlanner.pages(format: .monthLandscape, half: .first, departments: d, anchor: day)
+        #expect(ls.count == 1 && ls[0].tables.count == 2 && ls[0].landscape)
+        #expect(ls[0].tables[0].days.count == 15 && ls[0].tables[1].days.count == 16)
+    }
+
+    @Test("PDF ができる")
+    func pdf() throws {
+        let (book, _) = try BackupFile.read(Data(legacyJSON.utf8))
+        let pages = PrintPlanner.pages(format: .monthByDepartment, half: .both, departments: book.departments, anchor: DayKey(2026, 10, 1))
+        let data = PDFMaker.make(pages: pages, book: book, title: "見本")
+        #expect(data.starts(with: Data("%PDF".utf8)))
+        #expect(data.count > 1000)
+    }
+
+    @Test("すべて消去：部署と休みの種類は残り、自動バックアップが残る")
+    func reset() throws {
+        let (book, _) = try BackupFile.read(Data(legacyJSON.utf8))
+        let store = ShiftStore(db: ShiftDatabase(inMemory: true))
+        try store.replaceAll(with: book)
+        let before = (try? FileManager.default.contentsOfDirectory(atPath: ShiftStore.autoBackupFolder.path))?.count ?? 0
+        try store.resetAll()
+        #expect(store.book.staff.isEmpty && store.book.cells.isEmpty)
+        #expect(store.book.departments.count == book.departments.count)
+        #expect(store.book.templates.allSatisfy(\.isOff) && !store.book.templates.isEmpty)
+        let after = (try? FileManager.default.contentsOfDirectory(atPath: ShiftStore.autoBackupFolder.path))?.count ?? 0
+        #expect(after == min(30, before + 1))
+    }
+}

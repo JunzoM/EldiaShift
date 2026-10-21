@@ -62,6 +62,7 @@ jobs:
           shoot "$PAD" ipad-week -demoWeek
           shoot "$PAD" ipad-day -demoDay
           shoot "$PAD" ipad-day-edit -demoDay -demoEdit
+          shoot "$PAD" ipad-print -demoPrint
           shoot "$PHONE" iphone-month
           shoot "$PHONE" iphone-week -demoWeek
           shoot "$PHONE" iphone-day -demoDay

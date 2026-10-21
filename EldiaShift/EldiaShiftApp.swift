@@ -38,6 +38,7 @@ struct RootView: View {
     @State private var anchor = DayKey.today
     @State private var showSettings = false
     @State private var importing = false
+    @State private var showPrint = ProcessInfo.processInfo.arguments.contains("-demoPrint")
 
     var body: some View {
         NavigationStack {
@@ -89,12 +90,16 @@ struct RootView: View {
                             Label("集計", systemImage: "chart.bar.doc.horizontal")
                         }
                     }
+                    if !store.book.staff.isEmpty {
+                        Button { showPrint = true } label: { Label("印刷・PDF", systemImage: "printer") }
+                    }
                     if !store.book.isEmpty { EditToggle() }
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
                         .accessibilityLabel("設定")
                 }
             }
             .sheet(isPresented: $showSettings) { SettingsView() }
+            .sheet(isPresented: $showPrint) { PrintSheet(anchor: anchor) }
             .backupImporter(isPresented: $importing)
         }
         .overlay(alignment: .bottom) { UndoBar() }

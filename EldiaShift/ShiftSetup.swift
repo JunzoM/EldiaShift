@@ -222,3 +222,42 @@ enum StarterBook {
         return b
     }
 }
+
+// MARK: - データ管理（すべて消去・自動バックアップ）
+
+extension ShiftStore {
+    /// 自動バックアップの置き場所（「ファイル」アプリの「このiPad内」→「シフト表」→「自動バックアップ」から見られる）
+    nonisolated static var autoBackupFolder: URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return docs.appendingPathComponent("自動バックアップ", isDirectory: true)
+    }
+
+    /// 今の内容をファイルに残す（消す・読み込む前に呼ぶ）。新しい30件だけ残す
+    @discardableResult
+    func autoBackup(reason: String) throws -> URL? {
+        guard !book.isEmpty else { return nil }
+        let dir = Self.autoBackupFolder
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyyMMdd-HHmmss"
+        let url = dir.appendingPathComponent("shift-\(f.string(from: Date()))-\(reason).json")
+        try exportData().write(to: url, options: .atomic)
+        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+        for old in files.filter({ $0.pathExtension == "json" }).sorted(by: { $0.lastPathComponent > $1.lastPathComponent }).dropFirst(30) {
+            try? FileManager.default.removeItem(at: old)
+        }
+        return url
+    }
+
+    /// スタッフ・共通の時間・入力したシフトをすべて消す（部署と休みの種類は残す。PC版と同じ）
+    func resetAll() throws {
+        try autoBackup(reason: "消去前")
+        var kept = ShiftBook()
+        kept.departments = book.departments
+        kept.templates = book.templates.filter(\.isOff)
+        if kept.templates.isEmpty { kept.templates = BackupFile.defaultOffBlocks }
+        try replaceAll(with: kept)
+        clearLastChange()
+    }
+}
