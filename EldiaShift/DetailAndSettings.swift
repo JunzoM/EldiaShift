@@ -133,6 +133,7 @@ struct SettingsView: View {
     @State private var exportFile: ExportFile?
     @State private var exportError: String?
     @State private var confirmReset = false
+    @State private var tipsReset = false
 
     var body: some View {
         NavigationStack {
@@ -145,6 +146,14 @@ struct SettingsView: View {
 
                 Section {
                     NavigationLink { ManualView() } label: { Label("操作マニュアル", systemImage: "questionmark.circle") }
+                    Button {
+                        CoachTips.resetOnNextLaunch()
+                        tipsReset = true
+                    } label: { Label("操作のヒントをもう一度見る", systemImage: "lightbulb") }
+                } footer: {
+                    if tipsReset {
+                        Text("次にアプリを開いたときから、ボタンを初めて押したときのヒントがもう一度出ます。")
+                    }
                 }
 
                 Section("シフト表の中身") {
