@@ -161,7 +161,8 @@ struct ScheduleTests {
         // 10月：平日22日（うち 10/7 は手入力 9.5h、10/8 は有休）、日・土 9日 は休み
         #expect(s.workDays == 21)
         #expect(s.offDays == 10)
-        #expect(s.hours == 20 * 6 + 9.5)
+        // 実働：6h → 5.5h（休憩30分）、9.5h → 8.5h（休憩1時間）
+        #expect(s.hours == 20 * 5.5 + 8.5)
     }
 }
 
@@ -427,5 +428,40 @@ struct DayModeTests {
         #expect(GridMode.day.days(around: DayKey(2026, 10, 22)) == [DayKey(2026, 10, 22)])
         #expect(GridMode.day.step(DayKey(2026, 10, 31), by: 1) == DayKey(2026, 11, 1))
         #expect(GridMode.day.title(around: DayKey(2026, 10, 22)) == "10月22日（木）")
+    }
+}
+
+@Suite("時間帯別在籍人数・有休")
+struct HeadcountAndLeaveTests {
+    @Test("時間帯別の人数（日をまたぐ勤務を含む）")
+    func headcount() throws {
+        let (book, _) = try BackupFile.read(Data(legacyJSON.utf8))
+        let a = book.staff.filter { $0.id == "1" }
+        // 10/5（月）：見本A は 9:00〜15:00
+        #expect(Headcount.working(a, on: DayKey(2026, 10, 5), hour: 9, in: book) == 1)
+        #expect(Headcount.working(a, on: DayKey(2026, 10, 5), hour: 15, in: book) == 0)
+        #expect(Headcount.working(a, on: DayKey(2026, 10, 4), hour: 9, in: book) == 0)   // 日曜は休み
+    }
+
+    @Test("有休の付与日数（PC版と同じ）")
+    func grant() {
+        let join = DayKey(2024, 4, 1)
+        #expect(PaidLeave.grant(joinDate: join, weeklyDays: 5, weeklyHours: 40, today: DayKey(2024, 9, 30)) == nil)
+        let g1 = PaidLeave.grant(joinDate: join, weeklyDays: 5, weeklyHours: 40, today: DayKey(2024, 10, 1))!
+        #expect(g1.current == 10 && g1.previous == 0 && g1.since == DayKey(2024, 10, 1))
+        let g2 = PaidLeave.grant(joinDate: join, weeklyDays: 5, weeklyHours: 40, today: DayKey(2026, 10, 22))!
+        #expect(g2.current == 12 && g2.previous == 11 && g2.total == 23 && g2.since == DayKey(2026, 10, 1))
+        let p = PaidLeave.grant(joinDate: join, weeklyDays: 3, weeklyHours: 18, today: DayKey(2026, 10, 22))!
+        #expect(p.isProportional && p.current == 6 && p.previous == 6)
+    }
+
+    @Test("有休の残り：今期の付与日から表示月の末日までの使用を引く")
+    func balance() throws {
+        let (book, _) = try BackupFile.read(Data(legacyJSON.utf8))
+        let a = book.staff.first { $0.id == "1" }!   // 入社 2024-04-01、週5日×6時間 → 比例付与なし
+        let b = PaidLeave.balance(of: a, month: MonthKey(2026, 10), in: book, today: DayKey(2026, 10, 22))!
+        // 10/8 に有休を1日使っている（今期の付与日 2026-10-01 以降）
+        #expect(b.used == 1 && b.usedThisMonth == 1)
+        #expect(b.remaining == b.grant.total - 1)
     }
 }

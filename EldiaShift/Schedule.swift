@@ -11,11 +11,14 @@ struct ResolvedShift: Hashable, Sendable {
     var isPeriod: Bool = false
     var patternLabel: String?
 
-    /// 勤務時間（時間）。休み・時刻なしは nil
+    /// 拘束時間（時間）。休み・時刻なしは nil
     var hours: Double? {
         guard !isOff, let a = ClockTime.parse(inTime), let b = ClockTime.parse(outTime) else { return nil }
         return ClockTime.hours(from: a, to: b)
     }
+
+    /// 実働時間（休憩を引いた時間。PC版と同じ）
+    var netHours: Double? { hours.map(Breaks.net) }
 }
 
 /// どの日に誰が何の勤務かを決める（旧シフト表と同じ決め方）
@@ -87,11 +90,19 @@ enum Schedule {
     }
 }
 
-// MARK: - 月の集計（勤務日数・時間）
+// MARK: - 休憩（PC版と同じ：4.5時間以上は30分、6.5時間以上は1時間）
+
+enum Breaks {
+    static func breakHours(_ gross: Double) -> Double { gross >= 6.5 ? 1 : gross >= 4.5 ? 0.5 : 0 }
+    static func net(_ gross: Double) -> Double { gross - breakHours(gross) }
+}
+
+// MARK: - 月の集計（勤務日数・実働時間）
 
 struct MonthSummary: Hashable, Sendable {
     var workDays = 0
     var offDays = 0
+    /// 実働時間（休憩を引いた時間）
     var hours: Double = 0
 
     static func of(_ member: StaffMember, month: MonthKey, in book: ShiftBook) -> MonthSummary {
@@ -105,11 +116,27 @@ struct MonthSummary: Hashable, Sendable {
             guard let r = Schedule.resolve(member, on: day, in: book) else { continue }
             if r.isOff {
                 s.offDays += 1
-            } else {
+            } else if let h = r.netHours {
+                // 時刻が入っている日だけ数える（PC版と同じ）
                 s.workDays += 1
-                s.hours += r.hours ?? 0
+                s.hours += h
             }
         }
         return s
+    }
+}
+
+// MARK: - 時間帯別の人数（PC版と同じ数え方）
+
+enum Headcount {
+    /// その日の h 時台（h:00〜h+1:00）に勤務している人数。
+    /// 日をまたぐ勤務は、その日の出勤以降と、その日の退勤まで（＝前夜からの続きに見える部分）の両方を数える（PC版と同じ）
+    static func working(_ members: [StaffMember], on day: DayKey, hour h: Int, in book: ShiftBook) -> Int {
+        members.filter { m in
+            guard let r = Schedule.resolve(m, on: day, in: book), !r.isOff,
+                  let s = ClockTime.parse(r.inTime), let e = ClockTime.parse(r.outTime) else { return false }
+            let hs = h * 60, he = (h + 1) * 60
+            return e > s ? (s < he && e > hs) : (s < he || e > hs)
+        }.count
     }
 }

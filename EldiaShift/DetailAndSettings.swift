@@ -25,7 +25,9 @@ struct CellDetailSheet: View {
                             LabeledContent("出勤", value: r.inTime.isEmpty ? "—" : r.inTime)
                             LabeledContent("退勤", value: r.outTime.isEmpty ? "—" : r.outTime)
                             if let h = r.hours {
-                                LabeledContent("勤務時間", value: String(format: "%.1f 時間", h))
+                                LabeledContent("拘束時間", value: String(format: "%.1f 時間", h))
+                                LabeledContent("実働（休憩 \(Breaks.breakHours(h) == 1 ? "1時間" : Breaks.breakHours(h) == 0.5 ? "30分" : "なし")）",
+                                               value: String(format: "%.1f 時間", Breaks.net(h)))
                             }
                             if let block { LabeledContent("ひな形", value: block.label) }
                         }

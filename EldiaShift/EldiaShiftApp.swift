@@ -81,6 +81,13 @@ struct RootView: View {
                     }
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    if !store.book.staff.isEmpty {
+                        NavigationLink {
+                            SummaryView(month: MonthKey(anchor))
+                        } label: {
+                            Label("集計", systemImage: "chart.bar.doc.horizontal")
+                        }
+                    }
                     if !store.book.isEmpty { EditToggle() }
                     Button { showSettings = true } label: { Image(systemName: "gearshape") }
                         .accessibilityLabel("設定")

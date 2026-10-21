@@ -1,0 +1,127 @@
+import SwiftUI
+
+/// 月の集計（PC版の「集計」と同じ：部門ごとに 出勤日数・実働時間・有休の残り・個人の時間）
+struct SummaryView: View {
+    @State var month: MonthKey
+
+    @Environment(ShiftStore.self) private var store
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    var body: some View {
+        let book = store.book
+        let groups = book.staffByDepartment(visibleIn: month)
+        List {
+            ForEach(groups) { g in
+                Section {
+                    if sizeClass != .compact { header }
+                    ForEach(g.members) { m in row(m, book: book) }
+                } header: {
+                    HStack {
+                        Text(g.department.name).foregroundStyle(PaletteColor.fg(g.department.colorIndex))
+                        Spacer()
+                        let total = g.members.reduce(0.0) { $0 + MonthSummary.of($1, month: month, in: book).hours }
+                        Text("\(g.members.count)人・合計 \(String(format: "%.1f", total))時間").monospacedDigit()
+                    }
+                }
+            }
+            Section {
+                Text("時間は休憩を引いた実働です（4.5時間以上は30分、6.5時間以上は1時間）。有休は入社日と週間パターンから付与日数を出し、今期の付与日から表示している月の末日までに「有休」を入れた日数を引いています。")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("集計 \(month.description)")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { month = month.adding(months: -1) } label: { Image(systemName: "chevron.left") }
+                    .accessibilityLabel("前の月")
+                Button { month = month.adding(months: 1) } label: { Image(systemName: "chevron.right") }
+                    .accessibilityLabel("次の月")
+            }
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            Text("スタッフ").frame(maxWidth: .infinity, alignment: .leading)
+            Text("出勤日数").frame(width: 72)
+            Text("総時間").frame(width: 84)
+            Text("有休残").frame(width: 130)
+            Text("個人の時間").frame(width: 200, alignment: .leading)
+        }
+        .font(.caption).foregroundStyle(.secondary)
+    }
+
+    @ViewBuilder
+    private func row(_ m: StaffMember, book: ShiftBook) -> some View {
+        let s = MonthSummary.of(m, month: month, in: book)
+        let leave = PaidLeave.balance(of: m, month: month, in: book)
+        if sizeClass == .compact {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("\(m.number)").font(.caption2).foregroundStyle(.secondary)
+                    Text(m.name).font(.headline)
+                    Spacer()
+                    Text("\(s.workDays)日").bold()
+                    Text(String(format: "%.1f時間", s.hours))
+                }
+                .monospacedDigit()
+                leaveView(m, leave, compact: true)
+                if !m.timeBlocks.isEmpty { blocks(m) }
+            }
+            .padding(.vertical, 2)
+        } else {
+            HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    Text("\(m.number)").font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+                    Text(m.name).font(.body.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Text("\(s.workDays)日").font(.body.weight(.bold)).monospacedDigit().frame(width: 72)
+                Text(String(format: "%.1f時間", s.hours)).font(.body.weight(.bold)).monospacedDigit().frame(width: 84)
+                leaveView(m, leave, compact: false).frame(width: 130)
+                blocks(m).frame(width: 200, alignment: .leading)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func leaveView(_ m: StaffMember, _ b: PaidLeave.Balance?, compact: Bool) -> some View {
+        if m.joinDate.isEmpty {
+            Text(compact ? "有休：入社日が未設定" : "—").font(.caption).foregroundStyle(.tertiary)
+        } else if let b {
+            let detail = "付与\(b.grant.total)日 / 使用済\(b.used)日"
+                + (b.usedThisMonth > 0 ? "・今月\(b.usedThisMonth)日" : "")
+                + (b.grant.isProportional ? "・比例付与（週\(b.grant.weeklyDays ?? 0)日）" : "")
+            if compact {
+                Text("有休 残\(b.remaining)日（\(detail)）").font(.caption).foregroundStyle(.teal)
+            } else {
+                VStack(spacing: 1) {
+                    Text("残\(b.remaining)日").font(.subheadline.weight(.bold)).foregroundStyle(.teal)
+                    Text(detail).font(.system(size: 9.5)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                }
+                .monospacedDigit()
+            }
+        } else {
+            Text(compact ? "有休：未付与（入社6か月未満）" : "未付与\n（入社6か月未満）")
+                .font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
+        }
+    }
+
+    private func blocks(_ m: StaffMember) -> some View {
+        HStack(spacing: 4) {
+            if m.timeBlocks.isEmpty {
+                Text("—").font(.caption).foregroundStyle(.tertiary)
+            }
+            ForEach(m.timeBlocks) { b in
+                Text(b.isOff ? b.short : "\(b.short) \(b.inTime)-\(b.outTime)")
+                    .font(.system(size: 10, weight: .bold)).monospacedDigit()
+                    .foregroundStyle(PaletteColor.fg(b.colorIndex))
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(PaletteColor.bg(b.colorIndex), in: RoundedRectangle(cornerRadius: 4))
+            }
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
+    }
+}
