@@ -419,3 +419,13 @@ struct GridModeTests {
         #expect(GridMode.month.step(DayKey(2026, 12, 31), by: 1) == DayKey(2027, 1, 1))
     }
 }
+
+@Suite("日の表示")
+struct DayModeTests {
+    @Test("日は1日ずつ進む")
+    func dayMode() {
+        #expect(GridMode.day.days(around: DayKey(2026, 10, 22)) == [DayKey(2026, 10, 22)])
+        #expect(GridMode.day.step(DayKey(2026, 10, 31), by: 1) == DayKey(2026, 11, 1))
+        #expect(GridMode.day.title(around: DayKey(2026, 10, 22)) == "10月22日（木）")
+    }
+}

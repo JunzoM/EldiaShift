@@ -60,8 +60,10 @@ jobs:
           done
           shoot "$PAD" ipad-month
           shoot "$PAD" ipad-week -demoWeek
+          shoot "$PAD" ipad-day -demoDay
           shoot "$PHONE" iphone-month
           shoot "$PHONE" iphone-week -demoWeek
+          shoot "$PHONE" iphone-day -demoDay
           mkdir -p shots/crash
           find ~/Library/Logs/DiagnosticReports -name 'EldiaShift*' -newer dd -exec cp {} shots/crash/ \; 2>/dev/null || true
       - name: Push to screenshots branch

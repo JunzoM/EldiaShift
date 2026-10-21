@@ -5,11 +5,12 @@ import SwiftUI
 struct MonthGridView: View {
     let mode: GridMode
     let days: [DayKey]
+    /// 日付を押したとき（その日のタイムラインへ）
+    var onOpenDay: (DayKey) -> Void = { _ in }
 
     @Environment(ShiftStore.self) private var store
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var selected: Selection?
-    @State private var timelineDay: DayKey?
 
     private struct Selection: Identifiable {
         let member: StaffMember
@@ -39,6 +40,8 @@ struct MonthGridView: View {
 
         // 上：日付の行（縦には動かない。横は下の表と同じだけずらす）
         // 下：縦に動く。左に名前の列、右に横に動く表
+        // 画面の幅は外から受け取る（表の中身の幅を測ると、広がった幅をまた使ってしまい、名前の列が画面の外に出る）
+        GeometryReader { geo in
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 Text(isWeek ? "週" : "\(days[0].month)月").font(.subheadline.weight(.bold))
@@ -49,7 +52,7 @@ struct MonthGridView: View {
                         ForEach(days, id: \.self) { d in
                             dayHeader(d, today: today)
                                 .contentShape(Rectangle())
-                                .onTapGesture { timelineDay = d }
+                                .onTapGesture { onOpenDay(d) }
                                 .accessibilityAddTraits(.isButton)
                                 .accessibilityHint("その日のタイムラインを開きます")
                         }
@@ -116,11 +119,10 @@ struct MonthGridView: View {
                 }
             }
         }
-        .background(GeometryReader { g in
-            Color.clear
-                .onAppear { availableWidth = g.size.width }
-                .onChange(of: g.size.width) { availableWidth = g.size.width }
-        })
+        .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+        .onAppear { availableWidth = geo.size.width }
+        .onChange(of: geo.size.width) { availableWidth = geo.size.width }
+        }
         .sheet(item: $selected) { s in
             if store.editing {
                 CellEditorSheet(member: s.member, day: s.day)
@@ -130,7 +132,6 @@ struct MonthGridView: View {
                     .presentationDetents([.medium])
             }
         }
-        .navigationDestination(item: $timelineDay) { d in DayTimelineView(day: d) }
     }
 
     private func scrollToToday(_ proxy: ScrollViewProxy, days: [DayKey], today: DayKey) {

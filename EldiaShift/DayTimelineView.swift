@@ -3,7 +3,7 @@ import SwiftUI
 /// 日ごとのタイムライン（朝5:00〜翌10:00）。編集中はバーをドラッグして移動、両端で長さを変える（30分刻み）
 /// 横幅は画面に収める（横スクロールにするとドラッグとぶつかるため）。空いているところを押すと8時間のシフトを作る
 struct DayTimelineView: View {
-    @State var day: DayKey
+    let day: DayKey
 
     @Environment(ShiftStore.self) private var store
     @State private var drag: DragState?
@@ -57,17 +57,6 @@ struct DayTimelineView: View {
                     }
                 }
                 .padding(.trailing, 16)
-            }
-        }
-        .navigationTitle("\(day.month)月\(day.day)日（\(["日", "月", "火", "水", "木", "金", "土"][day.weekday])）")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button { day = day.adding(days: -1) } label: { Image(systemName: "chevron.left") }
-                    .accessibilityLabel("前の日")
-                Button { day = day.adding(days: 1) } label: { Image(systemName: "chevron.right") }
-                    .accessibilityLabel("次の日")
-                EditToggle()
             }
         }
         .sheet(item: $editing) { e in

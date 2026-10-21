@@ -11,8 +11,9 @@ struct EldiaShiftApp: App {
         let s = ShiftStore(db: d)
         if DemoMode.enabled {
             try? s.replaceAll(with: DemoMode.book())
-            let week = ProcessInfo.processInfo.arguments.contains("-demoWeek")
-            UserDefaults.standard.set(week ? GridMode.week.rawValue : GridMode.month.rawValue, forKey: "viewMode")
+            let args = ProcessInfo.processInfo.arguments
+            let m: GridMode = args.contains("-demoWeek") ? .week : args.contains("-demoDay") ? .day : .month
+            UserDefaults.standard.set(m.rawValue, forKey: "viewMode")
         }
         _db = State(initialValue: d)
         _store = State(initialValue: s)
@@ -47,7 +48,14 @@ struct RootView: View {
                 } else if store.book.staff.isEmpty {
                     NoStaffView()
                 } else {
-                    MonthGridView(mode: mode, days: mode.days(around: anchor))
+                    if mode == .day {
+                        DayTimelineView(day: anchor)
+                    } else {
+                        MonthGridView(mode: mode, days: mode.days(around: anchor)) { d in
+                            anchor = d
+                            mode = .day
+                        }
+                    }
                 }
             }
             .navigationTitle(mode.title(around: anchor))
@@ -55,20 +63,21 @@ struct RootView: View {
             .toolbar {
                 ToolbarItemGroup(placement: .topBarLeading) {
                     Button { anchor = mode.step(anchor, by: -1) } label: { Image(systemName: "chevron.left") }
-                        .accessibilityLabel(mode == .month ? "前の月" : "前の週")
-                    Button(mode == .month ? "今月" : "今週") { anchor = .today }
+                        .accessibilityLabel(mode.previousLabel)
+                    Button(mode.todayLabel) { anchor = .today }
                         .disabled(mode.days(around: anchor).contains(.today))
                     Button { anchor = mode.step(anchor, by: 1) } label: { Image(systemName: "chevron.right") }
-                        .accessibilityLabel(mode == .month ? "次の月" : "次の週")
+                        .accessibilityLabel(mode.nextLabel)
                 }
                 ToolbarItem(placement: .principal) {
                     if !store.book.staff.isEmpty {
                         Picker("表示", selection: $mode) {
                             Text("月").tag(GridMode.month)
                             Text("週").tag(GridMode.week)
+                            Text("日").tag(GridMode.day)
                         }
                         .pickerStyle(.segmented)
-                        .frame(width: 120)
+                        .frame(width: 168)
                     }
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
@@ -90,7 +99,11 @@ struct RootView: View {
 
 /// 表の見せ方（月・週）
 enum GridMode: String {
-    case month, week
+    case month, week, day
+
+    var todayLabel: String { self == .month ? "今月" : self == .week ? "今週" : "今日" }
+    var previousLabel: String { self == .month ? "前の月" : self == .week ? "前の週" : "前の日" }
+    var nextLabel: String { self == .month ? "次の月" : self == .week ? "次の週" : "次の日" }
 
     /// その日を含む月、またはその日を含む週（月曜はじまり）の日付
     func days(around d: DayKey) -> [DayKey] {
@@ -99,6 +112,7 @@ enum GridMode: String {
         case .week:
             let monday = d.adding(days: -((d.weekday + 6) % 7))
             return (0..<7).map { monday.adding(days: $0) }
+        case .day: return [d]
         }
     }
 
@@ -106,6 +120,7 @@ enum GridMode: String {
         switch self {
         case .month: return DayKey(MonthKey(d).adding(months: n).year, MonthKey(d).adding(months: n).month, 1)
         case .week: return d.adding(days: 7 * n)
+        case .day: return d.adding(days: n)
         }
     }
 
@@ -116,6 +131,8 @@ enum GridMode: String {
             let w = days(around: d)
             let a = w.first!, b = w.last!
             return "\(a.month)/\(a.day) 〜 \(b.month)/\(b.day)"
+        case .day:
+            return "\(d.month)月\(d.day)日（\(["日", "月", "火", "水", "木", "金", "土"][d.weekday])）"
         }
     }
 }
