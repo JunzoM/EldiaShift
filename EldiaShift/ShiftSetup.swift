@@ -58,6 +58,29 @@ extension ShiftStore {
         reload()
     }
 
+    /// 部門の中で1つ上・下へ（番号は振り直す）
+    func moveStaff(_ s: StaffMember, by delta: Int) throws {
+        var list = book.staff.filter { $0.departmentID == s.departmentID }.sorted(by: StaffMember.order)
+        guard let i = list.firstIndex(where: { $0.id == s.id }), list.indices.contains(i + delta) else { return }
+        list.swapAt(i, i + delta)
+        try reorderStaff(list)
+    }
+
+    /// 部署の一括移動：移動元の全員を、移動先の末尾に（並び順を保って）付け替える（PC版と同じ）
+    func moveAllStaff(from: String, to: String) throws {
+        guard from != to else { return }
+        let last = book.staff.filter { $0.departmentID == to }.map(\.number).max() ?? 0
+        let moving = book.staff.filter { $0.departmentID == from }.sorted(by: StaffMember.order)
+        for (i, original) in moving.enumerated() {
+            var m = original
+            m.departmentID = to
+            m.number = last + i + 1
+            try ShiftRecords.upsert(m, in: db.viewContext)
+        }
+        try db.save()
+        reload()
+    }
+
     /// 部門を消す（スタッフがいる部門は消さない）
     func deleteDepartment(_ d: Department) throws {
         guard !book.staff.contains(where: { $0.departmentID == d.id }) else { throw SetupError.departmentInUse }
@@ -78,6 +101,13 @@ extension ShiftStore {
         let req = NSFetchRequest<NSManagedObject>(entityName: ShiftModel.Entity.cell)
         req.predicate = NSPredicate(format: "staffKey == %@", s.id)
         try db.viewContext.fetch(req).forEach(db.viewContext.delete)
+        // 同じ部門の番号を詰める（PC版と同じ）
+        let rest = book.staff.filter { $0.departmentID == s.departmentID && $0.id != s.id }.sorted(by: StaffMember.order)
+        for (i, original) in rest.enumerated() where original.number != i + 1 {
+            var m = original
+            m.number = i + 1
+            try ShiftRecords.upsert(m, in: db.viewContext)
+        }
         try db.save()
         if lastChange?.key.staffID == s.id { clearLastChange() }
         reload()

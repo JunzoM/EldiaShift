@@ -465,3 +465,70 @@ struct HeadcountAndLeaveTests {
         #expect(b.remaining == b.grant.total - 1)
     }
 }
+
+@Suite("スタッフの設定")
+@MainActor
+struct StaffSettingTests {
+    private func store(with names: [String]) throws -> ShiftStore {
+        let store = ShiftStore(db: ShiftDatabase(inMemory: true))
+        try store.startNew()
+        for n in names {
+            var m = store.newStaff(in: store.book.departments[0].id)
+            m.name = n
+            try store.save(m)
+        }
+        return store
+    }
+
+    @Test("削除すると同じ部署の番号が繰り上がる")
+    func renumberOnDelete() throws {
+        let s = try store(with: ["A", "B", "C"])
+        let b = s.book.staff.first { $0.name == "B" }!
+        try s.deleteStaff(b)
+        #expect(s.book.staff.sorted(by: StaffMember.order).map { "\($0.number)\($0.name)" } == ["1A", "2C"])
+    }
+
+    @Test("↑↓で入れ替わる")
+    func moveUpDown() throws {
+        let s = try store(with: ["A", "B", "C"])
+        try s.moveStaff(s.book.staff.first { $0.name == "C" }!, by: -1)
+        #expect(s.book.staff.sorted(by: StaffMember.order).map(\.name) == ["A", "C", "B"])
+        try s.moveStaff(s.book.staff.first { $0.name == "A" }!, by: -1)   // 先頭はそのまま
+        #expect(s.book.staff.sorted(by: StaffMember.order).map(\.name) == ["A", "C", "B"])
+    }
+
+    @Test("部署の一括移動：移動先の末尾に並び順を保って付く")
+    func bulkMove() throws {
+        let s = try store(with: ["A", "B"])
+        let kitchen = s.book.departments[1].id
+        var k = s.newStaff(in: kitchen)
+        k.name = "K"
+        try s.save(k)
+        try s.moveAllStaff(from: s.book.departments[0].id, to: kitchen)
+        let list = s.book.staff.filter { $0.departmentID == kitchen }.sorted(by: StaffMember.order)
+        #expect(list.map { "\($0.number)\($0.name)" } == ["1K", "2A", "3B"])
+    }
+
+    @Test("個人の時間・複数の週間パターン（適用開始日）・期間限定パターンが保存され、シフトに出る")
+    func patterns() throws {
+        let s = try store(with: ["A"])
+        var m = s.book.staff[0]
+        let mine = TimeBlock(id: "mine", label: "A_昼", short: "昼", inMinutes: 600, outMinutes: 960, colorIndex: 6)
+        let early = s.book.templates.first { $0.label == "早番" }!
+        m.timeBlocks = [mine]
+        m.patterns = [
+            WeekPattern(id: "p1", label: "通常", colorIndex: 0, days: Array(repeating: early.id, count: 7), activeFrom: nil),
+            WeekPattern(id: "p2", label: "新", colorIndex: 1, days: Array(repeating: "mine", count: 7), activeFrom: "2026-11-01")
+        ]
+        m.activePatternID = "p1"
+        m.periodPatterns = [PeriodPattern(id: "pp", label: "年末", colorIndex: 3, startDate: "2026-12-30", endDate: "2026-12-31",
+                                          days: ["2026-12-30": "off1"])]
+        try s.save(m)
+        let saved = s.book.staff[0]
+        #expect(saved.timeBlocks == [mine] && saved.patterns.count == 2 && saved.periodPatterns.count == 1)
+        #expect(Schedule.resolve(saved, on: DayKey(2026, 10, 31), in: s.book)?.blockID == early.id)
+        #expect(Schedule.resolve(saved, on: DayKey(2026, 11, 1), in: s.book)?.blockID == "mine")
+        #expect(Schedule.resolve(saved, on: DayKey(2026, 12, 30), in: s.book)?.isOff == true)
+        #expect(Schedule.resolve(saved, on: DayKey(2026, 12, 31), in: s.book) == nil)   // 期間内で未設定は空き
+    }
+}
