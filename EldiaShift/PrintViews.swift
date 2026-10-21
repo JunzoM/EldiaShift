@@ -192,7 +192,8 @@ private struct PrintTable: View {
     }
 
     private func row(_ m: StaffMember) -> some View {
-        let total = MonthSummary.of(m, days: days, in: book).hours
+        // 計：月の表は月全体の実働（前半・後半どちらの表でも同じ。PC版と同じ）、週の表はその週の実働
+        let total = MonthSummary.of(m, days: days.count <= 7 ? days : MonthKey(days[0]).days, in: book).hours
         let fs: CGFloat = landscape ? 7 : 7.5
         return HStack(spacing: 0) {
             Text("\(m.number)").font(.system(size: 7)).foregroundStyle(Color(white: 0.33))
