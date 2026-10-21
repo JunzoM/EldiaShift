@@ -61,6 +61,7 @@ jobs:
           shoot "$PAD" ipad-month
           shoot "$PAD" ipad-week -demoWeek
           shoot "$PAD" ipad-day -demoDay
+          shoot "$PAD" ipad-day-edit -demoDay -demoEdit
           shoot "$PHONE" iphone-month
           shoot "$PHONE" iphone-week -demoWeek
           shoot "$PHONE" iphone-day -demoDay

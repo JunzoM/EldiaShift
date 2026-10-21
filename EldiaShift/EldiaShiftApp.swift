@@ -14,6 +14,7 @@ struct EldiaShiftApp: App {
             let args = ProcessInfo.processInfo.arguments
             let m: GridMode = args.contains("-demoWeek") ? .week : args.contains("-demoDay") ? .day : .month
             UserDefaults.standard.set(m.rawValue, forKey: "viewMode")
+            s.editing = args.contains("-demoEdit")
         }
         _db = State(initialValue: d)
         _store = State(initialValue: s)
