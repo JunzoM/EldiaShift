@@ -517,7 +517,7 @@ struct ShiftCellView: View {
                             if let block {
                                 Text(block.label).foregroundStyle(PaletteColor.fg(block.colorIndex)).fontWeight(.bold)
                             }
-                            if let h = r.netHours { Text(String(format: "%.1fh", h)).foregroundStyle(.secondary) }
+                            if let h = r.netHours(book.breakRules) { Text(String(format: "%.1fh", h)).foregroundStyle(.secondary) }
                         }
                         .font(.caption2)
                     }

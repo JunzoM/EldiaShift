@@ -572,3 +572,73 @@ struct PrintAndDataTests {
         #expect(after == min(30, before + 1))
     }
 }
+
+@Suite("休憩の決まり")
+@MainActor
+struct BreakRuleTests {
+    @Test("PC版と同じ決まり（以上）と労働基準法（超える）の違い")
+    func rules() {
+        let pc = BreakRules.pcDefault
+        #expect(pc.breakMinutes(forGross: 269) == 0)
+        #expect(pc.breakMinutes(forGross: 270) == 30)
+        #expect(pc.breakMinutes(forGross: 390) == 60)
+        let law = BreakRules.laborStandard
+        #expect(law.breakMinutes(forGross: 360) == 0)      // ちょうど6時間は引かない
+        #expect(law.breakMinutes(forGross: 361) == 45)
+        #expect(law.breakMinutes(forGross: 480) == 45)
+        #expect(law.breakMinutes(forGross: 481) == 60)
+        #expect(BreakRules.none.netHours(gross: 9) == 9)
+        #expect(pc.netHours(gross: 9, override: 120) == 7)
+        #expect(pc.summary == "4時間30分以上は30分、6時間30分以上は60分")
+        #expect(law.summary == "6時間を超えたら45分、8時間を超えたら60分")
+    }
+
+    @Test("決まりを変えると集計が変わり、保存・バックアップにも残る")
+    func changeAndPersist() throws {
+        let (book, _) = try BackupFile.read(Data(legacyJSON.utf8))
+        let db = ShiftDatabase(inMemory: true)
+        let store = ShiftStore(db: db)
+        try store.replaceAll(with: book)
+        let a = store.book.staff.first { $0.id == "1" }!
+        #expect(MonthSummary.of(a, month: MonthKey(2026, 10), in: store.book).hours == 20 * 5.5 + 8.5)
+
+        try store.setBreakRules(.none)
+        #expect(MonthSummary.of(a, month: MonthKey(2026, 10), in: store.book).hours == 20 * 6 + 9.5)
+        #expect(try ShiftRecords.load(db.viewContext).breakRules == .none)
+
+        let (again, _) = try BackupFile.read(try store.exportData())
+        #expect(again.breakRules == .none)
+        // PC版のファイル（決まりなし）は PC版と同じ決まりになる
+        #expect(book.breakRules == .pcDefault)
+    }
+
+    @Test("ひな形ごとの休憩：そのひな形のまま入れた日だけ使い、時刻を変えた日は決まりに従う")
+    func templateOverride() throws {
+        let (book0, _) = try BackupFile.read(Data(legacyJSON.utf8))
+        var book = book0
+        let i = book.templates.firstIndex { $0.id == "g02" }!   // 夜勤 22:00〜10:00（12時間）
+        book.templates[i].breakMinutes = 120
+        let store = ShiftStore(db: ShiftDatabase(inMemory: true))
+        try store.replaceAll(with: book)
+        #expect(store.book.templates.first { $0.id == "g02" }?.breakMinutes == 120)   // 保存される
+
+        let a = store.book.staff.first { $0.id == "1" }!
+        let day = DayKey(2026, 10, 20)
+        try store.setCell(CellKey(staffID: a.id, day: day), to: CellEntry(inTime: "22:00", outTime: "10:00", blockID: "g02", isOff: false))
+        #expect(Schedule.resolve(a, on: day, in: store.book)?.netHours(store.book.breakRules) == 10)
+        try store.setCell(CellKey(staffID: a.id, day: day), to: CellEntry(inTime: "22:00", outTime: "09:00", blockID: "g02", isOff: false))
+        #expect(Schedule.resolve(a, on: day, in: store.book)?.netHours(store.book.breakRules) == 10)   // 11h − 60分
+
+        let (again, _) = try BackupFile.read(try store.exportData())
+        #expect(again.templates.first { $0.id == "g02" }?.breakMinutes == 120)
+    }
+
+    @Test("すべて消去しても休憩の決まりは残る")
+    func keepOnReset() throws {
+        let store = ShiftStore(db: ShiftDatabase(inMemory: true))
+        try store.startNew()
+        try store.setBreakRules(.laborStandard)
+        try store.resetAll()
+        #expect(store.book.breakRules == .laborStandard)
+    }
+}

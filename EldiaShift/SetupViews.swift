@@ -228,9 +228,12 @@ struct TemplateEditView: View {
                                 Text(ClockTime.format(m) + (m <= (template.inMinutes ?? 0) ? "（翌日）" : "")).tag(m)
                             }
                         }
-                        LabeledContent("勤務時間", value: String(format: "%.1f 時間",
+                        LabeledContent("拘束時間", value: String(format: "%.1f 時間",
                                                               ClockTime.hours(from: template.inMinutes ?? 0, to: template.outMinutes ?? 0)))
                     }
+                }
+                if !template.isOff {
+                    TemplateBreakSection(block: $template, rules: store.book.breakRules)
                 }
                 Section("色") { ColorChoice(index: $template.colorIndex) }
                 if !isNew {

@@ -72,6 +72,15 @@ final class ShiftStore {
 
     func clearLastChange() { lastChange = nil }
 
+    /// 休憩の決まりを変える
+    func setBreakRules(_ rules: BreakRules) throws {
+        var b = book
+        b.breakRules = rules
+        try ShiftRecords.saveSettings(b, team: try ShiftRecords.currentTeam(db.viewContext))
+        try db.save()
+        book.breakRules = rules
+    }
+
     func exportData() throws -> Data {
         try BackupFile.write(book)
     }
@@ -90,6 +99,16 @@ enum ShiftRecords {
     static func load(_ ctx: NSManagedObjectContext) throws -> ShiftBook {
         var book = ShiftBook()
 
+        let teams = try ctx.fetch({ () -> NSFetchRequest<NSManagedObject> in
+            let r = NSFetchRequest<NSManagedObject>(entityName: ShiftModel.Entity.team)
+            r.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: true)]
+            return r
+        }())
+        if let data = teams.first?.value(forKey: "settings") as? Data,
+           let settings = try? JSONDecoder().decode(TeamSettings.self, from: data) {
+            book.breakRules = settings.breakRules
+        }
+
         book.departments = try newestByKey(fetch(ShiftModel.Entity.department, ctx), key: "key", ctx: ctx).map { r in
             Department(id: r.str("key"), name: r.str("name"), colorIndex: Palette.index(r.int("colorIndex")),
                        sortOrder: r.int("sortOrder"))
@@ -99,9 +118,10 @@ enum ShiftRecords {
             .sorted { $0.int("sortOrder") < $1.int("sortOrder") }
             .map { r in
                 let i = r.int("inMinutes"), o = r.int("outMinutes")
+                let br = (r.value(forKey: "breakMinutes") as? NSNumber)?.intValue ?? -1
                 return TimeBlock(id: r.str("key"), label: r.str("label"), short: r.str("short"),
                                  inMinutes: i < 0 ? nil : i, outMinutes: o < 0 ? nil : o,
-                                 colorIndex: Palette.index(r.int("colorIndex")))
+                                 colorIndex: Palette.index(r.int("colorIndex")), breakMinutes: br < 0 ? nil : br)
             }
 
         let decoder = JSONDecoder()
@@ -127,6 +147,7 @@ enum ShiftRecords {
 
     static func replaceAll(with book: ShiftBook, in ctx: NSManagedObjectContext) throws {
         let team = try currentTeam(ctx)
+        try saveSettings(book, team: team)
         for name in [ShiftModel.Entity.department, ShiftModel.Entity.template, ShiftModel.Entity.staff, ShiftModel.Entity.cell] {
             for r in try fetch(name, ctx) { ctx.delete(r) }
         }
@@ -148,6 +169,7 @@ enum ShiftRecords {
             r.setValue(Int32(t.outMinutes ?? -1), forKey: "outMinutes")
             r.setValue(Int16(t.colorIndex), forKey: "colorIndex")
             r.setValue(Int32(i), forKey: "sortOrder")
+            r.setValue(Int32(t.breakMinutes ?? -1), forKey: "breakMinutes")
         }
         let encoder = JSONEncoder()
         for s in book.staff {
@@ -197,6 +219,11 @@ enum ShiftRecords {
         r.setValue(entry.blockID ?? "", forKey: "blockKey")
         r.setValue(entry.isOff, forKey: "isOff")
         r.setValue(Date(), forKey: "updatedAt")
+    }
+
+    /// チーム全体の設定を保存
+    static func saveSettings(_ book: ShiftBook, team: NSManagedObject) throws {
+        team.setValue(try JSONEncoder().encode(TeamSettings(breakRules: book.breakRules)), forKey: "settings")
     }
 
     /// このアプリのチーム（無ければ作る。複数あれば一番古いもの）
@@ -249,4 +276,9 @@ enum ShiftRecords {
 private extension NSManagedObject {
     func str(_ key: String) -> String { value(forKey: key) as? String ?? "" }
     func int(_ key: String) -> Int { (value(forKey: key) as? NSNumber)?.intValue ?? 0 }
+}
+
+/// チーム全体の設定（保存用）
+struct TeamSettings: Codable {
+    var breakRules: BreakRules
 }
