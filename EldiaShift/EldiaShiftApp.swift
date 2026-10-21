@@ -43,7 +43,16 @@ struct RootView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if let error = db.loadError ?? store.lastError {
+                if DemoMode.printPage, let spec = PrintPlanner.pages(format: DemoMode.printLandscape ? .monthLandscape : .monthCombined,
+                                                                    half: .first, departments: store.book.departments,
+                                                                    anchor: .today).first {
+                    // 画面確認用：印刷する1枚をそのまま表示
+                    GeometryReader { g in
+                        let v = PrintPageView(spec: spec, book: store.book, title: "見本ホテル")
+                        let k = min(g.size.width / v.size.width, g.size.height / v.size.height)
+                        v.scaleEffect(k, anchor: .topLeading).frame(width: v.size.width * k, height: v.size.height * k, alignment: .topLeading)
+                    }
+                } else if let error = db.loadError ?? store.lastError {
                     ContentUnavailableView("読み込めませんでした", systemImage: "exclamationmark.triangle", description: Text(error))
                 } else if store.book.isEmpty {
                     StartView(importing: $importing)
@@ -198,6 +207,8 @@ struct GlassCapsule: ViewModifier {
 /// 画面確認用の見本（起動オプション -demoLayout のとき）
 enum DemoMode {
     static var enabled: Bool { ProcessInfo.processInfo.arguments.contains("-demoLayout") }
+    static var printPage: Bool { enabled && ProcessInfo.processInfo.arguments.contains("-demoPrintPage") }
+    static var printLandscape: Bool { ProcessInfo.processInfo.arguments.contains("-demoLandscapePage") }
 
     static func book() -> ShiftBook {
         var b = ShiftBook()
@@ -218,7 +229,7 @@ enum DemoMode {
             ["off1", "t1", "t2", "t1", "t2", "off1", "t1"]
         ]
         b.staff = names.enumerated().map { i, n in
-            StaffMember(id: "\(i + 1)", number: i, name: n, departmentID: i < 5 ? "hall" : "kitchen", active: true,
+            StaffMember(id: "\(i + 1)", number: i < 5 ? i + 1 : i - 4, name: n, departmentID: i < 5 ? "hall" : "kitchen", active: true,
                         joinDate: "", leaveDate: "", timeBlocks: [],
                         patterns: [WeekPattern(id: "p\(i)", label: "通常", colorIndex: 0, days: weeks[i % weeks.count], activeFrom: nil)],
                         activePatternID: "p\(i)", periodPatterns: [])

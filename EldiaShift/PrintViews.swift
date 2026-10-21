@@ -347,6 +347,7 @@ struct PrintSheet: View {
                 }
             }
             .sheet(item: $shareFile) { f in ShareSheet(items: [f.url]) }
+            .presentationDetents([.large])
             .onAppear { if selected.isEmpty { selected = Set(depts.map(\.id)) } }
         }
     }
