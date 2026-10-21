@@ -25,7 +25,9 @@ struct CellDetailSheet: View {
                             LabeledContent("出勤", value: r.inTime.isEmpty ? "—" : r.inTime)
                             LabeledContent("退勤", value: r.outTime.isEmpty ? "—" : r.outTime)
                             if let h = r.hours {
-                                LabeledContent("勤務時間", value: String(format: "%.1f 時間", h))
+                                LabeledContent("拘束時間", value: String(format: "%.1f 時間", h))
+                                LabeledContent("実働（休憩 \(Breaks.breakHours(h) == 1 ? "1時間" : Breaks.breakHours(h) == 0.5 ? "30分" : "なし")）",
+                                               value: String(format: "%.1f 時間", Breaks.net(h)))
                             }
                             if let block { LabeledContent("ひな形", value: block.label) }
                         }
@@ -103,6 +105,7 @@ private struct BackupImporter: ViewModifier {
         let (book, summary) = p
         pending = nil
         do {
+            try store.autoBackup(reason: "読込前")
             try store.replaceAll(with: book)
             message = "取り込みました（スタッフ \(summary.staff)人・シフト \(summary.cells)件）。"
         } catch {
@@ -128,6 +131,7 @@ struct SettingsView: View {
     @State private var importing = false
     @State private var exportFile: ExportFile?
     @State private var exportError: String?
+    @State private var confirmReset = false
 
     var body: some View {
         NavigationStack {
@@ -136,6 +140,10 @@ struct SettingsView: View {
                     Toggle("iCloud で同期する", isOn: Binding(get: { db.iCloudEnabled }, set: { db.setICloud($0) }))
                 } footer: {
                     Text("同じ Apple ID の iPad・iPhone で同じシフト表を使えます。ほかの管理者との共同編集は、次の更新で使えるようになります。")
+                }
+
+                Section {
+                    NavigationLink { ManualView() } label: { Label("操作マニュアル", systemImage: "questionmark.circle") }
                 }
 
                 Section("シフト表の中身") {
@@ -154,6 +162,12 @@ struct SettingsView: View {
                     Text("PC版シフト表の「バックアップを保存」で作ったファイルを取り込めます。書き出したファイルは PC版でも読み込めます。")
                 }
 
+                Section {
+                    Button("すべて消去して一から作り直す", role: .destructive) { confirmReset = true }
+                } footer: {
+                    Text("スタッフ・共通の時間・入力したシフトをすべて消します（部署と休みの種類は残ります）。消す前と、バックアップを読み込む前には、自動でバックアップを残します（「ファイル」アプリ →「このiPad内」→「シフト表」→「自動バックアップ」）。")
+                }
+
                 Section("内容") {
                     LabeledContent("スタッフ", value: "\(store.book.staff.count)人")
                     LabeledContent("部門", value: "\(store.book.departments.count)")
@@ -167,6 +181,13 @@ struct SettingsView: View {
                 ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dismiss() } }
             }
             .backupImporter(isPresented: $importing)
+            .confirmationDialog("すべて消去しますか？", isPresented: $confirmReset, titleVisibility: .visible) {
+                Button("すべて消去する", role: .destructive) {
+                    do { try store.resetAll(); dismiss() } catch { exportError = error.localizedDescription }
+                }
+            } message: {
+                Text("消す前に自動でバックアップを残します。")
+            }
             .sheet(item: $exportFile) { f in ShareSheet(items: [f.url]) }
             .alert("書き出せませんでした", isPresented: Binding(get: { exportError != nil }, set: { if !$0 { exportError = nil } })) {
                 Button("OK") { exportError = nil }

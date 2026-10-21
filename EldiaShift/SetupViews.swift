@@ -57,229 +57,6 @@ struct NoStaffView: View {
     }
 }
 
-// MARK: - スタッフ
-
-struct StaffListView: View {
-    @Environment(ShiftStore.self) private var store
-    @State private var adding: StaffMember?
-    @State private var showInactive = false
-    @State private var error: String?
-
-    var body: some View {
-        let book = store.book
-        List {
-            ForEach(sections(book)) { group in
-                Section(group.department.name) {
-                    ForEach(group.members) { m in
-                        NavigationLink {
-                            StaffEditView(member: m, isNew: false)
-                        } label: {
-                            HStack {
-                                Text(m.name)
-                                Spacer()
-                                if !m.leaveDate.isEmpty {
-                                    Text("退職 \(m.leaveDate)").font(.caption).foregroundStyle(.secondary)
-                                } else if !m.active {
-                                    Text("休止中").font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
-                    .onMove { from, to in
-                        var list = group.members
-                        list.move(fromOffsets: from, toOffset: to)
-                        run { try store.reorderStaff(list) }
-                    }
-                }
-            }
-            Section {
-                Toggle("退職・休止中の人も表示", isOn: $showInactive)
-            }
-        }
-        .navigationTitle("スタッフ")
-        .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                EditButton()
-                Button {
-                    adding = store.newStaff(in: book.departments.first?.id ?? "")
-                } label: { Image(systemName: "plus") }
-                    .accessibilityLabel("スタッフを追加")
-            }
-        }
-        .sheet(item: $adding) { s in StaffEditView(member: s, isNew: true) }
-        .errorAlert($error)
-    }
-
-    private func sections(_ book: ShiftBook) -> [DepartmentGroup] {
-        let shown = book.staff.filter { showInactive || ($0.active && $0.leaveDate.isEmpty) }
-        var result: [DepartmentGroup] = book.departments.sorted { $0.sortOrder < $1.sortOrder }.compactMap { d -> DepartmentGroup? in
-            let m = shown.filter { $0.departmentID == d.id }.sorted(by: StaffMember.order)
-            return m.isEmpty ? nil : DepartmentGroup(department: d, members: m)
-        }
-        let known = Set(book.departments.map(\.id))
-        let others = shown.filter { !known.contains($0.departmentID) }.sorted(by: StaffMember.order)
-        if !others.isEmpty {
-            result.append(DepartmentGroup(department: Department(id: "", name: "部門なし", colorIndex: 8, sortOrder: .max), members: others))
-        }
-        return result
-    }
-
-    private func run(_ f: () throws -> Void) {
-        do { try f() } catch { self.error = error.localizedDescription }
-    }
-}
-
-struct StaffEditView: View {
-    @State var member: StaffMember
-    let isNew: Bool
-
-    @Environment(ShiftStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
-    @State private var error: String?
-    @State private var confirmDelete = false
-
-    /// 表に並べる曜日の順（月曜はじまり）。値は days の位置（0＝日曜）
-    private let weekOrder = [1, 2, 3, 4, 5, 6, 0]
-    private let weekNames = ["日", "月", "火", "水", "木", "金", "土"]
-
-    var body: some View {
-        let book = store.book
-        let blocks = member.timeBlocks + book.templates
-        let form = Form {
-            Section {
-                TextField("名前", text: $member.name)
-                    .textContentType(.name)
-                Picker("部門", selection: $member.departmentID) {
-                    if !book.departments.contains(where: { $0.id == member.departmentID }) {
-                        Text("なし").tag(member.departmentID)
-                    }
-                    ForEach(book.departments.sorted { $0.sortOrder < $1.sortOrder }) { d in
-                        Text(d.name).tag(d.id)
-                    }
-                }
-            }
-
-            Section {
-                if member.patterns.count > 1 {
-                    Picker("使うくり返し", selection: Binding(
-                        get: { member.activePatternID ?? member.patterns.first?.id ?? "" },
-                        set: { member.activePatternID = $0 })) {
-                        ForEach(member.patterns) { p in Text(p.label.isEmpty ? "くり返し" : p.label).tag(p.id) }
-                    }
-                }
-                ForEach(weekOrder, id: \.self) { w in
-                    Picker(weekNames[w] + "曜", selection: dayBinding(w)) {
-                        Text("なし").tag(String?.none)
-                        ForEach(blocks) { b in
-                            Text(b.isOff ? b.label : "\(b.label)（\(b.inTime)〜\(b.outTime)）").tag(String?.some(b.id))
-                        }
-                    }
-                    .foregroundStyle(w == 0 ? Color.red : w == 6 ? Color.blue : Color.primary)
-                }
-            } header: {
-                Text("週のくり返し")
-            } footer: {
-                Text("ここで決めた勤務が毎週自動で入ります。日ごとに変えたいときは、表のマスで変えてください（そちらが優先されます）。")
-            }
-
-            Section("在籍") {
-                Toggle("在籍中", isOn: $member.active)
-                dateRow("入社日", $member.joinDate)
-                dateRow("退職日", $member.leaveDate)
-            }
-
-            if !isNew {
-                Section {
-                    Button("このスタッフを削除", role: .destructive) { confirmDelete = true }
-                } footer: {
-                    Text("辞めた人は、削除せずに退職日を入れると、それまでのシフトが残ります。")
-                }
-            }
-        }
-
-        let content = form
-            .navigationTitle(isNew ? "スタッフを追加" : (member.name.isEmpty ? "スタッフ" : member.name))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("保存") { save() }
-                        .disabled(member.name.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-                if isNew {
-                    ToolbarItem(placement: .cancellationAction) { Button("やめる") { dismiss() } }
-                }
-            }
-            .confirmationDialog("\(member.name)さんを削除しますか？", isPresented: $confirmDelete, titleVisibility: .visible) {
-                Button("削除する", role: .destructive) {
-                    do { try store.deleteStaff(member); dismiss() } catch { self.error = error.localizedDescription }
-                }
-            } message: {
-                Text("この人のシフトもすべて消えます。元には戻せません。")
-            }
-            .errorAlert($error)
-
-        if isNew {
-            NavigationStack { content }
-        } else {
-            content
-        }
-    }
-
-    /// 曜日の勤務（使っているくり返しを書き換える。無ければ「通常」を作る）
-    private func dayBinding(_ w: Int) -> Binding<String?> {
-        Binding(
-            get: {
-                guard let p = activePattern, p.days.indices.contains(w) else { return nil }
-                return p.days[w]
-            },
-            set: { value in
-                if let i = activePatternIndex {
-                    while member.patterns[i].days.count < 7 { member.patterns[i].days.append(nil) }
-                    member.patterns[i].days[w] = value
-                } else {
-                    var days = [String?](repeating: nil, count: 7)
-                    days[w] = value
-                    let p = WeekPattern(id: UUID().uuidString, label: "通常", colorIndex: 0, days: days, activeFrom: nil)
-                    member.patterns.append(p)
-                    member.activePatternID = p.id
-                }
-            })
-    }
-
-    private var activePatternIndex: Int? {
-        if let id = member.activePatternID, let i = member.patterns.firstIndex(where: { $0.id == id }) { return i }
-        return member.patterns.isEmpty ? nil : 0
-    }
-
-    private var activePattern: WeekPattern? { activePatternIndex.map { member.patterns[$0] } }
-
-    private func dateRow(_ title: String, _ text: Binding<String>) -> some View {
-        let has = Binding(get: { DayKey(text.wrappedValue) != nil },
-                          set: { text.wrappedValue = $0 ? DayKey.today.description : "" })
-        let date = Binding(get: { DayKey(text.wrappedValue)?.date ?? Date() },
-                           set: { text.wrappedValue = DayKey($0).description })
-        return VStack(alignment: .leading) {
-            Toggle(title, isOn: has)
-            if has.wrappedValue {
-                DatePicker(title, selection: date, displayedComponents: .date)
-                    .labelsHidden()
-                    .environment(\.locale, Locale(identifier: "ja_JP"))
-            }
-        }
-    }
-
-    private func save() {
-        member.name = member.name.trimmingCharacters(in: .whitespaces)
-        if let leave = DayKey(member.leaveDate), leave < DayKey.today { member.active = false }
-        do {
-            try store.save(member)
-            dismiss()
-        } catch {
-            self.error = error.localizedDescription
-        }
-    }
-}
-
 // MARK: - 部門
 
 struct DepartmentListView: View {
@@ -421,12 +198,17 @@ struct TemplateListView: View {
 
 struct TemplateEditView: View {
     @State var template: TimeBlock
+    /// スタッフの「個人の時間」を編集するとき（保存はスタッフの設定の「保存」でまとめて行う）
+    var personal: Binding<[TimeBlock]>? = nil
     @Environment(ShiftStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var error: String?
     @State private var confirmDelete = false
 
-    private var isNew: Bool { !store.book.templates.contains { $0.id == template.id } }
+    private var isNew: Bool {
+        if let personal { return !personal.wrappedValue.contains { $0.id == template.id } }
+        return !store.book.templates.contains { $0.id == template.id }
+    }
 
     var body: some View {
         NavigationStack {
@@ -457,7 +239,7 @@ struct TemplateEditView: View {
                     }
                 }
             }
-            .navigationTitle(isNew ? "ひな形を追加" : "ひな形")
+            .navigationTitle(personal != nil ? (isNew ? "個人の時間を追加" : "個人の時間") : (isNew ? "ひな形を追加" : "ひな形"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("やめる") { dismiss() } }
@@ -465,6 +247,15 @@ struct TemplateEditView: View {
                     Button("保存") {
                         template.label = template.label.trimmingCharacters(in: .whitespaces)
                         if template.short.isEmpty { template.short = String(template.label.prefix(1)) }
+                        if let personal {
+                            if let i = personal.wrappedValue.firstIndex(where: { $0.id == template.id }) {
+                                personal.wrappedValue[i] = template
+                            } else {
+                                personal.wrappedValue.append(template)
+                            }
+                            dismiss()
+                            return
+                        }
                         do { try store.save(template); dismiss() } catch { self.error = error.localizedDescription }
                     }
                     .disabled(template.label.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -472,6 +263,11 @@ struct TemplateEditView: View {
             }
             .confirmationDialog("「\(template.label)」を削除しますか？", isPresented: $confirmDelete, titleVisibility: .visible) {
                 Button("削除する", role: .destructive) {
+                    if let personal {
+                        personal.wrappedValue.removeAll { $0.id == template.id }
+                        dismiss()
+                        return
+                    }
                     do { try store.deleteTemplate(template); dismiss() } catch { self.error = error.localizedDescription }
                 }
             } message: {

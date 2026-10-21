@@ -161,7 +161,8 @@ struct ScheduleTests {
         // 10月：平日22日（うち 10/7 は手入力 9.5h、10/8 は有休）、日・土 9日 は休み
         #expect(s.workDays == 21)
         #expect(s.offDays == 10)
-        #expect(s.hours == 20 * 6 + 9.5)
+        // 実働：6h → 5.5h（休憩30分）、9.5h → 8.5h（休憩1時間）
+        #expect(s.hours == 20 * 5.5 + 8.5)
     }
 }
 
@@ -417,5 +418,157 @@ struct GridModeTests {
         let m = GridMode.month.days(around: DayKey(2026, 2, 14))
         #expect(m.count == 28 && m.first == DayKey(2026, 2, 1))
         #expect(GridMode.month.step(DayKey(2026, 12, 31), by: 1) == DayKey(2027, 1, 1))
+    }
+}
+
+@Suite("日の表示")
+struct DayModeTests {
+    @Test("日は1日ずつ進む")
+    func dayMode() {
+        #expect(GridMode.day.days(around: DayKey(2026, 10, 22)) == [DayKey(2026, 10, 22)])
+        #expect(GridMode.day.step(DayKey(2026, 10, 31), by: 1) == DayKey(2026, 11, 1))
+        #expect(GridMode.day.title(around: DayKey(2026, 10, 22)) == "10月22日（木）")
+    }
+}
+
+@Suite("時間帯別在籍人数・有休")
+struct HeadcountAndLeaveTests {
+    @Test("時間帯別の人数（日をまたぐ勤務を含む）")
+    func headcount() throws {
+        let (book, _) = try BackupFile.read(Data(legacyJSON.utf8))
+        let a = book.staff.filter { $0.id == "1" }
+        // 10/5（月）：見本A は 9:00〜15:00
+        #expect(Headcount.working(a, on: DayKey(2026, 10, 5), hour: 9, in: book) == 1)
+        #expect(Headcount.working(a, on: DayKey(2026, 10, 5), hour: 15, in: book) == 0)
+        #expect(Headcount.working(a, on: DayKey(2026, 10, 4), hour: 9, in: book) == 0)   // 日曜は休み
+    }
+
+    @Test("有休の付与日数（PC版と同じ）")
+    func grant() {
+        let join = DayKey(2024, 4, 1)
+        #expect(PaidLeave.grant(joinDate: join, weeklyDays: 5, weeklyHours: 40, today: DayKey(2024, 9, 30)) == nil)
+        let g1 = PaidLeave.grant(joinDate: join, weeklyDays: 5, weeklyHours: 40, today: DayKey(2024, 10, 1))!
+        #expect(g1.current == 10 && g1.previous == 0 && g1.since == DayKey(2024, 10, 1))
+        let g2 = PaidLeave.grant(joinDate: join, weeklyDays: 5, weeklyHours: 40, today: DayKey(2026, 10, 22))!
+        #expect(g2.current == 12 && g2.previous == 11 && g2.total == 23 && g2.since == DayKey(2026, 10, 1))
+        let p = PaidLeave.grant(joinDate: join, weeklyDays: 3, weeklyHours: 18, today: DayKey(2026, 10, 22))!
+        #expect(p.isProportional && p.current == 6 && p.previous == 6)
+    }
+
+    @Test("有休の残り：今期の付与日から表示月の末日までの使用を引く")
+    func balance() throws {
+        let (book, _) = try BackupFile.read(Data(legacyJSON.utf8))
+        let a = book.staff.first { $0.id == "1" }!   // 入社 2024-04-01、週5日×6時間 → 比例付与なし
+        let b = PaidLeave.balance(of: a, month: MonthKey(2026, 10), in: book, today: DayKey(2026, 10, 22))!
+        // 10/8 に有休を1日使っている（今期の付与日 2026-10-01 以降）
+        #expect(b.used == 1 && b.usedThisMonth == 1)
+        #expect(b.remaining == b.grant.total - 1)
+    }
+}
+
+@Suite("スタッフの設定")
+@MainActor
+struct StaffSettingTests {
+    private func store(with names: [String]) throws -> ShiftStore {
+        let store = ShiftStore(db: ShiftDatabase(inMemory: true))
+        try store.startNew()
+        for n in names {
+            var m = store.newStaff(in: store.book.departments[0].id)
+            m.name = n
+            try store.save(m)
+        }
+        return store
+    }
+
+    @Test("削除すると同じ部署の番号が繰り上がる")
+    func renumberOnDelete() throws {
+        let s = try store(with: ["A", "B", "C"])
+        let b = s.book.staff.first { $0.name == "B" }!
+        try s.deleteStaff(b)
+        #expect(s.book.staff.sorted(by: StaffMember.order).map { "\($0.number)\($0.name)" } == ["1A", "2C"])
+    }
+
+    @Test("↑↓で入れ替わる")
+    func moveUpDown() throws {
+        let s = try store(with: ["A", "B", "C"])
+        try s.moveStaff(s.book.staff.first { $0.name == "C" }!, by: -1)
+        #expect(s.book.staff.sorted(by: StaffMember.order).map(\.name) == ["A", "C", "B"])
+        try s.moveStaff(s.book.staff.first { $0.name == "A" }!, by: -1)   // 先頭はそのまま
+        #expect(s.book.staff.sorted(by: StaffMember.order).map(\.name) == ["A", "C", "B"])
+    }
+
+    @Test("部署の一括移動：移動先の末尾に並び順を保って付く")
+    func bulkMove() throws {
+        let s = try store(with: ["A", "B"])
+        let kitchen = s.book.departments[1].id
+        var k = s.newStaff(in: kitchen)
+        k.name = "K"
+        try s.save(k)
+        try s.moveAllStaff(from: s.book.departments[0].id, to: kitchen)
+        let list = s.book.staff.filter { $0.departmentID == kitchen }.sorted(by: StaffMember.order)
+        #expect(list.map { "\($0.number)\($0.name)" } == ["1K", "2A", "3B"])
+    }
+
+    @Test("個人の時間・複数の週間パターン（適用開始日）・期間限定パターンが保存され、シフトに出る")
+    func patterns() throws {
+        let s = try store(with: ["A"])
+        var m = s.book.staff[0]
+        let mine = TimeBlock(id: "mine", label: "A_昼", short: "昼", inMinutes: 600, outMinutes: 960, colorIndex: 6)
+        let early = s.book.templates.first { $0.label == "早番" }!
+        m.timeBlocks = [mine]
+        m.patterns = [
+            WeekPattern(id: "p1", label: "通常", colorIndex: 0, days: Array(repeating: early.id, count: 7), activeFrom: nil),
+            WeekPattern(id: "p2", label: "新", colorIndex: 1, days: Array(repeating: "mine", count: 7), activeFrom: "2026-11-01")
+        ]
+        m.activePatternID = "p1"
+        m.periodPatterns = [PeriodPattern(id: "pp", label: "年末", colorIndex: 3, startDate: "2026-12-30", endDate: "2026-12-31",
+                                          days: ["2026-12-30": "off1"])]
+        try s.save(m)
+        let saved = s.book.staff[0]
+        #expect(saved.timeBlocks == [mine] && saved.patterns.count == 2 && saved.periodPatterns.count == 1)
+        #expect(Schedule.resolve(saved, on: DayKey(2026, 10, 31), in: s.book)?.blockID == early.id)
+        #expect(Schedule.resolve(saved, on: DayKey(2026, 11, 1), in: s.book)?.blockID == "mine")
+        #expect(Schedule.resolve(saved, on: DayKey(2026, 12, 30), in: s.book)?.isOff == true)
+        #expect(Schedule.resolve(saved, on: DayKey(2026, 12, 31), in: s.book) == nil)   // 期間内で未設定は空き
+    }
+}
+
+@Suite("印刷・データ管理")
+@MainActor
+struct PrintAndDataTests {
+    @Test("印刷の枚数（PC版と同じ）")
+    func pageCounts() {
+        let d = [Department(id: "a", name: "A", colorIndex: 0, sortOrder: 0), Department(id: "b", name: "B", colorIndex: 1, sortOrder: 1)]
+        let day = DayKey(2026, 10, 22)
+        #expect(PrintPlanner.pages(format: .weekByDepartment, half: .both, departments: d, anchor: day).count == 2)
+        #expect(PrintPlanner.pages(format: .monthByDepartment, half: .both, departments: d, anchor: day).count == 4)
+        #expect(PrintPlanner.pages(format: .monthByDepartment, half: .first, departments: d, anchor: day).count == 2)
+        #expect(PrintPlanner.pages(format: .monthCombined, half: .both, departments: d, anchor: day).count == 2)
+        let ls = PrintPlanner.pages(format: .monthLandscape, half: .first, departments: d, anchor: day)
+        #expect(ls.count == 1 && ls[0].tables.count == 2 && ls[0].landscape)
+        #expect(ls[0].tables[0].days.count == 15 && ls[0].tables[1].days.count == 16)
+    }
+
+    @Test("PDF ができる")
+    func pdf() throws {
+        let (book, _) = try BackupFile.read(Data(legacyJSON.utf8))
+        let pages = PrintPlanner.pages(format: .monthByDepartment, half: .both, departments: book.departments, anchor: DayKey(2026, 10, 1))
+        let data = PDFMaker.make(pages: pages, book: book, title: "見本")
+        #expect(data.starts(with: Data("%PDF".utf8)))
+        #expect(data.count > 1000)
+    }
+
+    @Test("すべて消去：部署と休みの種類は残り、自動バックアップが残る")
+    func reset() throws {
+        let (book, _) = try BackupFile.read(Data(legacyJSON.utf8))
+        let store = ShiftStore(db: ShiftDatabase(inMemory: true))
+        try store.replaceAll(with: book)
+        let before = (try? FileManager.default.contentsOfDirectory(atPath: ShiftStore.autoBackupFolder.path))?.count ?? 0
+        try store.resetAll()
+        #expect(store.book.staff.isEmpty && store.book.cells.isEmpty)
+        #expect(store.book.departments.count == book.departments.count)
+        #expect(store.book.templates.allSatisfy(\.isOff) && !store.book.templates.isEmpty)
+        let after = (try? FileManager.default.contentsOfDirectory(atPath: ShiftStore.autoBackupFolder.path))?.count ?? 0
+        #expect(after == min(30, before + 1))
     }
 }

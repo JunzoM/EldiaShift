@@ -58,6 +58,29 @@ extension ShiftStore {
         reload()
     }
 
+    /// 部門の中で1つ上・下へ（番号は振り直す）
+    func moveStaff(_ s: StaffMember, by delta: Int) throws {
+        var list = book.staff.filter { $0.departmentID == s.departmentID }.sorted(by: StaffMember.order)
+        guard let i = list.firstIndex(where: { $0.id == s.id }), list.indices.contains(i + delta) else { return }
+        list.swapAt(i, i + delta)
+        try reorderStaff(list)
+    }
+
+    /// 部署の一括移動：移動元の全員を、移動先の末尾に（並び順を保って）付け替える（PC版と同じ）
+    func moveAllStaff(from: String, to: String) throws {
+        guard from != to else { return }
+        let last = book.staff.filter { $0.departmentID == to }.map(\.number).max() ?? 0
+        let moving = book.staff.filter { $0.departmentID == from }.sorted(by: StaffMember.order)
+        for (i, original) in moving.enumerated() {
+            var m = original
+            m.departmentID = to
+            m.number = last + i + 1
+            try ShiftRecords.upsert(m, in: db.viewContext)
+        }
+        try db.save()
+        reload()
+    }
+
     /// 部門を消す（スタッフがいる部門は消さない）
     func deleteDepartment(_ d: Department) throws {
         guard !book.staff.contains(where: { $0.departmentID == d.id }) else { throw SetupError.departmentInUse }
@@ -78,6 +101,13 @@ extension ShiftStore {
         let req = NSFetchRequest<NSManagedObject>(entityName: ShiftModel.Entity.cell)
         req.predicate = NSPredicate(format: "staffKey == %@", s.id)
         try db.viewContext.fetch(req).forEach(db.viewContext.delete)
+        // 同じ部門の番号を詰める（PC版と同じ）
+        let rest = book.staff.filter { $0.departmentID == s.departmentID && $0.id != s.id }.sorted(by: StaffMember.order)
+        for (i, original) in rest.enumerated() where original.number != i + 1 {
+            var m = original
+            m.number = i + 1
+            try ShiftRecords.upsert(m, in: db.viewContext)
+        }
         try db.save()
         if lastChange?.key.staffID == s.id { clearLastChange() }
         reload()
@@ -190,5 +220,44 @@ enum StarterBook {
             TimeBlock(id: UUID().uuidString, label: "夜勤", short: "夜", inMinutes: 22 * 60, outMinutes: 9 * 60, colorIndex: 8)
         ] + BackupFile.defaultOffBlocks
         return b
+    }
+}
+
+// MARK: - データ管理（すべて消去・自動バックアップ）
+
+extension ShiftStore {
+    /// 自動バックアップの置き場所（「ファイル」アプリの「このiPad内」→「シフト表」→「自動バックアップ」から見られる）
+    nonisolated static var autoBackupFolder: URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return docs.appendingPathComponent("自動バックアップ", isDirectory: true)
+    }
+
+    /// 今の内容をファイルに残す（消す・読み込む前に呼ぶ）。新しい30件だけ残す
+    @discardableResult
+    func autoBackup(reason: String) throws -> URL? {
+        guard !book.isEmpty else { return nil }
+        let dir = Self.autoBackupFolder
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyyMMdd-HHmmss"
+        let url = dir.appendingPathComponent("shift-\(f.string(from: Date()))-\(reason).json")
+        try exportData().write(to: url, options: .atomic)
+        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+        for old in files.filter({ $0.pathExtension == "json" }).sorted(by: { $0.lastPathComponent > $1.lastPathComponent }).dropFirst(30) {
+            try? FileManager.default.removeItem(at: old)
+        }
+        return url
+    }
+
+    /// スタッフ・共通の時間・入力したシフトをすべて消す（部署と休みの種類は残す。PC版と同じ）
+    func resetAll() throws {
+        try autoBackup(reason: "消去前")
+        var kept = ShiftBook()
+        kept.departments = book.departments
+        kept.templates = book.templates.filter(\.isOff)
+        if kept.templates.isEmpty { kept.templates = BackupFile.defaultOffBlocks }
+        try replaceAll(with: kept)
+        clearLastChange()
     }
 }
