@@ -18,7 +18,7 @@ struct CellEditorSheet: View {
         let book = store.book
         let current = Schedule.resolve(member, on: day, in: book)
         let q = search.trimmingCharacters(in: .whitespaces)
-        func match(_ b: TimeBlock) -> Bool { q.isEmpty || b.label.contains(q) || b.short.contains(q) }
+        let match: (TimeBlock) -> Bool = { b in q.isEmpty || b.label.contains(q) || b.short.contains(q) }
         let personal = member.timeBlocks.filter(match)
         let common = book.templates.filter { !$0.isOff && match($0) }
         let off = book.templates.filter(\.isOff)
