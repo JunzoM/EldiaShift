@@ -131,7 +131,9 @@ enum ShiftModel {
         let team = entity(Entity.team, [
             attr("id", .UUIDAttributeType),
             attr("name", .stringAttributeType),
-            attr("createdAt", .dateAttributeType)
+            attr("createdAt", .dateAttributeType),
+            // チーム全体の設定（休憩の決まりなど。JSON）
+            attr("settings", .binaryDataAttributeType)
         ])
         let department = entity(Entity.department, [
             attr("key", .stringAttributeType),
@@ -148,6 +150,8 @@ enum ShiftModel {
             attr("outMinutes", .integer32AttributeType, default: -1),
             attr("colorIndex", .integer16AttributeType, default: 0),
             attr("sortOrder", .integer32AttributeType, default: 0),
+            // このひな形の休憩（分）。-1 は休憩の決まりに従う
+            attr("breakMinutes", .integer32AttributeType, default: -1),
             attr("updatedAt", .dateAttributeType)
         ])
         let staff = entity(Entity.staff, [

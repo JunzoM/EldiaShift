@@ -21,6 +21,8 @@ struct TimeBlock: Identifiable, Hashable, Codable, Sendable {
     var inMinutes: Int?
     var outMinutes: Int?
     var colorIndex: Int
+    /// このひな形の休憩（分）。nil は「休憩の決まり」（設定）に従う
+    var breakMinutes: Int? = nil
 
     var isOff: Bool { inMinutes == nil || outMinutes == nil }
     var inTime: String { inMinutes.map(ClockTime.format) ?? "" }
@@ -99,6 +101,8 @@ struct ShiftBook: Sendable, Equatable {
     var templates: [TimeBlock] = []
     var staff: [StaffMember] = []
     var cells: [CellKey: CellEntry] = [:]
+    /// 休憩の決まり（実働の計算に使う。会社ごとに設定で変えられる）
+    var breakRules: BreakRules = .pcDefault
 
     /// まだ何も作っていない（スタッフ・部門・ひな形・シフトのどれも無い）
     var isEmpty: Bool { staff.isEmpty && cells.isEmpty && departments.isEmpty && templates.isEmpty }
@@ -277,4 +281,63 @@ enum Palette {
     ]
 
     static func index(_ i: Int) -> Int { colors.indices.contains(i) ? i : 0 }
+}
+
+// MARK: - 休憩の決まり
+
+/// 勤務の長さに応じて引く休憩。例：4.5時間以上は30分、6.5時間以上は60分
+struct BreakRules: Codable, Equatable, Sendable {
+    struct Tier: Codable, Equatable, Sendable, Identifiable {
+        var id = UUID()
+        /// この長さ（分）から
+        var afterMinutes: Int
+        /// 引く休憩（分）
+        var breakMinutes: Int
+
+        enum CodingKeys: String, CodingKey { case afterMinutes, breakMinutes }
+    }
+
+    var tiers: [Tier]
+    /// true：「以上」で数える（4.5時間ちょうどでも引く）／false：「を超える」で数える（労働基準法の書き方）
+    var inclusive: Bool
+
+    /// PC版と同じ：4.5時間以上は30分、6.5時間以上は60分
+    static let pcDefault = BreakRules(tiers: [Tier(afterMinutes: 270, breakMinutes: 30), Tier(afterMinutes: 390, breakMinutes: 60)],
+                                      inclusive: true)
+    /// 労働基準法の最低限：6時間を超えたら45分、8時間を超えたら60分
+    static let laborStandard = BreakRules(tiers: [Tier(afterMinutes: 360, breakMinutes: 45), Tier(afterMinutes: 480, breakMinutes: 60)],
+                                          inclusive: false)
+    /// 休憩を引かない（拘束時間＝実働）
+    static let none = BreakRules(tiers: [], inclusive: true)
+
+    /// 勤務の長さ（分）に対して引く休憩（分）
+    func breakMinutes(forGross gross: Int) -> Int {
+        tiers.filter { inclusive ? gross >= $0.afterMinutes : gross > $0.afterMinutes }
+            .map(\.breakMinutes).max() ?? 0
+    }
+
+    /// 実働（時間）。override はひな形ごとの休憩（分）
+    func netHours(gross: Double, override: Int? = nil) -> Double {
+        let g = Int((gross * 60).rounded())
+        let b = override ?? breakMinutes(forGross: g)
+        return Double(max(0, g - b)) / 60
+    }
+
+    /// 決まりを文章で（例：「4時間30分以上は30分、6時間30分以上は60分」）
+    var summary: String {
+        if tiers.isEmpty { return "休憩を引かない" }
+        let word = inclusive ? "以上は" : "を超えたら"
+        return tiers.sorted { $0.afterMinutes < $1.afterMinutes }
+            .map { "\(Self.duration($0.afterMinutes))\(word)\($0.breakMinutes)分" }
+            .joined(separator: "、")
+    }
+
+    static func duration(_ m: Int) -> String {
+        m % 60 == 0 ? "\(m / 60)時間" : "\(m / 60)時間\(m % 60)分"
+    }
+
+    static func == (a: BreakRules, b: BreakRules) -> Bool {
+        a.inclusive == b.inclusive
+            && a.tiers.map { [$0.afterMinutes, $0.breakMinutes] } == b.tiers.map { [$0.afterMinutes, $0.breakMinutes] }
+    }
 }

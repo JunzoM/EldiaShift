@@ -10,6 +10,8 @@ struct ResolvedShift: Hashable, Sendable {
     var isAuto: Bool
     var isPeriod: Bool = false
     var patternLabel: String?
+    /// ひな形で決めた休憩（分）。nil は休憩の決まりに従う
+    var breakOverride: Int? = nil
 
     /// 拘束時間（時間）。休み・時刻なしは nil
     var hours: Double? {
@@ -17,8 +19,14 @@ struct ResolvedShift: Hashable, Sendable {
         return ClockTime.hours(from: a, to: b)
     }
 
-    /// 実働時間（休憩を引いた時間。PC版と同じ）
-    var netHours: Double? { hours.map(Breaks.net) }
+    /// 実働時間（休憩を引いた時間）
+    func netHours(_ rules: BreakRules) -> Double? { hours.map { rules.netHours(gross: $0, override: breakOverride) } }
+
+    /// 引いた休憩（分）
+    func breakMinutes(_ rules: BreakRules) -> Int? {
+        guard let h = hours else { return nil }
+        return breakOverride ?? rules.breakMinutes(forGross: Int((h * 60).rounded()))
+    }
 }
 
 /// どの日に誰が何の勤務かを決める（旧シフト表と同じ決め方）
@@ -29,7 +37,12 @@ enum Schedule {
     static func resolve(_ member: StaffMember, on day: DayKey, in book: ShiftBook) -> ResolvedShift? {
         if member.hasLeft(on: day) { return nil }
         if let cell = book.cells[CellKey(staffID: member.id, day: day)] {
-            return ResolvedShift(inTime: cell.inTime, outTime: cell.outTime, blockID: cell.blockID, isOff: cell.isOff, isAuto: false)
+            var r = ResolvedShift(inTime: cell.inTime, outTime: cell.outTime, blockID: cell.blockID, isOff: cell.isOff, isAuto: false)
+            // ひな形のまま入れた日は、そのひな形の休憩を使う（時刻を変えた日は決まりに従う）
+            if let b = book.block(cell.blockID, for: member), b.inTime == cell.inTime, b.outTime == cell.outTime {
+                r.breakOverride = b.breakMinutes
+            }
+            return r
         }
         return automatic(member, on: day, in: book)
     }
@@ -86,15 +99,8 @@ enum Schedule {
     private static func shift(from b: TimeBlock) -> ResolvedShift {
         b.isOff
             ? ResolvedShift(inTime: "", outTime: "", blockID: b.id, isOff: true, isAuto: true)
-            : ResolvedShift(inTime: b.inTime, outTime: b.outTime, blockID: b.id, isOff: false, isAuto: true)
+            : ResolvedShift(inTime: b.inTime, outTime: b.outTime, blockID: b.id, isOff: false, isAuto: true, breakOverride: b.breakMinutes)
     }
-}
-
-// MARK: - 休憩（PC版と同じ：4.5時間以上は30分、6.5時間以上は1時間）
-
-enum Breaks {
-    static func breakHours(_ gross: Double) -> Double { gross >= 6.5 ? 1 : gross >= 4.5 ? 0.5 : 0 }
-    static func net(_ gross: Double) -> Double { gross - breakHours(gross) }
 }
 
 // MARK: - 月の集計（勤務日数・実働時間）
@@ -116,7 +122,7 @@ struct MonthSummary: Hashable, Sendable {
             guard let r = Schedule.resolve(member, on: day, in: book) else { continue }
             if r.isOff {
                 s.offDays += 1
-            } else if let h = r.netHours {
+            } else if let h = r.netHours(book.breakRules) {
                 // 時刻が入っている日だけ数える（PC版と同じ）
                 s.workDays += 1
                 s.hours += h

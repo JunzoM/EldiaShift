@@ -167,6 +167,7 @@ extension ShiftRecords {
         r.setValue(Int32(t.outMinutes ?? -1), forKey: "outMinutes")
         r.setValue(Int16(t.colorIndex), forKey: "colorIndex")
         r.setValue(Int32(clamping: sortOrder), forKey: "sortOrder")
+        r.setValue(Int32(t.breakMinutes ?? -1), forKey: "breakMinutes")
         r.setValue(Date(), forKey: "updatedAt")
     }
 
@@ -255,6 +256,7 @@ extension ShiftStore {
         try autoBackup(reason: "消去前")
         var kept = ShiftBook()
         kept.departments = book.departments
+        kept.breakRules = book.breakRules
         kept.templates = book.templates.filter(\.isOff)
         if kept.templates.isEmpty { kept.templates = BackupFile.defaultOffBlocks }
         try replaceAll(with: kept)

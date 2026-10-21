@@ -89,6 +89,13 @@ enum BackupFile {
             book.cells[k] = CellEntry(inTime: normalized(inTime), outTime: normalized(outTime), blockID: blockID, isOff: isOff)
         }
 
+        // 休憩の決まり（このアプリで書き出したファイルだけが持つ。PC版のファイルは PC版と同じ決まり）
+        if let settings = root["settings"] as? [String: Any], let br = settings["breakRules"],
+           let data = try? JSONSerialization.data(withJSONObject: br),
+           let rules = try? JSONDecoder().decode(BreakRules.self, from: data) {
+            book.breakRules = rules
+        }
+
         let days = book.cells.keys.map(\.day)
         let summary = Summary(staff: book.staff.count, templates: templates.count, cells: book.cells.count,
                               firstDay: days.min(), lastDay: days.max(), skipped: skipped)
@@ -127,7 +134,9 @@ enum BackupFile {
                                     "blockId": c.blockID.map { $0 as Any } ?? NSNull(),
                                     "isOff": c.isOff, "auto": false] as [String: Any]
         }
+        let rulesJSON = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(book.breakRules))) ?? [:]
         let root: [String: Any] = [
+            "settings": ["breakRules": rulesJSON],
             "staff": staff,
             "globalTemplates": book.templates.map(json),
             "cellData": cells,
@@ -205,14 +214,17 @@ enum BackupFile {
         let label = string(b["label"]) ?? ""
         return TimeBlock(id: id, label: label, short: string(b["short"]) ?? String(label.prefix(2)),
                          inMinutes: minutes("inH", "inM"), outMinutes: minutes("outH", "outM"),
-                         colorIndex: Palette.index(int(b["colorIdx"]) ?? 0))
+                         colorIndex: Palette.index(int(b["colorIdx"]) ?? 0),
+                         breakMinutes: int(b["breakMin"]))
     }
 
     private static func json(_ b: TimeBlock) -> [String: Any] {
         func part(_ v: Int?, _ div: Bool) -> Any { v.map { (div ? $0 / 60 : $0 % 60) as Any } ?? NSNull() }
-        return ["id": b.id, "label": b.label, "short": b.short, "colorIdx": b.colorIndex,
-                "inH": part(b.inMinutes, true), "inM": part(b.inMinutes, false),
-                "outH": part(b.outMinutes, true), "outM": part(b.outMinutes, false)]
+        var o: [String: Any] = ["id": b.id, "label": b.label, "short": b.short, "colorIdx": b.colorIndex,
+                                "inH": part(b.inMinutes, true), "inM": part(b.inMinutes, false),
+                                "outH": part(b.outMinutes, true), "outM": part(b.outMinutes, false)]
+        if let m = b.breakMinutes { o["breakMin"] = m }   // PC版は読み飛ばす
+        return o
     }
 
     private static func normalized(_ t: String) -> String { ClockTime.parse(t).map(ClockTime.format) ?? "" }

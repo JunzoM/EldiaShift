@@ -60,7 +60,7 @@ enum PaidLeave {
         if let pattern = Schedule.weeklyPattern(for: member, on: today.description) {
             for bid in pattern.days {
                 guard let b = book.block(bid, for: member), let i = b.inMinutes, let o = b.outMinutes else { continue }
-                let net = Breaks.net(ClockTime.hours(from: i, to: o))
+                let net = book.breakRules.netHours(gross: ClockTime.hours(from: i, to: o), override: b.breakMinutes)
                 if net > 0 { weeklyDays += 1; weeklyHours += net }
             }
         }

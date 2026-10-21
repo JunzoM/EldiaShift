@@ -26,8 +26,9 @@ struct CellDetailSheet: View {
                             LabeledContent("退勤", value: r.outTime.isEmpty ? "—" : r.outTime)
                             if let h = r.hours {
                                 LabeledContent("拘束時間", value: String(format: "%.1f 時間", h))
-                                LabeledContent("実働（休憩 \(Breaks.breakHours(h) == 1 ? "1時間" : Breaks.breakHours(h) == 0.5 ? "30分" : "なし")）",
-                                               value: String(format: "%.1f 時間", Breaks.net(h)))
+                                let b = r.breakMinutes(book.breakRules) ?? 0
+                                LabeledContent("実働（休憩 \(b == 0 ? "なし" : "\(b)分")）",
+                                               value: String(format: "%.1f 時間", r.netHours(book.breakRules) ?? h))
                             }
                             if let block { LabeledContent("ひな形", value: block.label) }
                         }
@@ -150,6 +151,9 @@ struct SettingsView: View {
                     NavigationLink("スタッフ") { StaffListView() }
                     NavigationLink("部門") { DepartmentListView() }
                     NavigationLink("時間のひな形") { TemplateListView() }
+                    NavigationLink { BreakRulesView() } label: {
+                        LabeledContent("休憩の決まり", value: store.book.breakRules.summary)
+                    }
                 }
 
                 Section {
