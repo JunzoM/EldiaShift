@@ -163,10 +163,12 @@ struct HomeView: View {
     @State private var showStores = false
     @State private var adding: StaffMember?
     @AppStorage("summaryTab") private var summaryTab = 0
+    /// ホームの数字（シフトの中身か日付が変わったときだけ数え直す）
+    @State private var memo = HomeMemo()
 
     var body: some View {
         let today = store.today
-        let info = HomeInfo(book: store.book, today: today)
+        let info = memo.get(store.book, revision: store.revision, today: today)
 
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -336,6 +338,20 @@ struct HomeView: View {
 
 // MARK: - ホームに出す数字（画面と切り離して計算する）
 
+/// HomeInfo を覚えておく入れ物（観察しないので、描く途中で入れ替えてもよい）
+final class HomeMemo {
+    private var key: (Int, DayKey)?
+    private var info: HomeInfo?
+
+    func get(_ book: ShiftBook, revision: Int, today: DayKey) -> HomeInfo {
+        if let key, key == (revision, today), let info { return info }
+        let i = HomeInfo(book: book, today: today)
+        key = (revision, today)
+        info = i
+        return i
+    }
+}
+
 struct HomeInfo {
     struct Working: Identifiable {
         var member: StaffMember
@@ -390,9 +406,8 @@ struct HomeInfo {
                 var total = 0
                 var names: [String] = []
                 for g in groups where book.staffing.hasPlan(for: g.department.id) {
-                    let gap = StaffingCheck.gap(book.staffing, department: g.department.id, members: g.members, on: d) {
-                        table.working($0, on: $1, hour: $2)
-                    }
+                    let gap = StaffingCheck.gap(book.staffing, department: g.department.id, on: d,
+                                                counts: table.counts(g.members, on: d))
                     if gap.short > 0 { total += gap.short; names.append(g.department.name) }
                 }
                 if total > 0 { shortDays.append(ShortDay(day: d, short: total, departments: names)) }

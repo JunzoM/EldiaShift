@@ -167,8 +167,11 @@ enum Headcount {
 
 /// 表に出す人×日の勤務を、描くたびではなく一度だけ決めておく
 /// （時間帯別在籍人数は 24時間×日×人 を数えるので、毎回決めていると重い）
+/// 出勤・退勤の文字列もここで一度だけ分に直しておき、人数を数えるときは整数の比較だけにする
 struct ScheduleTable {
     private var resolved: [CellKey: ResolvedShift] = [:]
+    /// この店舗で勤務する時間（分）。休み・ほかの店舗・時刻なしは入れない
+    private var spans: [CellKey: (start: Int, end: Int)] = [:]
     let rules: BreakRules
 
     init(book: ShiftBook, members: [StaffMember], days: [DayKey]) {
@@ -176,7 +179,12 @@ struct ScheduleTable {
         resolved.reserveCapacity(members.count * days.count)
         for m in members {
             for d in days {
-                if let r = Schedule.resolve(m, on: d, in: book) { resolved[CellKey(staffID: m.id, day: d)] = r }
+                guard let r = Schedule.resolve(m, on: d, in: book) else { continue }
+                let k = CellKey(staffID: m.id, day: d)
+                resolved[k] = r
+                if !r.isOff, !r.elsewhere, let a = ClockTime.parse(r.inTime), let b = ClockTime.parse(r.outTime) {
+                    spans[k] = (a, b)
+                }
             }
         }
     }
@@ -194,12 +202,47 @@ struct ScheduleTable {
         return s
     }
 
+    /// その時間（分）の勤務が h 時台にかかっているか（Headcount.working と同じ数え方）
+    @inline(__always)
+    static func covers(_ s: Int, _ e: Int, hour h: Int) -> Bool {
+        let hs = h * 60, he = (h + 1) * 60
+        return e > s ? (s < he && e > hs) : (s < he || e > hs)
+    }
+
     /// その日の h 時台に勤務している人数（Headcount.working と同じ数え方）
     func working(_ members: [StaffMember], on d: DayKey, hour h: Int) -> Int {
-        members.filter { m in
-            guard let r = get(m, d), !r.isOff, !r.elsewhere, let s = ClockTime.parse(r.inTime), let e = ClockTime.parse(r.outTime) else { return false }
-            let hs = h * 60, he = (h + 1) * 60
-            return e > s ? (s < he && e > hs) : (s < he || e > hs)
-        }.count
+        var n = 0
+        for m in members {
+            if let sp = spans[CellKey(staffID: m.id, day: d)], Self.covers(sp.start, sp.end, hour: h) { n += 1 }
+        }
+        return n
+    }
+
+    /// その日の 0〜23時台それぞれの人数を、まとめて1回で数える（24回 working を呼ぶより速い）
+    func counts(_ members: [StaffMember], on d: DayKey) -> [Int] {
+        var c = [Int](repeating: 0, count: 24)
+        for m in members {
+            guard let sp = spans[CellKey(staffID: m.id, day: d)] else { continue }
+            for h in 0..<24 where Self.covers(sp.start, sp.end, hour: h) { c[h] += 1 }
+        }
+        return c
+    }
+}
+
+/// 部門ごと・日ごとの、時間帯別の人数（月の表を描くときに一度だけ数えて使い回す）
+struct HourlyCounts {
+    private var table: [String: [DayKey: [Int]]] = [:]
+
+    init(groups: [DepartmentGroup], days: [DayKey], table t: ScheduleTable) {
+        for g in groups {
+            var byDay: [DayKey: [Int]] = [:]
+            byDay.reserveCapacity(days.count)
+            for d in days { byDay[d] = t.counts(g.members, on: d) }
+            table[g.department.id] = byDay
+        }
+    }
+
+    func count(_ department: String, on d: DayKey, hour h: Int) -> Int {
+        table[department]?[d]?[h] ?? 0
     }
 }

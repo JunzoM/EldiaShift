@@ -72,9 +72,9 @@ struct MonthGridView: View {
 
     @State private var scroll = ScrollTracker()
 
-    private func rows(_ book: ShiftBook) -> [Row] {
+    private func rows(_ groups: [DepartmentGroup]) -> [Row] {
         var out: [Row] = []
-        for g in book.staffByDepartment(visibleIn: MonthKey(days[0]), includeInactive: showInactive) {
+        for g in groups {
             out.append(.section(g.department, g.members.count))
             out += g.members.map(Row.staff)
             out.append(.hourToggle(g.department, g.members))
@@ -94,22 +94,21 @@ struct MonthGridView: View {
         }
     }
 
+    /// 重い計算の結果（シフトの中身・表示する日・退職者の表示が変わったときだけ作り直す。
+    /// マスを押してシートを開く・まとめて選ぶ、などでは作り直さない）
+    @State private var memo = GridMemo()
+
     var body: some View {
         let book = store.book
-        let rows = rows(book)
-        // 表に出す全員×全日の勤務を、ここで一度だけ決める
-        let shown = rows.compactMap { if case .staff(let m) = $0 { m } else { nil } }
-        let table = ScheduleTable(book: book, members: shown, days: days)
+        let calc = memo.get(book, revision: store.revision, days: days, showInactive: showInactive)
+        let rows = rows(calc.groups)
+        let shown = calc.shown
+        let table = calc.table
         let today = store.today
         // 連勤・勤務の間隔・週の時間・希望休の注意
-        let issues = LaborCheck.issues(book, members: shown, days: days)
+        let issues = calc.issues
         // 必要人数に足りない日（日付の上に赤い点）
-        let shortDays: Set<DayKey> = book.staffing.isEmpty ? [] : Set(days.filter { d in
-            rows.contains { r in
-                guard case .hourToggle(let dept, let members) = r, book.staffing.hasPlan(for: dept.id) else { return false }
-                return StaffingCheck.gap(book.staffing, department: dept.id, members: members, on: d) { table.working($0, on: $1, hour: $2) }.short > 0
-            }
-        })
+        let shortDays = calc.shortDays
 
         // 上：日付の行（縦には動かない。横は下の表と同じだけずらす）
         // 下：縦に動く。左に名前の列、右に横に動く表
@@ -159,7 +158,7 @@ struct MonthGridView: View {
                                     ForEach(days, id: \.self) { d in Color.clear.frame(width: cellWidth, height: 1).id(d) }
                                 }
                                 ForEach(rows) { r in
-                                    rightCells(r, book: book, table: table, today: today, issues: issues, shown: shown).frame(height: height(r))
+                                    rightCells(r, book: book, table: table, today: today, issues: issues, shown: shown, calc: calc).frame(height: height(r))
                                 }
                             }
                             .background(GeometryReader { g in
@@ -400,7 +399,7 @@ struct MonthGridView: View {
 
     @ViewBuilder
     private func rightCells(_ r: Row, book: ShiftBook, table: ScheduleTable, today: DayKey,
-                            issues: [CellKey: [LaborIssue]], shown: [StaffMember]) -> some View {
+                            issues: [CellKey: [LaborIssue]], shown: [StaffMember], calc: GridMemo.Result) -> some View {
         switch r {
         case .section:
             Rectangle().fill(Color(.secondarySystemBackground))
@@ -426,13 +425,13 @@ struct MonthGridView: View {
                 summaryCell(table.summary(m, days: days))
             }
             .overlay(alignment: .bottom) { Divider() }
-        case .hourToggle(let dept, let members):
+        case .hourToggle(let dept, _):
             let plan = book.staffing
             if plan.hasPlan(for: dept.id) {
                 // 必要人数を決めている部門は、閉じていても日ごとの不足が見える
                 HStack(spacing: 0) {
                     ForEach(days, id: \.self) { d in
-                        let g = StaffingCheck.gap(plan, department: dept.id, members: members, on: d) { table.working($0, on: $1, hour: $2) }
+                        let g = calc.gaps[dept.id]?[d] ?? StaffingGap()
                         Group {
                             if g.short > 0 {
                                 // 押すと、その日に入れられる人を出す
@@ -465,12 +464,12 @@ struct MonthGridView: View {
                     .contentShape(Rectangle())
                     .onTapGesture { toggleHourly(dept) }
             }
-        case .hour(let dept, let members, let h):
+        case .hour(let dept, _, let h):
             let night = h <= 8
             HStack(spacing: 0) {
                 ForEach(days, id: \.self) { d in
-                    let n = table.working(members, on: d, hour: h)
-                    let need = book.staffing.need(dept.id, on: d, hour: h)
+                    let n = calc.hourly.count(dept.id, on: d, hour: h)
+                    let need = calc.needs[dept.id]?[d]?[h] ?? nil
                     if let need, let c = StaffingStyle.color(n, need: need) {
                         // 必要人数がある時間：実際/必要 を色で（足りない＝赤、多い＝オレンジ）
                         HStack(spacing: 0) {
@@ -657,6 +656,65 @@ struct MonthGridView: View {
         .frame(width: summaryWidth, height: rowHeight)
         .background(Color(.secondarySystemBackground).opacity(0.5))
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// 月の表の重い計算（勤務・注意・時間帯別の人数・不足）を覚えておく入れ物。
+/// 観察しない（@Observable にしない）ので、画面を描く途中で中身を入れ替えても描き直しは起きない
+final class GridMemo {
+    struct Key: Equatable {
+        var revision: Int
+        var days: [DayKey]
+        var showInactive: Bool
+    }
+
+    struct Result {
+        var groups: [DepartmentGroup]
+        var shown: [StaffMember]
+        var table: ScheduleTable
+        var issues: [CellKey: [LaborIssue]]
+        var hourly: HourlyCounts
+        /// 部門 → 日 → 0〜23時台の必要人数
+        var needs: [String: [DayKey: [Int?]]]
+        var gaps: [String: [DayKey: StaffingGap]]
+        var shortDays: Set<DayKey>
+    }
+
+    private var key: Key?
+    private var result: Result?
+
+    func get(_ book: ShiftBook, revision: Int, days: [DayKey], showInactive: Bool) -> Result {
+        let k = Key(revision: revision, days: days, showInactive: showInactive)
+        if k == key, let result { return result }
+        let r = Self.make(book, days: days, showInactive: showInactive)
+        key = k
+        result = r
+        return r
+    }
+
+    static func make(_ book: ShiftBook, days: [DayKey], showInactive: Bool) -> Result {
+        let groups = book.staffByDepartment(visibleIn: MonthKey(days[0]), includeInactive: showInactive)
+        let shown = groups.flatMap(\.members)
+        let table = ScheduleTable(book: book, members: shown, days: days)
+        let hourly = HourlyCounts(groups: groups, days: days, table: table)
+        var needs: [String: [DayKey: [Int?]]] = [:]
+        var gaps: [String: [DayKey: StaffingGap]] = [:]
+        var short = Set<DayKey>()
+        for g in groups where book.staffing.hasPlan(for: g.department.id) {
+            var n: [DayKey: [Int?]] = [:], gp: [DayKey: StaffingGap] = [:]
+            for d in days {
+                let c = (0..<24).map { hourly.count(g.department.id, on: d, hour: $0) }
+                n[d] = book.staffing.needs(g.department.id, on: d)
+                let gap = StaffingCheck.gap(book.staffing, department: g.department.id, on: d, counts: c)
+                gp[d] = gap
+                if gap.short > 0 { short.insert(d) }
+            }
+            needs[g.department.id] = n
+            gaps[g.department.id] = gp
+        }
+        return Result(groups: groups, shown: shown, table: table,
+                      issues: LaborCheck.issues(book, members: shown, days: days),
+                      hourly: hourly, needs: needs, gaps: gaps, shortDays: short)
     }
 }
 

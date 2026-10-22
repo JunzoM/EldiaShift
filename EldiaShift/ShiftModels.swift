@@ -159,9 +159,9 @@ struct CellKey: Hashable, Sendable, CustomStringConvertible {
 
 /// シフト表まるごと
 struct ShiftBook: Sendable, Equatable {
-    var departments: [Department] = []
+    var departments: [Department] = [] { didSet { rebuildIndex() } }
     /// 全員が使える時間のひな形（休みも含む）
-    var templates: [TimeBlock] = []
+    var templates: [TimeBlock] = [] { didSet { rebuildIndex() } }
     var staff: [StaffMember] = []
     var cells: [CellKey: CellEntry] = [:]
     /// 休憩の決まり（実働の計算に使う。会社ごとに設定で変えられる）
@@ -173,7 +173,7 @@ struct ShiftBook: Sendable, Equatable {
     /// スタッフに公開した内容（変更点を出すため。月ごと・店舗ごと）
     var published: [PublishedMonth] = []
     /// 店舗（空なら「本店」1つとして扱う）
-    var stores: [Store] = []
+    var stores: [Store] = [] { didSet { rebuildIndex() } }
     /// 会社の色（アプリ全体の色。nil は標準の色）
     var brandColor: UInt32? = nil
     /// いま見ている店舗（保存しない。表・集計・人数はこの店舗に絞る。nil はすべて）
@@ -182,17 +182,22 @@ struct ShiftBook: Sendable, Equatable {
     /// まだ何も作っていない（スタッフ・部門・ひな形・シフトのどれも無い）
     var isEmpty: Bool { staff.isEmpty && cells.isEmpty && departments.isEmpty && templates.isEmpty }
 
+    /// 引き（店舗の並び・部門→店舗・ひな形）。部門・ひな形・店舗が変わったときだけ作り直す。
+    /// 1マスごとに配列を探したり並べ替えたりしないため（表を描くたびに何千回も呼ばれる）
+    private(set) var index = BookIndex()
+
+    private mutating func rebuildIndex() { index = BookIndex(departments: departments, templates: templates, stores: stores) }
+
     func block(_ id: String?, for member: StaffMember) -> TimeBlock? {
         guard let id, !id.isEmpty else { return nil }
-        return member.timeBlocks.first { $0.id == id } ?? templates.first { $0.id == id }
+        if !member.timeBlocks.isEmpty, let b = member.timeBlocks.first(where: { $0.id == id }) { return b }
+        return index.templates[id]
     }
 
     // MARK: 店舗
 
     /// 店舗の一覧（並び順。作っていなければ「本店」1つ）
-    var allStores: [Store] {
-        stores.isEmpty ? [Store.makeDefault()] : stores.sorted { ($0.sortOrder, $0.name) < ($1.sortOrder, $1.name) }
-    }
+    var allStores: [Store] { index.sortedStores }
 
     /// 表に出す店舗の略称。略称が無ければ、店舗名の共通の頭（例：「ELDIA神戸」）を除いた先頭2文字
     func shortName(of st: Store) -> String {
@@ -213,9 +218,7 @@ struct ShiftBook: Sendable, Equatable {
 
     /// 部門の店舗（店舗が決まっていない・消した店舗なら最初の店舗）
     func storeID(ofDepartment id: String) -> String {
-        let all = allStores
-        let sid = departments.first { $0.id == id }?.storeID ?? ""
-        return all.contains { $0.id == sid } ? sid : all[0].id
+        index.departmentStore[id] ?? index.sortedStores[0].id
     }
 
     /// その人の店舗（部門の店舗）
@@ -239,7 +242,7 @@ struct ShiftBook: Sendable, Equatable {
 
     /// 手で入れたマスの店舗（消した店舗・未指定なら、その人の店舗）
     func storeID(of entry: CellEntry, for m: StaffMember) -> String {
-        if let s = entry.storeID, allStores.contains(where: { $0.id == s }) { return s }
+        if let s = entry.storeID, index.storeOrder[s] != nil { return s }
         return homeStoreID(of: m)
     }
 
@@ -288,10 +291,35 @@ struct ShiftBook: Sendable, Equatable {
 
     /// 掛け持ちの人の並び：店舗 → 部門 → 番号
     private func helperOrder(_ a: StaffMember, _ b: StaffMember) -> Bool {
-        let order = Dictionary(allStores.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { x, _ in x })
-        let da = departments.first { $0.id == a.departmentID }?.sortOrder ?? 0
-        let db = departments.first { $0.id == b.departmentID }?.sortOrder ?? 0
+        let order = index.storeOrder
+        let da = index.departmentOrder[a.departmentID] ?? 0
+        let db = index.departmentOrder[b.departmentID] ?? 0
         return (order[homeStoreID(of: a)] ?? 0, da, a.number, a.name) < (order[homeStoreID(of: b)] ?? 0, db, b.number, b.name)
+    }
+}
+
+/// ShiftBook の引き（部門・ひな形・店舗から作る。中身は ShiftBook と同じことを早く引けるようにしただけ）
+struct BookIndex: Sendable, Equatable {
+    var sortedStores: [Store] = [Store.makeDefault()]
+    /// 店舗ID → 並び順
+    var storeOrder: [String: Int] = [Store.defaultID: 0]
+    /// 部門ID → 店舗ID（店舗が決まっていない・消した店舗なら最初の店舗）
+    var departmentStore: [String: String] = [:]
+    var departmentOrder: [String: Int] = [:]
+    var templates: [String: TimeBlock] = [:]
+
+    init() {}
+
+    init(departments: [Department], templates: [TimeBlock], stores: [Store]) {
+        sortedStores = stores.isEmpty ? [Store.makeDefault()] : stores.sorted { ($0.sortOrder, $0.name) < ($1.sortOrder, $1.name) }
+        storeOrder = Dictionary(sortedStores.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let first = sortedStores[0].id
+        for d in departments {
+            departmentStore[d.id] = storeOrder[d.storeID] != nil ? d.storeID : first
+            departmentOrder[d.id] = d.sortOrder
+        }
+        // 同じIDが複数あれば先のもの（first(where:) と同じ）
+        for t in templates where self.templates[t.id] == nil { self.templates[t.id] = t }
     }
 }
 
@@ -354,12 +382,48 @@ struct DayKey: Hashable, Comparable, Sendable, CustomStringConvertible {
 
     var date: Date { Calendar.shift.date(from: DateComponents(year: year, month: month, day: day))! }
 
-    /// 0＝日曜 … 6＝土曜
-    var weekday: Int { Calendar.shift.component(.weekday, from: date) - 1 }
+    // 曜日・日のずらしは、表を描くたびに何万回も呼ばれるので Calendar を使わず整数の計算で出す
+    // （1970-01-01 からの日数。グレゴリオ暦。Calendar と同じ結果になることはテストで確かめている）
 
-    func adding(days n: Int) -> DayKey { DayKey(Calendar.shift.date(byAdding: .day, value: n, to: date)!) }
+    /// 1970-01-01 を 0 とした通し日数
+    var ordinal: Int {
+        let y = month <= 2 ? year - 1 : year
+        let era = (y >= 0 ? y : y - 399) / 400
+        let yoe = y - era * 400
+        let mp = (month + 9) % 12
+        let doy = (153 * mp + 2) / 5 + day - 1
+        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+        return era * 146_097 + doe - 719_468
+    }
 
-    var description: String { String(format: "%04d-%02d-%02d", year, month, day) }
+    init(ordinal: Int) {
+        let z = ordinal + 719_468
+        let era = (z >= 0 ? z : z - 146_096) / 146_097
+        let doe = z - era * 146_097
+        let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
+        let mp = (5 * doy + 2) / 153
+        let d = doy - (153 * mp + 2) / 5 + 1
+        let m = mp < 10 ? mp + 3 : mp - 9
+        let y = yoe + era * 400
+        self.init(m <= 2 ? y + 1 : y, m, d)
+    }
+
+    /// 0＝日曜 … 6＝土曜（1970-01-01 は木曜）
+    var weekday: Int { ((ordinal % 7) + 7 + 4) % 7 }
+
+    func adding(days n: Int) -> DayKey { DayKey(ordinal: ordinal + n) }
+
+    /// "YYYY-MM-DD"（String(format:) は遅いので、手で組み立てる）
+    var description: String {
+        var s = String(year)
+        s.reserveCapacity(10)
+        s += month < 10 ? "-0" : "-"
+        s += String(month)
+        s += day < 10 ? "-0" : "-"
+        s += String(day)
+        return s
+    }
 
     static func < (a: DayKey, b: DayKey) -> Bool { (a.year, a.month, a.day) < (b.year, b.month, b.day) }
 
@@ -379,7 +443,7 @@ struct MonthKey: Hashable, Comparable, Sendable, CustomStringConvertible {
 
     var days: [DayKey] {
         let first = DayKey(year, month, 1)
-        let n = Calendar.shift.range(of: .day, in: .month, for: first.date)!.count
+        let n = DayKey(adding(months: 1).year, adding(months: 1).month, 1).ordinal - first.ordinal
         return (1...n).map { DayKey(year, month, $0) }
     }
 
@@ -414,8 +478,22 @@ enum ClockTime {
 
     /// "9:00"・"09:00"・"24:00" を分に。読めなければ nil
     static func parse(_ text: String) -> Int? {
-        let p = text.split(separator: ":").map(String.init)
-        guard p.count == 2, let h = Int(p[0]), let m = Int(p[1]), (0...24).contains(h), (0..<60).contains(m) else { return nil }
+        // 数字と「:」を1文字ずつ読む（split で配列を作らない。表を描くたびに何万回も呼ばれるため）
+        var h = 0, m = 0, hd = 0, md = 0, colon = false
+        for c in text.utf8 {
+            switch c {
+            case UInt8(ascii: "0")...UInt8(ascii: "9"):
+                let v = Int(c - UInt8(ascii: "0"))
+                if colon { m = m * 10 + v; md += 1 } else { h = h * 10 + v; hd += 1 }
+                if hd > 2 || md > 2 { return nil }
+            case UInt8(ascii: ":"):
+                if colon { return nil }
+                colon = true
+            default:
+                return nil
+            }
+        }
+        guard colon, hd > 0, md > 0, h <= 24, m < 60 else { return nil }
         let v = h * 60 + m
         return v <= 1440 ? v : nil
     }
