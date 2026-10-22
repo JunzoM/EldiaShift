@@ -60,6 +60,8 @@ jobs:
           done
           shoot "$PAD" ipad-home -demoHome
           shoot "$PHONE" iphone-home -demoHome
+          shoot "$PAD" ipad-requests-list -demoTabRequests
+          shoot "$PAD" ipad-staff-list -demoTabStaff
           shoot "$PAD" ipad-month
           shoot "$PAD" ipad-week -demoWeek
           shoot "$PAD" ipad-day -demoDay
