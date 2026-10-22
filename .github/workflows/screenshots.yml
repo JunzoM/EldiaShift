@@ -58,6 +58,8 @@ jobs:
             xcrun simctl status_bar "$dev" override --time "9:41" || true
             xcrun simctl install "$dev" "$app"
           done
+          shoot "$PAD" ipad-home -demoHome
+          shoot "$PHONE" iphone-home -demoHome
           shoot "$PAD" ipad-month
           shoot "$PAD" ipad-week -demoWeek
           shoot "$PAD" ipad-day -demoDay

@@ -32,13 +32,55 @@ struct EldiaShiftApp: App {
     }
 }
 
+/// いちばん外側。iOS 18 以降はサイドバー（iPad）・タブ（iPhone）、iOS 17 はシフト表だけ
 struct RootView: View {
     @Environment(ShiftDatabase.self) private var db
     @Environment(ShiftStore.self) private var store
     @Environment(\.scenePhase) private var scenePhase
 
-    @AppStorage("viewMode") private var mode: GridMode = .month
     @State private var anchor = DayKey.today
+
+    /// 見本の画面確認・はじめて開いたとき・読み込めないときは、今までどおりシフト表の画面だけ
+    private var boardOnly: Bool {
+        DemoMode.staffing || DemoMode.printPage
+            || ["-demoLabor", "-demoCandidates", "-demoRequests", "-demoPersonal"].contains(where: DemoMode.flag)
+            || db.loadError != nil || store.lastError != nil || store.book.isEmpty
+    }
+
+    var body: some View {
+        Group {
+            if boardOnly {
+                ShiftBoardView(anchor: $anchor)
+            } else if #available(iOS 18.0, *) {
+                MainTabsView(anchor: $anchor)
+            } else {
+                ShiftBoardView(anchor: $anchor)
+            }
+        }
+        .onChange(of: db.changeToken) { store.refreshIfNeeded() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                store.refreshIfNeeded()
+                store.refreshToday()
+            }
+        }
+        // 開いたまま日付が変わったとき
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: RunLoop.main)) { _ in
+            store.refreshToday()
+        }
+    }
+}
+
+/// シフト表の画面（月・週・日）。見本の表示や、はじめて開いたときの画面もここで出す
+struct ShiftBoardView: View {
+    @Environment(ShiftDatabase.self) private var db
+    @Environment(ShiftStore.self) private var store
+    /// 表示している日（ホームから「その日を開く」ときに外から変える）
+    @Binding var anchor: DayKey
+    /// サイドバー・タブの中で使うとき（設定は別のタブにあるので、歯車を出さない）
+    var inTabs = false
+
+    @AppStorage("viewMode") private var mode: GridMode = .month
     @State private var showSettings = false
     @State private var importing = false
     @State private var showPrint = ProcessInfo.processInfo.arguments.contains("-demoPrint")
@@ -106,7 +148,7 @@ struct RootView: View {
                     }
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    if !store.book.staff.isEmpty {
+                    if !store.book.staff.isEmpty && !inTabs {
                         NavigationLink {
                             SummaryView(month: MonthKey(anchor))
                         } label: {
@@ -117,8 +159,10 @@ struct RootView: View {
                         Button { showPrint = true } label: { Label("印刷・PDF", systemImage: "printer") }
                     }
                     if !store.book.isEmpty { EditToggle() }
-                    Button { showSettings = true } label: { Image(systemName: "gearshape") }
-                        .accessibilityLabel("設定")
+                    if !inTabs {
+                        Button { showSettings = true } label: { Image(systemName: "gearshape") }
+                            .accessibilityLabel("設定")
+                    }
                 }
             }
             .sheet(isPresented: $showSettings) { SettingsView() }
@@ -129,17 +173,6 @@ struct RootView: View {
         .coachOverlay(.main)
         .onAppear {
             if ProcessInfo.processInfo.arguments.contains("-demoCoachEdit") { CoachCenter.shared.show(.edit(), after: 1.5) }
-        }
-        .onChange(of: db.changeToken) { store.refreshIfNeeded() }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active {
-                store.refreshIfNeeded()
-                store.refreshToday()
-            }
-        }
-        // 開いたまま日付が変わったとき
-        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: RunLoop.main)) { _ in
-            store.refreshToday()
         }
     }
 }
