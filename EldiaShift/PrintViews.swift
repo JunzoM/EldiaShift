@@ -307,9 +307,18 @@ enum PDFMaker {
 
 struct PrintSheet: View {
     let anchor: DayKey
+    /// サイドバーの項目として開いたとき（「閉じる」を出さない）
+    var inTab = false
 
     @Environment(ShiftStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    /// 画面で選び直した月（nil は開いたときの月）
+    @State private var target: DayKey?
+    private var day: DayKey { target ?? anchor }
+    @AppStorage("printOutput") private var output: OutputKind = .pdf
+    @State private var wideTab = 0
+    @State private var csvFile: ExportFile?
     @AppStorage("printFormat") private var format: PrintFormat = .monthByDepartment
     @AppStorage("printHalf") private var half: HalfSelection = .both
     @AppStorage("printTitle") private var title = ""
@@ -337,97 +346,28 @@ struct PrintSheet: View {
         let depts = book.scopedDepartments
             .filter { d in book.staff.contains { $0.departmentID == d.id } }
         let chosen = depts.filter { selected.contains($0.id) }
-        let pages = chosen.isEmpty ? [] : PrintPlanner.pages(format: format, half: half, departments: chosen, anchor: anchor)
+        let pages = chosen.isEmpty ? [] : PrintPlanner.pages(format: format, half: half, departments: chosen, anchor: day)
 
         NavigationStack {
-            Form {
-                Section("形式") {
-                    Picker("形式", selection: $format) {
-                        ForEach(PrintFormat.allCases) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.inline)
-                    .labelsHidden()
-                }
-                Section("部門") {
-                    ForEach(depts) { d in
-                        Toggle(d.name, isOn: Binding(get: { selected.contains(d.id) },
-                                                     set: { if $0 { selected.insert(d.id) } else { selected.remove(d.id) } }))
-                    }
-                }
-                if format.usesHalf {
-                    Section("印刷範囲") {
-                        Picker("印刷範囲", selection: $half) {
-                            ForEach(HalfSelection.allCases) { Text($0.title).tag($0) }
-                        }
-                        .pickerStyle(.segmented)
-                    }
-                }
-                Section {
-                    TextField("表の上に出す名前（例：店名）", text: $title)
-                } footer: {
-                    Text("白黒で印刷しても見分けられるよう、日曜は濃い灰色・土曜は中くらいの灰色にします。有休は○有、当欠は○欠で印刷し、公休は空白にします。")
-                }
-
-                changesSection(book)
-                Section {
-                    Button {
-                        makeImages(chosen, book: book)
-                    } label: {
-                        Label("一人ずつのシフト画像を作って送る", systemImage: "person.crop.rectangle.stack")
-                    }
-                    .disabled(chosen.isEmpty || busy)
-                } header: {
-                    Text("一人ずつ")
-                } footer: {
-                    Text("選んだ部門の全員分、\(MonthKey(anchor).month)月の自分のシフトだけの縦長の画像を作ります。LINE で本人に送れます。")
-                }
-
-                Section("プレビュー（\(pages.count)枚）") {
-                    if let first = pages.first {
-                        let v = PrintPageView(spec: first, book: book, title: effectiveTitle)
-                        let scale = min(1, 320 / v.size.width)
-                        v.scaleEffect(scale, anchor: .topLeading)
-                            .frame(width: v.size.width * scale, height: v.size.height * scale, alignment: .topLeading)
-                            .shadow(color: .black.opacity(0.15), radius: 4)
-                            .frame(maxWidth: .infinity)
-                    } else {
-                        Text("部門を選んでください").foregroundStyle(.secondary)
-                    }
+            Group {
+                if sizeClass == .regular {
+                    wideLayout(book: book, depts: depts, chosen: chosen, pages: pages)
+                } else {
+                    formLayout(book: book, depts: depts, chosen: chosen, pages: pages)
                 }
             }
-            .navigationTitle("印刷・PDF")
+            .navigationTitle("印刷・出力")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } }
+                if !inTab {
+                    ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } }
+                }
             }
-            // 印刷・共有は下に大きく（見つけやすく、押しやすく）
+            // iPhone：印刷・共有は下に大きく（見つけやすく、押しやすく）
             .safeAreaInset(edge: .bottom) {
-                HStack(spacing: 12) {
-                    Button { printNow(pages, book: book) } label: {
-                        Label("印刷", systemImage: "printer").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    Button { share(pages, book: book) } label: {
-                        Label("PDFを共有", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .coachTarget("printShare")
-                }
-                .controlSize(.large)
-                .disabled(pages.isEmpty || busy)
-                .padding(.horizontal, 16).padding(.vertical, 10)
-                .background(.bar)
-                .overlay {
-                    if busy {
-                        HStack(spacing: 10) {
-                            ProgressView()
-                            Text("作成中… \(progress)枚目").font(.subheadline).monospacedDigit()
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(.bar)
-                    }
-                }
+                if sizeClass != .regular { bottomBar(pages: pages, book: book) }
             }
+            .sheet(item: $csvFile) { f in ShareSheet(items: [f.url]) }
             .coachOverlay(.sheet)
             .sheet(item: $shareFile) { f in
                 ShareSheet(items: shareItems(f.url, book: book)) { done in if done { publish() } }
@@ -446,10 +386,360 @@ struct PrintSheet: View {
         }
     }
 
+    // MARK: iPhone：今までの縦に並ぶ画面
+
+    @ViewBuilder
+    private func formLayout(book: ShiftBook, depts: [Department], chosen: [Department], pages: [PrintPageSpec]) -> some View {
+            Form {
+            Section("形式") {
+                Picker("形式", selection: $format) {
+                    ForEach(PrintFormat.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            }
+            Section("部門") {
+                ForEach(depts) { d in
+                    Toggle(d.name, isOn: Binding(get: { selected.contains(d.id) },
+                                                 set: { if $0 { selected.insert(d.id) } else { selected.remove(d.id) } }))
+                }
+            }
+            if format.usesHalf {
+                Section("印刷範囲") {
+                    Picker("印刷範囲", selection: $half) {
+                        ForEach(HalfSelection.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                }
+            }
+            Section {
+                TextField("表の上に出す名前（例：店名）", text: $title)
+            } footer: {
+                Text("白黒で印刷しても見分けられるよう、日曜は濃い灰色・土曜は中くらいの灰色にします。有休は○有、当欠は○欠で印刷し、公休は空白にします。")
+            }
+
+            changesSection(book)
+            Section {
+                Button {
+                    makeImages(chosen, book: book)
+                } label: {
+                    Label("一人ずつのシフト画像を作って送る", systemImage: "person.crop.rectangle.stack")
+                }
+                .disabled(chosen.isEmpty || busy)
+            } header: {
+                Text("一人ずつ")
+            } footer: {
+                Text("選んだ部門の全員分、\(MonthKey(day).month)月の自分のシフトだけの縦長の画像を作ります。LINE で本人に送れます。")
+            }
+
+            Section("プレビュー（\(pages.count)枚）") {
+                if let first = pages.first {
+                    let v = PrintPageView(spec: first, book: book, title: effectiveTitle)
+                    let scale = min(1, 320 / v.size.width)
+                    v.scaleEffect(scale, anchor: .topLeading)
+                        .frame(width: v.size.width * scale, height: v.size.height * scale, alignment: .topLeading)
+                        .shadow(color: .black.opacity(0.15), radius: 4)
+                        .frame(maxWidth: .infinity)
+                } else {
+                    Text("部門を選んでください").foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func bottomBar(pages: [PrintPageSpec], book: ShiftBook) -> some View {
+                HStack(spacing: 12) {
+            Button { printNow(pages, book: book) } label: {
+                Label("印刷", systemImage: "printer").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            Button { share(pages, book: book) } label: {
+                Label("PDFを共有", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .coachTarget("printShare")
+        }
+        .controlSize(.large)
+        .disabled(pages.isEmpty || busy)
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .background(.bar)
+        .overlay {
+            if busy {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("作成中… \(progress)枚目").font(.subheadline).monospacedDigit()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.bar)
+            }
+        }
+    }
+
+    // MARK: iPad：出力形式・出力設定・プレビューの3列
+
+    @ViewBuilder
+    private func wideLayout(book: ShiftBook, depts: [Department], chosen: [Department], pages: [PrintPageSpec]) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 24) {
+                underlineTab("シフト表", 0)
+                underlineTab("一人ずつの画像", 1)
+                Spacer()
+            }
+            .padding(.horizontal, 20).padding(.top, 8)
+            .overlay(alignment: .bottom) { Divider() }
+
+            if wideTab == 0 {
+                HStack(alignment: .top, spacing: 16) {
+                    panel("出力形式") {
+                        VStack(spacing: 10) {
+                            ForEach(OutputKind.allCases) { outputCard($0) }
+                        }
+                    }
+                    .frame(width: 240)
+                    panel("出力設定") {
+                        ScrollView { settingsColumn(book: book, depts: depts) }
+                    }
+                    .frame(maxWidth: .infinity)
+                    panel("プレビュー") {
+                        previewColumn(book: book, chosen: chosen, pages: pages)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .padding(16)
+            } else {
+                HStack(alignment: .top, spacing: 16) {
+                    panel("対象") {
+                        ScrollView { VStack(alignment: .leading, spacing: 18) { monthRow; departmentChecks(depts) } }
+                    }
+                    .frame(width: 300)
+                    panel("一人ずつのシフト画像") {
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text("選んだ部門の全員分、\(MonthKey(day).month)月の自分のシフトだけの縦長の画像を作ります。LINE で本人に送れます。")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                            if let m = book.staffByDepartment(visibleIn: MonthKey(day))
+                                .first(where: { g in chosen.contains { $0.id == g.department.id } })?.members.first {
+                                ScrollView {
+                                    PersonalScheduleImage(member: m, month: MonthKey(day), book: book, title: effectiveTitle)
+                                        .scaleEffect(0.8, anchor: .top)
+                                        .shadow(color: .black.opacity(0.12), radius: 6)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                            bigButton("画像を作って送る", systemImage: "person.crop.rectangle.stack", disabled: chosen.isEmpty) {
+                                makeImages(chosen, book: book)
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .padding(16)
+            }
+        }
+        .background(Color(.systemGroupedBackground))
+    }
+
+    private func underlineTab(_ title: String, _ tag: Int) -> some View {
+        let on = wideTab == tag
+        return Button { wideTab = tag } label: {
+            Text(title)
+                .font(.subheadline.weight(on ? .bold : .medium))
+                .foregroundStyle(on ? Color.accentColor : Color.secondary)
+                .padding(.vertical, 10)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(on ? Color.accentColor : Color.clear).frame(height: 2.5)
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    private func panel<C: View>(_ title: String, @ViewBuilder content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title).font(.headline)
+            content()
+        }
+        .padding(16)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private func outputCard(_ k: OutputKind) -> some View {
+        let on = output == k
+        return Button { output = k } label: {
+            HStack(spacing: 12) {
+                Image(systemName: k.systemImage).font(.title2).foregroundStyle(k.color)
+                    .frame(width: 40, height: 40)
+                    .background(k.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(k.title).font(.subheadline.weight(.bold)).foregroundStyle(.primary)
+                    Text(k.detail).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(12)
+            .background(on ? Color.accentColor.opacity(0.07) : Color(.systemBackground),
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(on ? Color.accentColor : Color(.separator), lineWidth: on ? 2 : 0.5))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    private var monthRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("対象期間").font(.subheadline.weight(.semibold))
+            HStack {
+                Button { target = DayKey(MonthKey(day).adding(months: -1).year, MonthKey(day).adding(months: -1).month, 1) } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .accessibilityLabel("前の月")
+                Spacer()
+                Text(MonthKey(day).description).font(.body.weight(.semibold)).monospacedDigit()
+                Spacer()
+                Button { target = DayKey(MonthKey(day).adding(months: 1).year, MonthKey(day).adding(months: 1).month, 1) } label: {
+                    Image(systemName: "chevron.right")
+                }
+                .accessibilityLabel("次の月")
+            }
+            .padding(.horizontal, 12).padding(.vertical, 9)
+            .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color(.separator), lineWidth: 0.5))
+        }
+    }
+
+    private func departmentChecks(_ depts: [Department]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("対象部門").font(.subheadline.weight(.semibold))
+            ForEach(depts) { d in
+                let on = selected.contains(d.id)
+                Button {
+                    if on { selected.remove(d.id) } else { selected.insert(d.id) }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: on ? "checkmark.square.fill" : "square")
+                            .foregroundStyle(on ? Color.accentColor : Color.secondary)
+                        Text(d.name).foregroundStyle(.primary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
+        }
+    }
+
+    private func settingsColumn(book: ShiftBook, depts: [Department]) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            monthRow
+            if output != .csv {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("レイアウト").font(.subheadline.weight(.semibold))
+                    Picker("レイアウト", selection: $format) {
+                        ForEach(PrintFormat.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    if format.usesHalf {
+                        Picker("印刷範囲", selection: $half) {
+                            ForEach(HalfSelection.allCases) { Text($0.title).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                }
+            }
+            departmentChecks(depts)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("表示オプション").font(.subheadline.weight(.semibold))
+                TextField("表の上に出す名前（例：店名）", text: $title)
+                    .textFieldStyle(.roundedBorder)
+                if output == .pdf {
+                    Toggle("変更点の文章も一緒に送る", isOn: $withChanges).font(.subheadline)
+                }
+            }
+            let month = MonthKey(day)
+            if let diff = PublishDiff.changes(book, month: month) {
+                Label(diff.changes.isEmpty ? "前回の公開から変更はありません" : "前回の公開から \(diff.changes.count)件の変更",
+                      systemImage: "paperplane").font(.caption).foregroundStyle(.secondary)
+            } else {
+                Label("\(month.month)月分はまだ公開していません（送るか印刷すると公開済みになります）", systemImage: "paperplane")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func previewColumn(book: ShiftBook, chosen: [Department], pages: [PrintPageSpec]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if output == .csv {
+                VStack(spacing: 8) {
+                    Image(systemName: "tablecells").font(.system(size: 44)).foregroundStyle(OutputKind.csv.color)
+                    Text("\(MonthKey(day).description)・\(chosen.map(\.name).joined(separator: "・"))")
+                        .font(.subheadline.weight(.semibold))
+                    Text("1行が1人、1列が1日。Excel・Numbers で開けます。").font(.caption).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let first = pages.first {
+                GeometryReader { g in
+                    let v = PrintPageView(spec: first, book: book, title: effectiveTitle)
+                    let k = min(1, g.size.width / v.size.width, g.size.height / v.size.height)
+                    v.scaleEffect(k, anchor: .topLeading)
+                        .frame(width: v.size.width * k, height: v.size.height * k, alignment: .topLeading)
+                        .shadow(color: .black.opacity(0.15), radius: 5)
+                        .frame(maxWidth: .infinity)
+                }
+                Text("\(pages.count)枚").font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
+            } else {
+                Text("部門を選んでください").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            bigButton(output.actionTitle, systemImage: output.systemImage, disabled: output == .csv ? chosen.isEmpty : pages.isEmpty) {
+                switch output {
+                case .pdf: share(pages, book: book)
+                case .print: printNow(pages, book: book)
+                case .csv: shareCSV(chosen, book: book)
+                }
+            }
+            .coachTarget("printShare")
+        }
+    }
+
+    private func bigButton(_ title: String, systemImage: String, disabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Group {
+                if busy {
+                    HStack(spacing: 8) {
+                        ProgressView().tint(.white)
+                        Text("作成中… \(progress)").monospacedDigit()
+                    }
+                } else {
+                    Label(title, systemImage: systemImage)
+                }
+            }
+            .font(.headline)
+            .frame(maxWidth: .infinity, minHeight: 30)
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .disabled(disabled || busy)
+    }
+
+    /// CSV（Excel 用に先頭に BOM。1行が1人、1列が1日）
+    private func shareCSV(_ chosen: [Department], book: ShiftBook) {
+        let month = MonthKey(day)
+        let ids = Set(chosen.map(\.id))
+        let groups = book.staffByDepartment(visibleIn: month).filter { ids.contains($0.department.id) }
+        do {
+            let text = ShiftCSV.make(groups: groups, month: month, book: book)
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("シフト表_\(month.year)年\(month.month)月.csv")
+            try Data(("\u{FEFF}" + text).utf8).write(to: url, options: .atomic)
+            csvFile = ExportFile(url: url)
+        } catch {
+            failure = "CSVを作れませんでした（\(error.localizedDescription)）"
+        }
+    }
+
     private func pdfURL(_ pages: [PrintPageSpec], book: ShiftBook) async throws -> URL {
         let data = await PDFMaker.makeAsync(pages: pages, book: book, title: effectiveTitle) { progress = $0 }
         if data.isEmpty { throw CocoaError(.fileWriteUnknown) }
-        let m = MonthKey(anchor)
+        let m = MonthKey(day)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("シフト表_\(m.year)年\(m.month)月.pdf")
         try data.write(to: url, options: .atomic)
         return url
@@ -492,7 +782,7 @@ struct PrintSheet: View {
 
     @ViewBuilder
     private func changesSection(_ book: ShiftBook) -> some View {
-        let month = MonthKey(anchor)
+        let month = MonthKey(day)
         let diff = PublishDiff.changes(book, month: month)
         Section {
             if let diff {
@@ -528,13 +818,13 @@ struct PrintSheet: View {
     }
 
     private func shareItems(_ url: URL, book: ShiftBook) -> [Any] {
-        let month = MonthKey(anchor)
+        let month = MonthKey(day)
         guard withChanges, let diff = PublishDiff.changes(book, month: month), !diff.changes.isEmpty else { return [url] }
         return [PublishDiff.text(diff.changes, month: month, title: effectiveTitle), url]
     }
 
     private func publish() {
-        let month = MonthKey(anchor)
+        let month = MonthKey(day)
         do {
             try store.markPublished(month)
             publishedNote = "\(month.month)月分の今の内容を公開済みとして残しました。次からは、ここからの変更点を出します。"
@@ -545,7 +835,7 @@ struct PrintSheet: View {
 
     private func makeImages(_ chosen: [Department], book: ShiftBook) {
         guard !busy else { return }
-        let month = MonthKey(anchor)
+        let month = MonthKey(day)
         let ids = Set(chosen.map(\.id))
         let members = book.staffByDepartment(visibleIn: month).filter { ids.contains($0.department.id) }.flatMap(\.members)
         busy = true; progress = 0
@@ -558,5 +848,74 @@ struct PrintSheet: View {
                 failure = "画像を作れませんでした（\(error.localizedDescription)）"
             }
         }
+    }
+}
+
+// MARK: - 出力形式
+
+enum OutputKind: String, CaseIterable, Identifiable {
+    case pdf, print, csv
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .pdf: "PDFで出力"
+        case .print: "印刷（AirPrint）"
+        case .csv: "CSVで出力"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .pdf: "PDFを作って LINE・メール・ファイルに送る"
+        case .print: "近くのプリンタで印刷する"
+        case .csv: "Excel・Numbers で開ける表のファイル"
+        }
+    }
+
+    var actionTitle: String {
+        switch self {
+        case .pdf: "PDFを作って送る"
+        case .print: "印刷する"
+        case .csv: "CSVを作って送る"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .pdf: "doc.richtext"
+        case .print: "printer"
+        case .csv: "tablecells"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .pdf: .red
+        case .print: .blue
+        case .csv: .green
+        }
+    }
+}
+
+// MARK: - CSV
+
+enum ShiftCSV {
+    static func make(groups: [DepartmentGroup], month: MonthKey, book: ShiftBook) -> String {
+        let wd = ["日", "月", "火", "水", "木", "金", "土"]
+        var rows = [(["部門", "番号", "氏名"] + month.days.map { "\($0.day)(\(wd[$0.weekday]))" } + ["勤務日数", "実働時間"])]
+        for g in groups {
+            for m in g.members {
+                let s = MonthSummary.of(m, month: month, in: book)
+                let cells = month.days.map { d in PublishedMonth.label(Schedule.resolve(m, on: d, in: book), member: m, book: book) }
+                rows.append([g.department.name, "\(m.number)", m.name] + cells + ["\(s.workDays)", String(format: "%.1f", s.hours)])
+            }
+        }
+        return rows.map { $0.map(escape).joined(separator: ",") }.joined(separator: "\r\n") + "\r\n"
+    }
+
+    static func escape(_ v: String) -> String {
+        guard v.contains(where: { $0 == "," || $0 == "\"" || $0 == "\n" }) else { return v }
+        return "\"" + v.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 }

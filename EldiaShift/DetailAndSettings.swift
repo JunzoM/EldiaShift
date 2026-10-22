@@ -62,19 +62,27 @@ struct CellDetailSheet: View {
 
 extension View {
     /// バックアップ（.json）を選んで取り込む。中身を確認してから置き換える
-    func backupImporter(isPresented: Binding<Bool>) -> some View {
-        modifier(BackupImporter(isPresented: isPresented))
+    /// file：ファイルを選ばずに、この場所のバックアップを読み込む（自動バックアップから復元するとき）
+    func backupImporter(isPresented: Binding<Bool>, file: Binding<URL?> = .constant(nil)) -> some View {
+        modifier(BackupImporter(isPresented: isPresented, file: file))
     }
 }
 
 private struct BackupImporter: ViewModifier {
     @Binding var isPresented: Bool
+    @Binding var file: URL?
     @Environment(ShiftStore.self) private var store
     @State private var pending: (ShiftBook, BackupFile.Summary)?
     @State private var message: String?
 
     func body(content: Content) -> some View {
         content
+            .onChange(of: file) {
+                if let url = file {
+                    file = nil
+                    read(url)
+                }
+            }
             .fileImporter(isPresented: $isPresented, allowedContentTypes: [.json]) { result in
                 switch result {
                 case .success(let url): read(url)

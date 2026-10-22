@@ -81,7 +81,7 @@ struct AppSidebar: View {
     @Binding var tab: AppTab
     @Environment(ShiftStore.self) private var store
 
-    static let main: [AppTab] = [.home, .schedule, .requests, .staff, .summary, .stores]
+    static let main: [AppTab] = [.home, .schedule, .requests, .staff, .summary, .print, .stores]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -234,57 +234,142 @@ struct BackupView: View {
     @Environment(ShiftStore.self) private var store
     @State private var tab = 0
     @State private var importing = false
+    @State private var restoreFile: URL?
     @State private var exportFile: ExportFile?
     @State private var error: String?
+    @State private var autoFiles: [URL] = []
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                Picker("", selection: $tab) {
-                    Text("バックアップ").tag(0)
-                    Text("復元").tag(1)
-                }
-                .pickerStyle(.segmented)
-
-                if tab == 0 {
-                    card(icon: "doc.badge.arrow.up", title: "バックアップを作成",
-                         detail: "今のシフト表（すべての店舗・スタッフ・シフト・設定）を1つのファイル（.json）に書き出します。",
-                         button: "作成する", disabled: store.book.isEmpty) { export() }
-                    card(icon: "clock.arrow.circlepath", title: "自動バックアップ",
-                         detail: "消去・取り込みの前に、自動でバックアップを残しています（新しい30件）。「ファイル」アプリ →「このiPad内」→「シフト表」→「自動バックアップ」で見られます。",
-                         button: nil, disabled: false) {}
-                } else {
-                    card(icon: "arrow.down.doc", title: "データを復元",
-                         detail: "書き出したファイルや、PC版シフト表のバックアップを読み込みます。",
-                         button: "ファイルを選ぶ", disabled: false) { importing = true }
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: "exclamationmark.circle").font(.title3).foregroundStyle(.red)
-                        Text("復元すると、今のデータは上書きされます。復元の前に、自動でバックアップを残します。")
-                            .font(.subheadline).foregroundStyle(.red)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(16)
-                    .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                }
+        VStack(spacing: 0) {
+            HStack(spacing: 28) {
+                underlineTab("バックアップ", 0)
+                underlineTab("復元", 1)
+                Spacer()
             }
-            .padding(16)
-            .frame(maxWidth: 720)
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 20).padding(.top, 8)
+            .background(Color(.systemGroupedBackground))
+            .overlay(alignment: .bottom) { Divider() }
+
+            ScrollView {
+                VStack(spacing: 14) {
+                    if tab == 0 {
+                        card(icon: "doc.badge.arrow.up", title: "バックアップを作成",
+                             detail: "今のデータ（すべての店舗・スタッフ・シフト・設定）を1つのファイルに保存します。",
+                             button: "バックアップを作成", disabled: store.book.isEmpty) { export() }
+                        card(icon: "square.and.arrow.down", title: "ファイルに書き出す・読み込む",
+                             detail: "ファイルアプリや iCloud Drive に保存したバックアップ、PC版シフト表のバックアップを読み込みます。",
+                             button: "ファイルを選択", disabled: false) { importing = true }
+                        notice("アプリを削除すると、データが失われる可能性があります。定期的にバックアップを作成してください。",
+                               color: .orange, icon: "exclamationmark.circle")
+                    } else {
+                        card(icon: "arrow.down.doc", title: "ファイルから復元",
+                             detail: "書き出したファイルや、PC版シフト表のバックアップを読み込みます。",
+                             button: "ファイルを選択", disabled: false) { importing = true }
+                        autoBackups
+                        notice("復元すると、今のデータは上書きされます。復元の前に、今のデータを自動でバックアップします。",
+                               color: .red, icon: "exclamationmark.triangle")
+                    }
+                }
+                .padding(20)
+                .frame(maxWidth: 760)
+                .frame(maxWidth: .infinity)
+            }
         }
         .background(Color(.systemGroupedBackground))
         .navigationTitle("バックアップ・復元")
         .navigationBarTitleDisplayMode(.inline)
-        .backupImporter(isPresented: $importing)
+        .backupImporter(isPresented: $importing, file: $restoreFile)
         .sheet(item: $exportFile) { f in ShareSheet(items: [f.url]) }
         .errorAlert($error)
+        .onAppear { loadAutoFiles() }
+        .onChange(of: tab) { loadAutoFiles() }
+    }
+
+    // MARK: 自動バックアップ
+
+    private var autoBackups: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("自動バックアップ").font(.headline)
+                Spacer()
+                Text("新しい30件まで").font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(.bottom, 8)
+            if autoFiles.isEmpty {
+                Text("まだありません。消去・取り込みの前に自動で作られます。").font(.subheadline).foregroundStyle(.secondary)
+                    .padding(.vertical, 8)
+            }
+            ForEach(autoFiles.prefix(10), id: \.self) { url in
+                HStack(spacing: 12) {
+                    Image(systemName: "clock.arrow.circlepath").foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(Self.title(of: url)).font(.subheadline.weight(.semibold)).monospacedDigit()
+                        Text(Self.reason(of: url)).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("復元") { restoreFile = url }.buttonStyle(.bordered)
+                }
+                .padding(.vertical, 8)
+                if url != autoFiles.prefix(10).last { Divider() }
+            }
+        }
+        .padding(16)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func loadAutoFiles() {
+        let dir = ShiftStore.autoBackupFolder
+        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+        autoFiles = files.filter { $0.pathExtension == "json" }.sorted { $0.lastPathComponent > $1.lastPathComponent }
+    }
+
+    /// "shift-20261022-213000-消去前.json" → "2026/10/22 21:30"
+    static func title(of url: URL) -> String {
+        let parts = url.deletingPathExtension().lastPathComponent.split(separator: "-")
+        guard parts.count >= 3, parts[1].count == 8, parts[2].count == 6 else { return url.lastPathComponent }
+        let d = Array(parts[1]), t = Array(parts[2])
+        return "\(String(d[0..<4]))/\(String(d[4..<6]))/\(String(d[6..<8])) \(String(t[0..<2])):\(String(t[2..<4]))"
+    }
+
+    static func reason(of url: URL) -> String {
+        let parts = url.deletingPathExtension().lastPathComponent.split(separator: "-")
+        return parts.count >= 4 ? "\(parts[3...].joined(separator: "-"))に自動で保存" : "自動で保存"
+    }
+
+    // MARK: 部品
+
+    private func underlineTab(_ title: String, _ tag: Int) -> some View {
+        let on = tab == tag
+        return Button { tab = tag } label: {
+            Text(title)
+                .font(.subheadline.weight(on ? .bold : .medium))
+                .foregroundStyle(on ? Color.accentColor : Color.secondary)
+                .padding(.vertical, 10)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(on ? Color.accentColor : Color.clear).frame(height: 2.5)
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    private func notice(_ text: String, color: Color, icon: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon).font(.title3).foregroundStyle(color)
+            Text(text).font(.subheadline).foregroundStyle(color)
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(color.opacity(0.25), lineWidth: 1))
     }
 
     private func card(icon: String, title: String, detail: String, button: String?, disabled: Bool,
                       action: @escaping () -> Void) -> some View {
         HStack(alignment: .center, spacing: 14) {
             Image(systemName: icon).font(.title2).foregroundStyle(Color.accentColor)
-                .frame(width: 44, height: 44)
-                .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .frame(width: 48, height: 48)
+                .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             VStack(alignment: .leading, spacing: 4) {
                 Text(title).font(.headline)
                 Text(detail).font(.subheadline).foregroundStyle(.secondary)
@@ -294,7 +379,7 @@ struct BackupView: View {
                 Button(button, action: action).buttonStyle(.borderedProminent).disabled(disabled)
             }
         }
-        .padding(16)
+        .padding(18)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 

@@ -4,7 +4,7 @@ import SwiftUI
 
 enum AppTab: String, Hashable, Identifiable {
     var id: String { rawValue }
-    case home, schedule, requests, staff, summary, stores, settings
+    case home, schedule, requests, staff, summary, print, stores, settings
 }
 
 extension AppTab {
@@ -15,6 +15,7 @@ extension AppTab {
         case .requests: "希望休"
         case .staff: "スタッフ"
         case .summary: "集計"
+        case .print: "印刷・出力"
         case .stores: "店舗"
         case .settings: "設定"
         }
@@ -27,6 +28,7 @@ extension AppTab {
         case .requests: "calendar.badge.minus"
         case .staff: "person.2"
         case .summary: "chart.bar.doc.horizontal"
+        case .print: "printer"
         case .stores: "building.2"
         case .settings: "gearshape"
         }
@@ -55,7 +57,9 @@ struct MainTabsView: View {
             if DemoMode.enabled {
                 tab = DemoMode.flag("-demoHome") ? .home
                     : DemoMode.flag("-demoTabRequests") ? .requests
-                    : DemoMode.flag("-demoTabStaff") ? .staff : .schedule
+                    : DemoMode.flag("-demoTabStaff") ? .staff
+                    : DemoMode.flag("-demoTabPrint") ? .print
+                    : DemoMode.flag("-demoTabBackup") ? .settings : .schedule
             } else {
                 tab = savedTab
             }
@@ -81,7 +85,7 @@ struct MainTabsView: View {
 
     @ViewBuilder
     private var tabs: some View {
-        let all: [AppTab] = [.home, .schedule, .requests, .staff, .summary, .stores, .settings]
+        let all: [AppTab] = [.home, .schedule, .requests, .staff, .summary, .print, .stores, .settings]
         if #available(iOS 18.0, *) {
             TabView(selection: $tab) {
                 ForEach(all) { t in
@@ -123,10 +127,16 @@ struct MainTabsView: View {
                 OffRequestListView()
                     .toolbar { if storeInToolbar { ToolbarItem(placement: .topBarLeading) { StoreSwitcher() } } }
             }
+        case .print:
+            PrintSheet(anchor: anchor, inTab: true)
         case .stores:
             NavigationStack { StoreListView() }
         case .settings:
-            SettingsView(inTab: true)
+            if DemoMode.flag("-demoTabBackup") {
+                NavigationStack { BackupView() }
+            } else {
+                SettingsView(inTab: true)
+            }
         }
     }
 
