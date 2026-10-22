@@ -321,6 +321,16 @@ enum DemoMode {
         b.cells[CellKey(staffID: "7", day: today.adding(days: 1))] = CellEntry(inTime: "10:00", outTime: "19:00", blockID: nil,
                                                                               isOff: false, storeID: "annex")
         b.brandColor = 0x1E3A8A
+        if DemoMode.flag("-demoAppStore") {
+            // App Store の画面写真用：人数が足りる日が多い、落ち着いた見本
+            b.staffing.bands = [
+                StaffingBand(departmentID: "hall", startHour: 9, endHour: 18, weekday: 2, saturday: 2, holiday: 2),
+                StaffingBand(departmentID: "kitchen", startHour: 13, endHour: 21, weekday: 1, saturday: 1, holiday: 1)
+            ]
+            b.staffing.dayTypes = [:]
+            b.stores[0].name = "ホテル神戸 本館"
+            b.stores[1].name = "ホテル神戸 別館"
+        }
         return b
     }
 }

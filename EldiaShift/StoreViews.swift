@@ -302,6 +302,7 @@ struct StoreDetailPanel: View {
                 Text("店舗情報").font(.headline).padding(.bottom, 8)
                 info("店舗名", st.name)
                 info("略称", book.shortName(of: st))
+                info("アプリの表示名", "\(st.displayPrefix) SHIFT")
                 info("住所", st.address)
                 info("電話番号", st.phone)
                 info("営業時間", st.hours)
@@ -401,6 +402,17 @@ struct StoreEditView: View {
                     TextField("住所", text: $storeInfo.address)
                     TextField("電話番号", text: $storeInfo.phone).keyboardType(.phonePad)
                     TextField("営業時間（例：24時間）", text: $storeInfo.hours)
+                }
+                Section {
+                    HStack {
+                        TextField("HOTEL", text: $storeInfo.brandPrefix)
+                            .textInputAutocapitalization(.characters)
+                        Text("SHIFT").font(.body.weight(.heavy)).foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("アプリの表示名")
+                } footer: {
+                    Text("この店舗を表示しているとき、サイドバーのロゴに「\(storeInfo.displayPrefix) SHIFT」と出します。空なら HOTEL です。")
                 }
                 Section {
                     TextField("略称（例：本館）", text: $storeInfo.short)
