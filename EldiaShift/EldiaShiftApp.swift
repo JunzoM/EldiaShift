@@ -279,10 +279,9 @@ enum DemoMode {
         // 夜勤明けの翌日に早番（勤務の間隔の注意）
         b.cells[CellKey(staffID: "3", day: today.adding(days: 1))] = CellEntry(inTime: "09:00", outTime: "18:00", blockID: "t1", isOff: false)
         b.staff[0].joinDate = "2024-04-01"
-        // 2店舗：中村さんは別館にも掛け持ちで入る（明日は別館）
+        // 2店舗：山本さんは別館にも掛け持ちで入る（明日は別館）。略称は空のまま（共通の頭を除いて「本館」「別館」と出る）
         b.stores = [Store(id: "main", name: "見本ホテル 本館", address: "神戸市中央区", hours: "24時間", colorIndex: 0, sortOrder: 0),
-                    Store(id: "annex", name: "見本ホテル 別館", address: "神戸市中央区", hours: "24時間", colorIndex: 4, sortOrder: 1)
-                    // 略称は空のまま：共通の頭「見本ホテル」を除いて「別館」と出る]
+                    Store(id: "annex", name: "見本ホテル 別館", address: "神戸市中央区", hours: "24時間", colorIndex: 4, sortOrder: 1)]
         b.departments = b.departments.map { var d = $0; d.storeID = "main"; return d }
         b.departments.append(Department(id: "annex-hall", name: "ホール", colorIndex: 0, sortOrder: 2, storeID: "annex"))
         b.staff[6].extraStoreIDs = ["annex"]
