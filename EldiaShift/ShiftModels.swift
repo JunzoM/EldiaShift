@@ -20,6 +20,14 @@ struct Store: Identifiable, Hashable, Codable, Sendable {
     var sortOrder: Int = 0
     /// 店舗の写真（小さく縮めた JPEG。iCloud 同期・バックアップに入るので数十KBにする）
     var photo: Data? = nil
+    /// アプリの中に出す名前「〇〇 SHIFT」の〇〇（空は HOTEL）
+    var brandPrefix: String = ""
+
+    /// 「〇〇 SHIFT」の〇〇（空なら HOTEL）
+    var displayPrefix: String {
+        let t = brandPrefix.trimmingCharacters(in: .whitespaces)
+        return t.isEmpty ? "HOTEL" : t
+    }
 
     /// 店舗をまだ1つも作っていないとき（前の版のデータ）に使う店舗
     static let defaultID = "main"
@@ -54,6 +62,7 @@ struct Store: Identifiable, Hashable, Codable, Sendable {
         colorIndex = try c.decodeIfPresent(Int.self, forKey: .colorIndex) ?? 0
         sortOrder = try c.decodeIfPresent(Int.self, forKey: .sortOrder) ?? 0
         photo = try c.decodeIfPresent(Data.self, forKey: .photo)
+        brandPrefix = try c.decodeIfPresent(String.self, forKey: .brandPrefix) ?? ""
     }
 }
 

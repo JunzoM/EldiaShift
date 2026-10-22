@@ -93,7 +93,9 @@ struct AppSidebar: View {
                 Image(systemName: "building.columns.fill").font(.title2)
                 if !compact {
                     VStack(alignment: .leading, spacing: -2) {
-                        Text("HOTEL").font(.caption.weight(.heavy))
+                        // 〇〇 は店舗ごと（店舗管理の「アプリの表示名」）
+                        Text(store.currentStore.displayPrefix).font(.caption.weight(.heavy))
+                            .lineLimit(1).minimumScaleFactor(0.6)
                         Text("SHIFT").font(.headline.weight(.heavy))
                     }
                     .transition(.opacity)

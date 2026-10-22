@@ -1134,3 +1134,18 @@ struct MultiStoreTests {
         #expect(BrandColor.contrastWithWhite(0xFDE68A) < 3)
     }
 }
+
+@Suite("アプリの表示名")
+struct BrandPrefixTests {
+    @Test("「〇〇 SHIFT」の〇〇は店舗ごと。空なら HOTEL、前の版の記録も読める")
+    func prefix() throws {
+        var a = Store(id: "a", name: "本館")
+        #expect(a.displayPrefix == "HOTEL")
+        a.brandPrefix = "  ELDIA "
+        #expect(a.displayPrefix == "ELDIA")
+        let old = try JSONDecoder().decode(Store.self, from: Data(#"{"id":"x","name":"旧"}"#.utf8))
+        #expect(old.brandPrefix == "" && old.displayPrefix == "HOTEL")
+        let back = try JSONDecoder().decode(Store.self, from: JSONEncoder().encode(a))
+        #expect(back.brandPrefix == "  ELDIA ")
+    }
+}

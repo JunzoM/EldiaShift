@@ -221,7 +221,7 @@ struct SettingsView: View {
                 } header: {
                     Text("このアプリについて")
                 } footer: {
-                    Text("HOTEL SHIFT は、入力した内容をこの端末と（オンにした場合は）あなたの iCloud にだけ保存します。運営者が受け取ることはありません。")
+                    Text("SHIFT は、入力した内容をこの端末と（オンにした場合は）あなたの iCloud にだけ保存します。開発者が受け取ることはありません。")
                 }
 
                 Section("内容") {
