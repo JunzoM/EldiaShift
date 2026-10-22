@@ -1,0 +1,95 @@
+name: App Store Screenshots
+
+# App Store 提出用の画面写真（iPad 13インチ・iPhone 6.9インチ）。appstore-screenshots ブランチに置く
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/appstore-shots.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  shots:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select newest Xcode
+        run: |
+          xc=$(ls -d /Applications/Xcode_*.app | grep -vi beta | sort -V | tail -1)
+          sudo xcode-select -s "$xc"
+      - name: Pick simulators
+        run: |
+          xcrun simctl list devices available -j > devices.json
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json
+          d = json.load(open("devices.json"))["devices"]
+          runtimes = sorted([k for k in d if "iOS" in k], reverse=True)
+          def pick(prefixes):
+              for rt in runtimes:
+                  for p in prefixes:
+                      for x in d[rt]:
+                          if x["name"].startswith(p):
+                              return x["udid"], x["name"]
+              return "", ""
+          phone = pick(["iPhone 17 Pro Max", "iPhone 16 Pro Max", "iPhone 16 Plus", "iPhone 15 Pro Max"])
+          pad = pick(["iPad Pro 13-inch", "iPad Pro (12.9-inch)", "iPad Air 13-inch"])
+          print(f"PHONE={phone[0]}")
+          print(f"PAD={pad[0]}")
+          print(f"PHONE_NAME={phone[1]}")
+          print(f"PAD_NAME={pad[1]}")
+          PY
+      - name: Build
+        run: |
+          echo "::notice title=Devices::$PHONE_NAME / $PAD_NAME"
+          xcodebuild -project EldiaShift.xcodeproj -scheme EldiaShift \
+            -destination "id=$PHONE" -configuration Debug -derivedDataPath dd \
+            CODE_SIGNING_ALLOWED=NO build | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
+          test -d dd/Build/Products/Debug-iphonesimulator/EldiaShift.app
+      - name: Take screenshots
+        run: |
+          app=dd/Build/Products/Debug-iphonesimulator/EldiaShift.app
+          bid=com.bestdelight.eldiashift
+          mkdir -p shots/ipad-13 shots/iphone-6.9
+          shoot() {  # 端末 フォルダ/ファイル名 起動オプション…
+            dev=$1; name=$2; shift 2
+            xcrun simctl terminate "$dev" $bid >/dev/null 2>&1 || true
+            xcrun simctl launch "$dev" $bid -demoLayout -demoAppStore -AppleLanguages "(ja)" -AppleLocale ja_JP "$@"
+            sleep 9
+            xcrun simctl io "$dev" screenshot "shots/$name.png"
+          }
+          for dev in "$PHONE" "$PAD"; do
+            xcrun simctl boot "$dev" || true
+            xcrun simctl bootstatus "$dev" -b
+            xcrun simctl status_bar "$dev" override --time "9:41" --batteryState charged --batteryLevel 100 --wifiBars 3 --cellularBars 4 || true
+            xcrun simctl ui "$dev" appearance light || true
+            xcrun simctl install "$dev" "$app"
+          done
+          shoot "$PAD" ipad-13/1-home -demoHome
+          shoot "$PAD" ipad-13/2-month
+          shoot "$PAD" ipad-13/3-day -demoDay -demoEdit
+          shoot "$PAD" ipad-13/4-print -demoTabPrint
+          shoot "$PAD" ipad-13/5-stores -demoTabStores
+          shoot "$PAD" ipad-13/6-staff -demoTabStaff
+          shoot "$PHONE" iphone-6.9/1-home -demoHome
+          shoot "$PHONE" iphone-6.9/2-month
+          shoot "$PHONE" iphone-6.9/3-week -demoWeek
+          shoot "$PHONE" iphone-6.9/4-day -demoDay -demoEdit
+          shoot "$PHONE" iphone-6.9/5-personal -demoPersonal
+          python3 - <<'PY'
+          import struct, glob
+          for f in sorted(glob.glob("shots/*/*.png")):
+              with open(f, "rb") as h:
+                  h.read(16); w, ht = struct.unpack(">II", h.read(8))
+              print(f"::notice title=Size::{f} {w}x{ht}")
+          PY
+      - name: Push to appstore-screenshots branch
+        run: |
+          cd shots
+          git init -q
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -qm "App Store screenshots for ${GITHUB_SHA::7}"
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" HEAD:appstore-screenshots

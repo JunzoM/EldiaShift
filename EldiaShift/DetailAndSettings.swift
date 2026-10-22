@@ -214,6 +214,16 @@ struct SettingsView: View {
                     Text("スタッフ・共通の時間・入力したシフトをすべて消します（部署と休みの種類は残ります）。消す前と、バックアップを読み込む前には、自動でバックアップを残します（「ファイル」アプリ →「このiPad内」→「シフト表」→「自動バックアップ」）。")
                 }
 
+                Section {
+                    Link(destination: AppLinks.support) { Label("サポート・お問い合わせ", systemImage: "questionmark.bubble") }
+                    Link(destination: AppLinks.privacy) { Label("プライバシーポリシー", systemImage: "hand.raised") }
+                    LabeledContent("バージョン", value: AppLinks.version)
+                } header: {
+                    Text("このアプリについて")
+                } footer: {
+                    Text("HOTEL SHIFT は、入力した内容をこの端末と（オンにした場合は）あなたの iCloud にだけ保存します。運営者が受け取ることはありません。")
+                }
+
                 Section("内容") {
                     LabeledContent("スタッフ", value: "\(store.book.staff.count)人")
                     LabeledContent("部門", value: "\(store.book.departments.count)")
@@ -280,4 +290,17 @@ struct ShareSheet: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
+}
+
+/// サポート・プライバシーポリシーのページ（App Store の登録にも同じ URL を使う）
+enum AppLinks {
+    static let support = URL(string: "https://facility-manager-phi.vercel.app/hotel-shift/support")!
+    static let privacy = URL(string: "https://facility-manager-phi.vercel.app/hotel-shift/privacy")!
+
+    static var version: String {
+        let i = Bundle.main.infoDictionary
+        let v = i?["CFBundleShortVersionString"] as? String ?? "-"
+        let b = i?["CFBundleVersion"] as? String ?? "-"
+        return "\(v)（\(b)）"
+    }
 }
