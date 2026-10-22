@@ -196,8 +196,13 @@ struct DayTimelineView: View {
         }
         .padding(.horizontal, 8)
         .frame(width: w, height: rowHeight - 14, alignment: .leading)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
-        .background(ElsewhereHatch().opacity(0.5).clipShape(RoundedRectangle(cornerRadius: 8)))
+        .background {
+            ZStack {
+                Color(.secondarySystemBackground)
+                ElsewhereHatch().opacity(0.5)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color(.separator), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .offset(x: x)
