@@ -190,7 +190,7 @@ struct DayTimelineView: View {
         let x = CGFloat(s.inM - TimelineMath.start) * perMinute
         let w = max(CGFloat(s.outM - s.inM) * perMinute, 16)
         return HStack(spacing: 6) {
-            if let st = book.store(r.storeID) { StoreTag(store: st, size: 10) }
+            if let st = book.store(r.storeID) { StoreTag(store: st, label: book.shortName(of: st), size: 10) }
             Text("\(TimelineMath.label(s.inM))〜\(TimelineMath.label(s.outM))")
                 .font(.caption2).monospacedDigit().foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.6)
         }

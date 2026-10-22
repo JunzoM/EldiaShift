@@ -775,7 +775,7 @@ struct ShiftCellView: View {
             Text("－").font(.caption2).foregroundStyle(.tertiary)
         } else if let r = resolved, r.elsewhere {
             VStack(spacing: 2) {
-                if let st = book.store(r.storeID) { StoreTag(store: st, size: large ? 11 : 9) }
+                if let st = book.store(r.storeID) { StoreTag(store: st, label: book.shortName(of: st), size: large ? 11 : 9) }
                 Text(r.inTime.isEmpty ? "—" : r.inTime).font(.system(size: large ? 12 : 10)).foregroundStyle(.secondary)
                 if large { Text(r.outTime).font(.system(size: 11)).foregroundStyle(.tertiary) }
             }

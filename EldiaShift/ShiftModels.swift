@@ -13,6 +13,8 @@ struct Store: Identifiable, Hashable, Codable, Sendable {
     /// 営業時間（例：「24時間」「6:00〜24:00」）
     var hours: String = ""
     var note: String = ""
+    /// 表のマスに出す略称（例：「本館」）。空なら店舗名から自動で作る
+    var short: String = ""
     /// 店舗を見分ける小さな色の印（Palette の番号）
     var colorIndex: Int = 0
     var sortOrder: Int = 0
@@ -21,17 +23,18 @@ struct Store: Identifiable, Hashable, Codable, Sendable {
     static let defaultID = "main"
     static func makeDefault() -> Store { Store(id: defaultID, name: "本店") }
 
-    /// 表のマスに出す短い名前（先頭2文字）
-    var shortName: String { String(name.prefix(2)) }
+    /// 表のマスに出す短い名前（略称。なければ先頭2文字）
+    var shortName: String { short.isEmpty ? String(name.prefix(2)) : short }
 
     init(id: String, name: String, address: String = "", phone: String = "", hours: String = "",
-         note: String = "", colorIndex: Int = 0, sortOrder: Int = 0) {
+         note: String = "", short: String = "", colorIndex: Int = 0, sortOrder: Int = 0) {
         self.id = id
         self.name = name
         self.address = address
         self.phone = phone
         self.hours = hours
         self.note = note
+        self.short = short
         self.colorIndex = colorIndex
         self.sortOrder = sortOrder
     }
@@ -45,6 +48,7 @@ struct Store: Identifiable, Hashable, Codable, Sendable {
         phone = try c.decodeIfPresent(String.self, forKey: .phone) ?? ""
         hours = try c.decodeIfPresent(String.self, forKey: .hours) ?? ""
         note = try c.decodeIfPresent(String.self, forKey: .note) ?? ""
+        short = try c.decodeIfPresent(String.self, forKey: .short) ?? ""
         colorIndex = try c.decodeIfPresent(Int.self, forKey: .colorIndex) ?? 0
         sortOrder = try c.decodeIfPresent(Int.self, forKey: .sortOrder) ?? 0
     }
@@ -185,6 +189,18 @@ struct ShiftBook: Sendable, Equatable {
     /// 店舗の一覧（並び順。作っていなければ「本店」1つ）
     var allStores: [Store] {
         stores.isEmpty ? [Store.makeDefault()] : stores.sorted { ($0.sortOrder, $0.name) < ($1.sortOrder, $1.name) }
+    }
+
+    /// 表に出す店舗の略称。略称が無ければ、店舗名の共通の頭（例：「ELDIA神戸」）を除いた先頭2文字
+    func shortName(of st: Store) -> String {
+        if !st.short.isEmpty { return st.short }
+        let names = allStores.map(\.name).filter { !$0.isEmpty }
+        guard names.count > 1, var common = names.first else { return String(st.name.prefix(2)) }
+        for n in names.dropFirst() {
+            while !n.hasPrefix(common) { common.removeLast() }
+        }
+        let rest = st.name.dropFirst(common.count).trimmingCharacters(in: .whitespaces)
+        return String((rest.isEmpty ? st.name : rest).prefix(2))
     }
 
     func store(_ id: String?) -> Store? {
