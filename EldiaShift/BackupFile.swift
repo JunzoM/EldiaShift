@@ -64,7 +64,7 @@ enum BackupFile {
                 guard let d = raw as? [String: Any], let id = string(d["id"]), !id.isEmpty else { return nil }
                 return Department(id: id, name: string(d["label"]) ?? string(d["name"]) ?? id,
                                   colorIndex: Palette.index(int(d["colorIdx"]) ?? 0),
-                                  sortOrder: int(d["sortOrder"]) ?? i)
+                                  sortOrder: int(d["sortOrder"]) ?? i, storeID: string(d["storeId"]) ?? "")
             }
         }
         let known = Set(book.departments.map(\.id))
@@ -82,11 +82,13 @@ enum BackupFile {
             let inTime = string(c["inTime"]) ?? ""
             let outTime = string(c["outTime"]) ?? ""
             let blockID = string(c["blockId"]).flatMap { $0.isEmpty ? nil : $0 }
+            let storeID = string(c["storeId"]).flatMap { $0.isEmpty ? nil : $0 }
             if !isOff, ClockTime.parse(inTime) == nil || ClockTime.parse(outTime) == nil, blockID == nil {
                 skipped += 1
                 continue
             }
-            book.cells[k] = CellEntry(inTime: normalized(inTime), outTime: normalized(outTime), blockID: blockID, isOff: isOff)
+            book.cells[k] = CellEntry(inTime: normalized(inTime), outTime: normalized(outTime), blockID: blockID, isOff: isOff,
+                                      storeID: isOff ? nil : storeID)
         }
 
         // 休憩の決まり（このアプリで書き出したファイルだけが持つ。PC版のファイルは PC版と同じ決まり）
@@ -104,6 +106,16 @@ enum BackupFile {
            let data = try? JSONSerialization.data(withJSONObject: st),
            let plan = try? JSONDecoder().decode(StaffingPlan.self, from: data) {
             book.staffing = plan
+        }
+
+        // 店舗・会社の色（このアプリで書き出したファイルだけが持つ）
+        if let list = root["stores"] as? [Any],
+           let data = try? JSONSerialization.data(withJSONObject: list),
+           let stores = try? JSONDecoder().decode([Store].self, from: data) {
+            book.stores = stores
+        }
+        if let settings = root["settings"] as? [String: Any], let hex = int(settings["brandColor"]), hex >= 0 {
+            book.brandColor = UInt32(clamping: hex)
         }
 
         let days = book.cells.keys.map(\.day)
@@ -137,25 +149,32 @@ enum BackupFile {
                      "startDate": p.startDate ?? "", "endDate": p.endDate ?? "", "days": p.days] as [String: Any]
                 },
                 // このアプリだけの項目（PC版は読み飛ばす）
-                "offRequests": s.offRequests
+                "offRequests": s.offRequests,
+                "extraStoreIds": s.extraStoreIDs
             ]
         }
         var cells: [String: Any] = [:]
         for (k, c) in book.cells {
-            cells[k.description] = ["inTime": c.inTime, "outTime": c.outTime,
+            var o: [String: Any] = ["inTime": c.inTime, "outTime": c.outTime,
                                     "blockId": c.blockID.map { $0 as Any } ?? NSNull(),
-                                    "isOff": c.isOff, "auto": false] as [String: Any]
+                                    "isOff": c.isOff, "auto": false]
+            if let st = c.storeID { o["storeId"] = st }
+            cells[k.description] = o
         }
         let rulesJSON = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(book.breakRules))) ?? [:]
         let laborJSON = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(book.labor))) ?? [:]
         let staffingJSON = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(book.staffing))) ?? [:]
+        let storesJSON = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(book.stores))) ?? []
+        var settings: [String: Any] = ["breakRules": rulesJSON, "staffing": staffingJSON, "labor": laborJSON]
+        if let c = book.brandColor { settings["brandColor"] = Int(c) }
         let root: [String: Any] = [
-            "settings": ["breakRules": rulesJSON, "staffing": staffingJSON, "labor": laborJSON],
+            "settings": settings,
+            "stores": storesJSON,
             "staff": staff,
             "globalTemplates": book.templates.map(json),
             "cellData": cells,
             "departments": book.departments.sorted { $0.sortOrder < $1.sortOrder }.map {
-                ["id": $0.id, "label": $0.name, "colorIdx": $0.colorIndex, "sortOrder": $0.sortOrder] as [String: Any]
+                ["id": $0.id, "label": $0.name, "colorIdx": $0.colorIndex, "sortOrder": $0.sortOrder, "storeId": $0.storeID] as [String: Any]
             }
         ]
         return try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
@@ -216,7 +235,8 @@ enum BackupFile {
             patterns: patterns,
             activePatternID: string(s["activePatternId"]).flatMap { $0.isEmpty ? nil : $0 },
             periodPatterns: periods,
-            offRequests: (s["offRequests"] as? [Any] ?? []).compactMap { string($0).flatMap { DayKey($0)?.description } }.sorted()
+            offRequests: (s["offRequests"] as? [Any] ?? []).compactMap { string($0).flatMap { DayKey($0)?.description } }.sorted(),
+            extraStoreIDs: (s["extraStoreIds"] as? [Any] ?? []).compactMap { string($0) }.filter { !$0.isEmpty }
         )
     }
 

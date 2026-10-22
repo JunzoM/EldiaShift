@@ -38,8 +38,11 @@ enum ShortageFinder {
     /// 並び：注意が出ない人 → たくさん埋まる人 → 今月の時間が少ない人
     static func candidates(_ book: ShiftBook, department: String, on d: DayKey, includeOthers: Bool) -> [ShortageCandidate] {
         let month = MonthKey(d)
-        let visible = book.staffByDepartment(visibleIn: month).flatMap(\.members)
-        let deptMembers = visible.filter { $0.departmentID == department }
+        let groups = book.staffByDepartment(visibleIn: month)
+        let visible = groups.flatMap(\.members)
+        // 表と同じ並び（掛け持ちでほかの店舗から入る人も、その部門の人として数える）
+        let deptMembers = groups.first { $0.department.id == department }?.members ?? []
+        let deptIDs = Set(deptMembers.map(\.id))
         let short = shortHours(book, department: department, members: deptMembers, on: d)
         guard !short.isEmpty else { return [] }
 
@@ -58,13 +61,13 @@ enum ShortageFinder {
             // 入れたらどうなるかを試して、注意を調べる（その日と翌日：翌日の早番との間隔）
             var trial = book
             trial.cells[CellKey(staffID: m.id, day: d)] = CellEntry(inTime: best.0.inTime, outTime: best.0.outTime,
-                                                                   blockID: best.0.id, isOff: false)
+                                                                   blockID: best.0.id, isOff: false, storeID: book.scopeStoreID)
             let found = LaborCheck.issues(trial, members: [m], days: [d, d.adding(days: 1)])
             let issues = (found[CellKey(staffID: m.id, day: d)] ?? []) + (found[CellKey(staffID: m.id, day: d.adding(days: 1))] ?? [])
                 .filter { if case .interval = $0 { return true } else { return false } }
             out.append(ShortageCandidate(member: m, block: best.0, covers: best.1,
                                          monthHours: MonthSummary.of(m, month: month, in: book).hours,
-                                         issues: issues, otherDepartment: m.departmentID != department))
+                                         issues: issues, otherDepartment: !deptIDs.contains(m.id)))
         }
         return out.sorted { a, b in
             if a.issues.isEmpty != b.issues.isEmpty { return a.issues.isEmpty }

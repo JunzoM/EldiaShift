@@ -12,6 +12,10 @@ struct ResolvedShift: Hashable, Sendable {
     var patternLabel: String?
     /// ひな形で決めた休憩（分）。nil は休憩の決まりに従う
     var breakOverride: Int? = nil
+    /// 勤務する店舗（休みは nil）
+    var storeID: String? = nil
+    /// いま見ている店舗ではなく、ほかの店舗で勤務する日（掛け持ち）。人数には数えない
+    var elsewhere = false
 
     /// 拘束時間（時間）。休み・時刻なしは nil
     var hours: Double? {
@@ -35,6 +39,18 @@ struct ResolvedShift: Hashable, Sendable {
 /// 3. 週のくり返し（その日までに使い始めたもののうち一番新しいもの。決まらなければ「使用中」のもの）
 enum Schedule {
     static func resolve(_ member: StaffMember, on day: DayKey, in book: ShiftBook) -> ResolvedShift? {
+        guard var r = resolveIgnoringStore(member, on: day, in: book) else { return nil }
+        if !r.isOff {
+            let sid: String
+            if let cell = book.cells[CellKey(staffID: member.id, day: day)] { sid = book.storeID(of: cell, for: member) }
+            else { sid = book.homeStoreID(of: member) }
+            r.storeID = sid
+            if let scope = book.scopeStoreID, scope != sid { r.elsewhere = true }
+        }
+        return r
+    }
+
+    private static func resolveIgnoringStore(_ member: StaffMember, on day: DayKey, in book: ShiftBook) -> ResolvedShift? {
         if member.hasLeft(on: day) { return nil }
         if let cell = book.cells[CellKey(staffID: member.id, day: day)] {
             var r = ResolvedShift(inTime: cell.inTime, outTime: cell.outTime, blockID: cell.blockID, isOff: cell.isOff, isAuto: false)
@@ -135,11 +151,11 @@ struct MonthSummary: Hashable, Sendable {
 // MARK: - 時間帯別の人数（PC版と同じ数え方）
 
 enum Headcount {
-    /// その日の h 時台（h:00〜h+1:00）に勤務している人数。
+    /// その日の h 時台（h:00〜h+1:00）に勤務している人数（ほかの店舗で勤務する人は数えない）。
     /// 日をまたぐ勤務は、その日の出勤以降と、その日の退勤まで（＝前夜からの続きに見える部分）の両方を数える（PC版と同じ）
     static func working(_ members: [StaffMember], on day: DayKey, hour h: Int, in book: ShiftBook) -> Int {
         members.filter { m in
-            guard let r = Schedule.resolve(m, on: day, in: book), !r.isOff,
+            guard let r = Schedule.resolve(m, on: day, in: book), !r.isOff, !r.elsewhere,
                   let s = ClockTime.parse(r.inTime), let e = ClockTime.parse(r.outTime) else { return false }
             let hs = h * 60, he = (h + 1) * 60
             return e > s ? (s < he && e > hs) : (s < he || e > hs)
@@ -181,7 +197,7 @@ struct ScheduleTable {
     /// その日の h 時台に勤務している人数（Headcount.working と同じ数え方）
     func working(_ members: [StaffMember], on d: DayKey, hour h: Int) -> Int {
         members.filter { m in
-            guard let r = get(m, d), !r.isOff, let s = ClockTime.parse(r.inTime), let e = ClockTime.parse(r.outTime) else { return false }
+            guard let r = get(m, d), !r.isOff, !r.elsewhere, let s = ClockTime.parse(r.inTime), let e = ClockTime.parse(r.outTime) else { return false }
             let hs = h * 60, he = (h + 1) * 60
             return e > s ? (s < he && e > hs) : (s < he || e > hs)
         }.count

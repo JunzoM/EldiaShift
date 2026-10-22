@@ -49,7 +49,7 @@ struct NoStaffView: View {
             Text("スタッフを追加すると、ここにシフト表が表示されます。")
         } actions: {
             Button("スタッフを追加") {
-                adding = store.newStaff(in: store.book.departments.first?.id ?? "")
+                adding = store.newStaff(in: store.book.scopedDepartments.first?.id ?? store.book.departments.first?.id ?? "")
             }
             .buttonStyle(.borderedProminent)
         }
@@ -65,27 +65,38 @@ struct DepartmentListView: View {
     @State private var error: String?
 
     var body: some View {
-        let depts = store.book.departments.sorted { $0.sortOrder < $1.sortOrder }
+        let book = store.book
+        let stores = book.allStores
         List {
-            Section {
-                ForEach(depts) { d in
-                    Button { editing = d } label: {
-                        HStack {
-                            Circle().fill(PaletteColor.fg(d.colorIndex)).frame(width: 12, height: 12)
-                            Text(d.name).foregroundStyle(.primary)
-                            Spacer()
-                            Text("\(store.book.staff.filter { $0.departmentID == d.id }.count)人")
-                                .font(.caption).foregroundStyle(.secondary)
+            ForEach(stores) { st in
+                let depts = book.departments(in: st.id)
+                Section {
+                    ForEach(depts) { d in
+                        Button { editing = d } label: {
+                            HStack {
+                                Circle().fill(PaletteColor.fg(d.colorIndex)).frame(width: 12, height: 12)
+                                Text(d.name).foregroundStyle(.primary)
+                                Spacer()
+                                Text("\(book.staff.filter { $0.departmentID == d.id }.count)人")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
                         }
                     }
+                    .onMove { from, to in
+                        var list = depts
+                        list.move(fromOffsets: from, toOffset: to)
+                        // ほかの店舗の部門はそのままの順で、店舗の並びにつなぐ
+                        let all = stores.flatMap { $0.id == st.id ? list : book.departments(in: $0.id) }
+                        do { try store.reorderDepartments(all) } catch { self.error = error.localizedDescription }
+                    }
+                    if depts.isEmpty {
+                        Text("部門がありません").foregroundStyle(.secondary)
+                    }
+                } header: {
+                    if stores.count > 1 { StoreBadgeLabel(store: st) }
+                } footer: {
+                    if st.id == stores.last?.id { Text("表では、この順に上から並びます。") }
                 }
-                .onMove { from, to in
-                    var list = depts
-                    list.move(fromOffsets: from, toOffset: to)
-                    do { try store.reorderDepartments(list) } catch { self.error = error.localizedDescription }
-                }
-            } footer: {
-                Text("表では、この順に上から並びます。")
             }
         }
         .navigationTitle("部門")
@@ -113,6 +124,12 @@ struct DepartmentEditView: View {
         NavigationStack {
             Form {
                 TextField("部門の名前（例：ホール）", text: $department.name)
+                if store.book.allStores.count > 1 {
+                    Picker("店舗", selection: Binding(get: { store.book.store(department.storeID)?.id ?? store.book.allStores[0].id },
+                                                     set: { department.storeID = $0 })) {
+                        ForEach(store.book.allStores) { st in Text(st.name).tag(st.id) }
+                    }
+                }
                 Section("色") { ColorChoice(index: $department.colorIndex) }
                 if !isNew {
                     Section {

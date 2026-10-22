@@ -313,6 +313,10 @@ struct PrintSheet: View {
     @AppStorage("printFormat") private var format: PrintFormat = .monthByDepartment
     @AppStorage("printHalf") private var half: HalfSelection = .both
     @AppStorage("printTitle") private var title = ""
+    /// 表の上に出す名前（空で店舗が2つ以上なら、見ている店舗の名前）
+    private var effectiveTitle: String {
+        title.isEmpty && store.book.allStores.count > 1 ? store.currentStore.name : title
+    }
     @State private var selected: Set<String> = []
     @State private var shareFile: ExportFile?
     @State private var busy = false
@@ -330,7 +334,7 @@ struct PrintSheet: View {
 
     var body: some View {
         let book = store.book
-        let depts = book.departments.sorted { $0.sortOrder < $1.sortOrder }
+        let depts = book.scopedDepartments
             .filter { d in book.staff.contains { $0.departmentID == d.id } }
         let chosen = depts.filter { selected.contains($0.id) }
         let pages = chosen.isEmpty ? [] : PrintPlanner.pages(format: format, half: half, departments: chosen, anchor: anchor)
@@ -380,7 +384,7 @@ struct PrintSheet: View {
 
                 Section("プレビュー（\(pages.count)枚）") {
                     if let first = pages.first {
-                        let v = PrintPageView(spec: first, book: book, title: title)
+                        let v = PrintPageView(spec: first, book: book, title: effectiveTitle)
                         let scale = min(1, 320 / v.size.width)
                         v.scaleEffect(scale, anchor: .topLeading)
                             .frame(width: v.size.width * scale, height: v.size.height * scale, alignment: .topLeading)
@@ -443,7 +447,7 @@ struct PrintSheet: View {
     }
 
     private func pdfURL(_ pages: [PrintPageSpec], book: ShiftBook) async throws -> URL {
-        let data = await PDFMaker.makeAsync(pages: pages, book: book, title: title) { progress = $0 }
+        let data = await PDFMaker.makeAsync(pages: pages, book: book, title: effectiveTitle) { progress = $0 }
         if data.isEmpty { throw CocoaError(.fileWriteUnknown) }
         let m = MonthKey(anchor)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("シフト表_\(m.year)年\(m.month)月.pdf")
@@ -526,7 +530,7 @@ struct PrintSheet: View {
     private func shareItems(_ url: URL, book: ShiftBook) -> [Any] {
         let month = MonthKey(anchor)
         guard withChanges, let diff = PublishDiff.changes(book, month: month), !diff.changes.isEmpty else { return [url] }
-        return [PublishDiff.text(diff.changes, month: month, title: title), url]
+        return [PublishDiff.text(diff.changes, month: month, title: effectiveTitle), url]
     }
 
     private func publish() {
@@ -548,7 +552,7 @@ struct PrintSheet: View {
         Task {
             defer { busy = false }
             do {
-                let urls = try await PersonalScheduleImage.files(for: members, month: month, book: book, title: title) { progress = $0 }
+                let urls = try await PersonalScheduleImage.files(for: members, month: month, book: book, title: effectiveTitle) { progress = $0 }
                 if urls.isEmpty { failure = "画像を作れませんでした" } else { images = ImageFiles(urls: urls) }
             } catch {
                 failure = "画像を作れませんでした（\(error.localizedDescription)）"

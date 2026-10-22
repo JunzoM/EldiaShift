@@ -10,7 +10,14 @@ struct PublishedMonth: Codable, Equatable, Sendable {
     /// "スタッフID|yyyy-MM-dd" → 表示（例：「早番 9:00〜18:00」「公休」）。空き日は入れない
     var entries: [String: String]
 
-    static func key(_ m: MonthKey) -> String { String(format: "%04d-%02d", m.year, m.month) }
+    /// 最初の店舗は "yyyy-MM"（前の版と同じ）、ほかの店舗は "yyyy-MM@店舗ID"
+    static func key(_ m: MonthKey, store: String? = nil, in book: ShiftBook? = nil) -> String {
+        let base = String(format: "%04d-%02d", m.year, m.month)
+        guard let store, let book, store != book.allStores[0].id else { return base }
+        return "\(base)@\(store)"
+    }
+
+    static func key(_ m: MonthKey, in book: ShiftBook) -> String { key(m, store: book.scopeStoreID, in: book) }
 
     static func snapshot(of book: ShiftBook, month: MonthKey) -> PublishedMonth {
         var e: [String: String] = [:]
@@ -22,7 +29,7 @@ struct PublishedMonth: Codable, Equatable, Sendable {
                 }
             }
         }
-        return PublishedMonth(month: key(month), date: Date(), entries: e)
+        return PublishedMonth(month: key(month, in: book), date: Date(), entries: e)
     }
 
     /// 文章に出すときの書き方
@@ -30,7 +37,9 @@ struct PublishedMonth: Codable, Equatable, Sendable {
         guard let r else { return "" }
         let block = book.block(r.blockID, for: member)
         if r.isOff { return block?.label ?? "休み" }
-        let time = "\(r.inTime)〜\(r.outTime)"
+        // ほかの店舗で勤務する日は店舗名を付ける
+        let at = r.elsewhere ? (book.store(r.storeID).map { "（\($0.name)）" } ?? "") : ""
+        let time = "\(r.inTime)〜\(r.outTime)\(at)"
         if let block, block.inTime == r.inTime, block.outTime == r.outTime { return "\(block.label) \(time)" }
         return time
     }
@@ -47,7 +56,7 @@ struct PublishChange: Equatable, Sendable {
 enum PublishDiff {
     /// 前に公開した内容からの変更（まだ公開していなければ nil）
     static func changes(_ book: ShiftBook, month: MonthKey) -> (since: Date, changes: [PublishChange])? {
-        guard let old = book.published.first(where: { $0.month == PublishedMonth.key(month) }) else { return nil }
+        guard let old = book.published.first(where: { $0.month == PublishedMonth.key(month, in: book) }) else { return nil }
         let now = PublishedMonth.snapshot(of: book, month: month)
         let names = Dictionary(book.staff.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
         // 並び：日付 → 部門・番号の順

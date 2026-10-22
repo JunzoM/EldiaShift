@@ -58,10 +58,37 @@ final class ShiftStore {
         if loadedToken != db.changeToken { reload() }
     }
 
+    // MARK: 店舗
+
+    /// いま見ている店舗（端末ごとに覚える）
+    var currentStoreID: String {
+        get { book.scopeStoreID ?? book.allStores[0].id }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Self.storeKey)
+            book.scopeStoreID = validStore(newValue)
+            clearLastChange()
+        }
+    }
+
+    var currentStore: Store { book.store(currentStoreID) ?? book.allStores[0] }
+
+    private static let storeKey = "currentStoreID"
+
+    private func validStore(_ id: String?) -> String {
+        let all = book.allStores
+        return all.first { $0.id == id }?.id ?? all[0].id
+    }
+
+    /// 読み込んだあと、見ている店舗を当てはめ直す（消した店舗なら最初の店舗）
+    private func applyScope() {
+        book.scopeStoreID = validStore(UserDefaults.standard.string(forKey: Self.storeKey))
+    }
+
     func reload() {
         loadedToken = db.changeToken
         do {
             book = try ShiftRecords.load(db.viewContext)
+            applyScope()
             lastError = nil
         } catch {
             lastError = "読み込めませんでした（\(error.localizedDescription)）"
@@ -86,7 +113,8 @@ final class ShiftStore {
     func setCells(_ items: [(CellKey, CellEntry?)], title: String) throws {
         var changes: [CellChange] = []
         var seen = Set<CellKey>()
-        for (key, entry) in items where seen.insert(key).inserted {
+        for (key, raw) in items where seen.insert(key).inserted {
+            let entry = stamped(raw, for: key.staffID)
             let before = book.cells[key]
             guard before != entry else { continue }
             let name = book.staff.first { $0.id == key.staffID }?.name ?? ""
@@ -99,6 +127,21 @@ final class ShiftStore {
         if undoStack.count > historyLimit { undoStack.removeFirst(undoStack.count - historyLimit) }
         redoStack.removeAll()
         lastChange = set
+    }
+
+    /// 勤務の店舗を決める。店舗を指定していない勤務は「いま見ている店舗」で入れる
+    /// （その人の店舗なら空にする。休みは店舗を持たない）
+    func stamped(_ entry: CellEntry?, for staffID: String) -> CellEntry? {
+        guard var e = entry else { return nil }
+        guard !e.isOff, let m = book.staff.first(where: { $0.id == staffID }) else {
+            e.storeID = nil
+            return e
+        }
+        let home = book.homeStoreID(of: m)
+        let target = e.storeID ?? book.scopeStoreID ?? home
+        // 入れない店舗（掛け持ちしていない店舗）は、その人の店舗にする
+        e.storeID = (target == home || !book.storeIDs(of: m).contains(target)) ? nil : target
+        return e
     }
 
     private func write(_ items: [(CellKey, CellEntry?)]) throws {
@@ -171,17 +214,58 @@ final class ShiftStore {
         book.staffing = b.staffing
         book.labor = b.labor
         book.published = b.published
+        book.stores = b.stores
+        book.brandColor = b.brandColor
+        applyScope()
     }
+
+    /// 店舗を足す・変える
+    func save(_ st: Store) throws {
+        try updateSettings { b in
+            if b.stores.isEmpty { b.stores = [Store.makeDefault()] }   // 前の版の「本店」を残す
+            if let i = b.stores.firstIndex(where: { $0.id == st.id }) { b.stores[i] = st } else { b.stores.append(st) }
+        }
+    }
+
+    /// 店舗を消す（部門がある店舗・最後の1つは消さない）。掛け持ち先からも外す
+    func deleteStore(_ st: Store) throws {
+        guard book.allStores.count > 1 else { throw StoreError.lastStore }
+        guard book.departments(in: st.id).isEmpty else { throw StoreError.storeInUse }
+        try updateSettings { b in
+            if b.stores.isEmpty { b.stores = [Store.makeDefault()] }
+            b.stores.removeAll { $0.id == st.id }
+        }
+        for var m in book.staff where m.extraStoreIDs.contains(st.id) {
+            m.extraStoreIDs.removeAll { $0 == st.id }
+            try save(m)
+        }
+    }
+
+    func reorderStores(_ ordered: [Store]) throws {
+        try updateSettings { b in
+            b.stores = ordered.enumerated().map { i, s in var x = s; x.sortOrder = i; return x }
+        }
+    }
+
+    func newStore() -> Store {
+        Store(id: UUID().uuidString, name: "", colorIndex: book.allStores.count % Palette.colors.count,
+              sortOrder: (book.allStores.map(\.sortOrder).max() ?? -1) + 1)
+    }
+
+    /// 会社の色（nil で標準の色に戻す）
+    func setBrandColor(_ hex: UInt32?) throws { try updateSettings { $0.brandColor = hex } }
 
     func setLaborRules(_ rules: LaborRules) throws { try updateSettings { $0.labor = rules } }
 
     /// その月をスタッフに公開した（今の内容を「公開した内容」として残す。新しい3か月分だけ持つ）
     func markPublished(_ month: MonthKey) throws {
         let snap = PublishedMonth.snapshot(of: book, month: month)
+        let n = book.allStores.count
         try updateSettings { b in
             b.published.removeAll { $0.month == snap.month }
             b.published.append(snap)
-            b.published = Array(b.published.sorted { $0.month < $1.month }.suffix(3))
+            // 店舗ごとに新しい3か月分
+            b.published = Array(b.published.sorted { $0.month < $1.month }.suffix(3 * n))
         }
     }
 
@@ -207,6 +291,8 @@ enum ShiftRecords {
         var periodPatterns: [PeriodPattern]
         /// 希望休の日（"yyyy-MM-dd"）。前の版の記録には無い
         var offRequests: [String]? = nil
+        /// 掛け持ち先の店舗。前の版の記録には無い
+        var extraStoreIDs: [String]? = nil
     }
 
     static func load(_ ctx: NSManagedObjectContext) throws -> ShiftBook {
@@ -224,11 +310,13 @@ enum ShiftRecords {
             book.staffing = settings.staffing ?? StaffingPlan()
             book.labor = settings.labor ?? LaborRules()
             book.published = settings.published ?? []
+            book.stores = settings.stores ?? []
+            book.brandColor = settings.brandColor
         }
 
         book.departments = try newestByKey(fetch(ShiftModel.Entity.department, ctx), key: "key", ctx: ctx).map { r in
             Department(id: r.str("key"), name: r.str("name"), colorIndex: Palette.index(r.int("colorIndex")),
-                       sortOrder: r.int("sortOrder"))
+                       sortOrder: r.int("sortOrder"), storeID: r.str("storeKey"))
         }.sorted { $0.sortOrder < $1.sortOrder }
 
         book.templates = try newestByKey(fetch(ShiftModel.Entity.template, ctx), key: "key", ctx: ctx)
@@ -249,15 +337,17 @@ enum ShiftRecords {
                                joinDate: r.str("joinDate"), leaveDate: r.str("leaveDate"),
                                timeBlocks: detail?.timeBlocks ?? [], patterns: detail?.patterns ?? [],
                                activePatternID: detail?.activePatternID, periodPatterns: detail?.periodPatterns ?? [],
-                               offRequests: detail?.offRequests ?? [])
+                               offRequests: detail?.offRequests ?? [], extraStoreIDs: detail?.extraStoreIDs ?? [])
         }
 
         for r in try newestByKey(fetch(ShiftModel.Entity.cell, ctx), keyOf: { "\($0.str("staffKey"))|\($0.str("day"))" }, ctx: ctx) {
             guard let day = DayKey(r.str("day")) else { continue }
             let block = r.str("blockKey")
+            let st = r.str("storeKey")
             book.cells[CellKey(staffID: r.str("staffKey"), day: day)] = CellEntry(
                 inTime: r.str("inTime"), outTime: r.str("outTime"),
-                blockID: block.isEmpty ? nil : block, isOff: r.value(forKey: "isOff") as? Bool ?? false)
+                blockID: block.isEmpty ? nil : block, isOff: r.value(forKey: "isOff") as? Bool ?? false,
+                storeID: st.isEmpty ? nil : st)
         }
         if ctx.hasChanges { try ctx.save() }   // 重複を片付けた分
         return book
@@ -277,6 +367,7 @@ enum ShiftRecords {
             r.setValue(d.name, forKey: "name")
             r.setValue(Int16(d.colorIndex), forKey: "colorIndex")
             r.setValue(Int32(clamping: d.sortOrder), forKey: "sortOrder")
+            r.setValue(d.storeID, forKey: "storeKey")
         }
         for (i, t) in book.templates.enumerated() {
             let r = insert(ShiftModel.Entity.template, ctx, team: team, now: now)
@@ -301,7 +392,7 @@ enum ShiftRecords {
             r.setValue(s.leaveDate, forKey: "leaveDate")
             let detail = StaffDetail(timeBlocks: s.timeBlocks, patterns: s.patterns,
                                      activePatternID: s.activePatternID, periodPatterns: s.periodPatterns,
-                                     offRequests: s.offRequests)
+                                     offRequests: s.offRequests, extraStoreIDs: s.extraStoreIDs)
             r.setValue(try encoder.encode(detail), forKey: "detail")
         }
         for (k, c) in book.cells {
@@ -312,6 +403,7 @@ enum ShiftRecords {
             r.setValue(c.outTime, forKey: "outTime")
             r.setValue(c.blockID ?? "", forKey: "blockKey")
             r.setValue(c.isOff, forKey: "isOff")
+            r.setValue(c.storeID ?? "", forKey: "storeKey")
         }
     }
 
@@ -337,13 +429,15 @@ enum ShiftRecords {
         r.setValue(entry.outTime, forKey: "outTime")
         r.setValue(entry.blockID ?? "", forKey: "blockKey")
         r.setValue(entry.isOff, forKey: "isOff")
+        r.setValue(entry.storeID ?? "", forKey: "storeKey")
         r.setValue(Date(), forKey: "updatedAt")
     }
 
     /// チーム全体の設定を保存
     static func saveSettings(_ book: ShiftBook, team: NSManagedObject) throws {
         team.setValue(try JSONEncoder().encode(TeamSettings(breakRules: book.breakRules, staffing: book.staffing,
-                                                                    labor: book.labor, published: book.published)), forKey: "settings")
+                                                                    labor: book.labor, published: book.published,
+                                                                    stores: book.stores, brandColor: book.brandColor)), forKey: "settings")
     }
 
     static func allTeams(_ ctx: NSManagedObjectContext) throws -> [NSManagedObject] {
@@ -428,4 +522,18 @@ struct TeamSettings: Codable {
     var staffing: StaffingPlan?
     var labor: LaborRules?
     var published: [PublishedMonth]?
+    var stores: [Store]? = nil
+    var brandColor: UInt32? = nil
+}
+
+enum StoreError: LocalizedError {
+    case storeInUse
+    case lastStore
+
+    var errorDescription: String? {
+        switch self {
+        case .storeInUse: "この店舗には部門があるため消せません。先に部門をほかの店舗へ移すか消してください。"
+        case .lastStore: "店舗は1つ以上必要です。"
+        }
+    }
 }
