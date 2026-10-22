@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 // MARK: - 店舗の印（色の点＋名前）
 
@@ -62,69 +63,248 @@ struct StoreSwitcher: View {
     }
 }
 
-// MARK: - 店舗の一覧
+// MARK: - 店舗の写真
+
+/// 店舗の写真（無ければ店舗の色の面に略称）
+struct StorePhoto: View {
+    let store: Store
+    let label: String
+    var size: CGSize = CGSize(width: 64, height: 64)
+    var corner: CGFloat = 12
+
+    var body: some View {
+        Group {
+            if let data = store.photo, let img = UIImage(data: data) {
+                Image(uiImage: img).resizable().scaledToFill()
+            } else {
+                ZStack {
+                    LinearGradient(colors: [PaletteColor.bg(store.colorIndex), PaletteColor.fg(store.colorIndex).opacity(0.35)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                    VStack(spacing: 2) {
+                        Image(systemName: "building.2.fill").font(.system(size: min(size.width, size.height) * 0.28))
+                        if size.height >= 60 {
+                            Text(label).font(.system(size: min(size.width, size.height) * 0.16, weight: .heavy)).lineLimit(1)
+                        }
+                    }
+                    .foregroundStyle(PaletteColor.fg(store.colorIndex))
+                }
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+        .accessibilityHidden(true)
+    }
+
+    /// 選んだ写真を小さく縮める（長い辺 640px・JPEG）
+    static func shrink(_ data: Data) -> Data? {
+        guard let img = UIImage(data: data) else { return nil }
+        let k = min(1, 640 / max(img.size.width, img.size.height))
+        let size = CGSize(width: (img.size.width * k).rounded(), height: (img.size.height * k).rounded())
+        let fmt = UIGraphicsImageRendererFormat()
+        fmt.scale = 1
+        let out = UIGraphicsImageRenderer(size: size, format: fmt).image { _ in img.draw(in: CGRect(origin: .zero, size: size)) }
+        return out.jpegData(compressionQuality: 0.7)
+    }
+}
+
+// MARK: - 店舗の一覧（iPad は左に一覧・右に店舗の情報）
 
 struct StoreListView: View {
     var inSheet = false
 
     @Environment(ShiftStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var editing: Store?
+    @State private var shownID: String?
     @State private var error: String?
 
     var body: some View {
         let book = store.book
         let stores = book.allStores
-        List {
-            Section {
-                ForEach(stores) { st in
-                    Button { editing = st } label: { row(st, book: book) }
+        Group {
+            if sizeClass == .regular && !inSheet {
+                let shown = stores.first { $0.id == (shownID ?? store.currentStoreID) } ?? stores[0]
+                HStack(alignment: .top, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text("店舗一覧").font(.headline)
+                            Spacer()
+                            Button { editing = store.newStore() } label: { Label("新規登録", systemImage: "plus") }
+                                .buttonStyle(.borderedProminent).controlSize(.small)
+                        }
+                        ScrollView {
+                            VStack(spacing: 8) {
+                                ForEach(stores) { st in
+                                    Button { shownID = st.id } label: { card(st, book: book, highlighted: st.id == shown.id) }
+                                        .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                    }
+                    .padding(16)
+                    .frame(width: 360)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                    ScrollView {
+                        StoreDetailPanel(storeInfo: shown, onEdit: { editing = shown })
+                    }
+                    .frame(maxWidth: .infinity)
+                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
-                .onMove { from, to in
-                    var list = stores
-                    list.move(fromOffsets: from, toOffset: to)
-                    do { try store.reorderStores(list) } catch { self.error = error.localizedDescription }
+                .padding(16)
+                .background(Color(.systemGroupedBackground))
+            } else {
+                List {
+                    Section {
+                        ForEach(stores) { st in
+                            NavigationLink {
+                                ScrollView { StoreDetailPanel(storeInfo: st, onEdit: { editing = st }) }
+                                    .background(Color(.systemGroupedBackground))
+                                    .navigationTitle(st.name)
+                                    .navigationBarTitleDisplayMode(.inline)
+                            } label: {
+                                card(st, book: book, highlighted: false)
+                            }
+                        }
+                        .onMove { from, to in
+                            var list = stores
+                            list.move(fromOffsets: from, toOffset: to)
+                            do { try store.reorderStores(list) } catch { self.error = error.localizedDescription }
+                        }
+                    } footer: {
+                        Text("部門は店舗ごとに作ります。掛け持ちのスタッフは、スタッフの設定の「掛け持ち」で入れる店舗を選びます。")
+                    }
                 }
-            } footer: {
-                Text("部門は店舗ごとに作ります。掛け持ちのスタッフは、スタッフの設定の「掛け持ち」で入れる店舗を選びます。")
             }
         }
-        .navigationTitle("店舗")
+        .navigationTitle("店舗管理")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if inSheet {
                 ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } }
             }
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                EditButton()
-                Button { editing = store.newStore() } label: { Image(systemName: "plus") }
-                    .accessibilityLabel("店舗を追加")
+            if sizeClass != .regular || inSheet {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    EditButton()
+                    Button { editing = store.newStore() } label: { Image(systemName: "plus") }
+                        .accessibilityLabel("店舗を追加")
+                }
             }
         }
         .sheet(item: $editing) { st in StoreEditView(storeInfo: st) }
         .errorAlert($error)
     }
 
-    private func row(_ st: Store, book: ShiftBook) -> some View {
-        let depts = book.departments(in: st.id)
+    /// 一覧の1店舗（写真・名前・住所・表示中の印）
+    private func card(_ st: Store, book: ShiftBook, highlighted: Bool) -> some View {
         let staff = book.staff.filter { $0.active && $0.leaveDate.isEmpty && book.homeStoreID(of: $0) == st.id }.count
-        let helpers = book.staff.filter { $0.active && $0.extraStoreIDs.contains(st.id) && book.homeStoreID(of: $0) != st.id }.count
+        let current = st.id == store.currentStoreID
         return HStack(spacing: 12) {
-            Text(book.shortName(of: st))
-                .font(.headline)
-                .foregroundStyle(PaletteColor.fg(st.colorIndex))
-                .frame(width: 44, height: 44)
-                .background(PaletteColor.bg(st.colorIndex), in: RoundedRectangle(cornerRadius: 10))
-            VStack(alignment: .leading, spacing: 2) {
+            StorePhoto(store: st, label: book.shortName(of: st), size: CGSize(width: 72, height: 56), corner: 10)
+            VStack(alignment: .leading, spacing: 3) {
                 Text(st.name.isEmpty ? "（名前なし）" : st.name).font(.body.weight(.semibold)).foregroundStyle(.primary)
-                Text([st.address.isEmpty ? nil : st.address,
-                      "部門 \(depts.count)・スタッフ \(staff)人" + (helpers > 0 ? "（掛け持ち \(helpers)人）" : "")]
-                    .compactMap { $0 }.joined(separator: "\n"))
-                    .font(.caption).foregroundStyle(.secondary)
+                Text(st.address.isEmpty ? "住所未登録" : st.address).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text("部門 \(book.departments(in: st.id).count)・スタッフ \(staff)人").font(.caption2).foregroundStyle(.secondary)
             }
-            Spacer()
-            if st.id == store.currentStoreID {
-                Text("表示中").font(.caption.weight(.bold)).foregroundStyle(Color.accentColor)
+            Spacer(minLength: 4)
+            if current {
+                Text("選択中").font(.caption2.weight(.bold)).foregroundStyle(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Color.accentColor, in: Capsule())
+            }
+        }
+        .padding(10)
+        .background(highlighted ? Color.accentColor.opacity(0.08) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .strokeBorder(highlighted ? Color.accentColor : Color.clear, lineWidth: 1.5))
+        .contentShape(Rectangle())
+    }
+}
+
+/// 1店舗の情報（写真・店舗情報・部門）
+struct StoreDetailPanel: View {
+    let storeInfo: Store
+    let onEdit: () -> Void
+
+    @Environment(ShiftStore.self) private var store
+
+    var body: some View {
+        let book = store.book
+        let st = book.store(storeInfo.id) ?? storeInfo
+        let depts = book.departments(in: st.id)
+        let staff = book.staff.filter { $0.active && $0.leaveDate.isEmpty && book.homeStoreID(of: $0) == st.id }
+        let helpers = book.staff.filter { $0.active && $0.extraStoreIDs.contains(st.id) && book.homeStoreID(of: $0) != st.id }
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Text(st.name.isEmpty ? "（名前なし）" : st.name).font(.title2.weight(.bold))
+                Spacer()
+                Button("編集", action: onEdit).buttonStyle(.bordered)
+            }
+            GeometryReader { g in
+                StorePhoto(store: st, label: book.shortName(of: st), size: CGSize(width: g.size.width, height: 200), corner: 14)
+            }
+            .frame(height: 200)
+
+            VStack(alignment: .leading, spacing: 0) {
+                Text("店舗情報").font(.headline).padding(.bottom, 8)
+                info("店舗名", st.name)
+                info("略称", book.shortName(of: st))
+                info("住所", st.address)
+                info("電話番号", st.phone)
+                info("営業時間", st.hours)
+                info("部門数", "\(depts.count)")
+                info("スタッフ数", "\(staff.count)人" + (helpers.isEmpty ? "" : "（ほかに掛け持ち \(helpers.count)人）"))
+                info("備考", st.note)
+            }
+
+            if !depts.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("部門").font(.headline)
+                    FlowChips(items: depts.map { d in (d.name + " \(book.staff.filter { $0.departmentID == d.id && $0.active }.count)人", d.colorIndex) })
+                }
+            }
+
+            if store.currentStoreID != st.id {
+                Button { store.currentStoreID = st.id } label: {
+                    Label("この店舗に切り替える", systemImage: "arrow.left.arrow.right").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent).controlSize(.large)
+            } else {
+                Label("いま表示している店舗です", systemImage: "checkmark.circle.fill")
+                    .font(.subheadline).foregroundStyle(Color.accentColor)
+            }
+        }
+        .padding(20)
+    }
+
+    private func info(_ label: String, _ value: String) -> some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top) {
+                Text(label).font(.subheadline).foregroundStyle(.secondary).frame(width: 96, alignment: .leading)
+                Text(value.isEmpty ? "—" : value).font(.subheadline).frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+            }
+            .padding(.vertical, 10)
+            Divider()
+        }
+    }
+}
+
+/// 折り返して並ぶ小さな札
+struct FlowChips: View {
+    let items: [(String, Int)]
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 8)], alignment: .leading, spacing: 8) {
+            ForEach(Array(items.enumerated()), id: \.offset) { _, it in
+                Text(it.0).font(.caption.weight(.semibold))
+                    .foregroundStyle(PaletteColor.fg(it.1))
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .frame(maxWidth: .infinity)
+                    .background(PaletteColor.bg(it.1), in: Capsule())
             }
         }
     }
@@ -139,6 +319,7 @@ struct StoreEditView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var error: String?
     @State private var confirmDelete = false
+    @State private var pickedPhoto: PhotosPickerItem?
 
     private var isNew: Bool { !store.book.stores.contains { $0.id == storeInfo.id } && storeInfo.id != Store.defaultID }
 
@@ -146,6 +327,24 @@ struct StoreEditView: View {
         let book = store.book
         NavigationStack {
             Form {
+                Section {
+                    HStack(spacing: 16) {
+                        StorePhoto(store: storeInfo, label: book.shortName(of: storeInfo), size: CGSize(width: 120, height: 84), corner: 12)
+                        VStack(alignment: .leading, spacing: 10) {
+                            PhotosPicker(selection: $pickedPhoto, matching: .images) {
+                                Label(storeInfo.photo == nil ? "写真を選ぶ" : "写真を変える", systemImage: "photo")
+                            }
+                            if storeInfo.photo != nil {
+                                Button("写真を外す", role: .destructive) { storeInfo.photo = nil }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                } header: {
+                    Text("店舗の写真")
+                } footer: {
+                    Text("店舗の一覧に出します。小さく縮めて保存します。")
+                }
                 Section("店舗") {
                     TextField("店舗名（例：神戸本店）", text: $storeInfo.name)
                     TextField("住所", text: $storeInfo.address)
@@ -162,27 +361,13 @@ struct StoreEditView: View {
                 } header: {
                     Text("印の色")
                 } footer: {
-                    Text("掛け持ちの人がほかの店舗で勤務する日に、マスへ小さく出す印の色です。アプリ全体の色は設定の「会社の色」で決めます。")
+                    Text("写真が無いときの面の色と、掛け持ちの人がほかの店舗で勤務する日にマスへ出す印の色です。アプリ全体の色は設定の「会社の色」で決めます。")
                 }
-                Section("メモ") {
-                    TextField("メモ", text: $storeInfo.note, axis: .vertical).lineLimit(2...5)
+                Section("備考") {
+                    TextField("備考", text: $storeInfo.note, axis: .vertical).lineLimit(2...5)
                 }
                 if !isNew {
-                    let depts = book.departments(in: storeInfo.id)
-                    Section("部門") {
-                        if depts.isEmpty {
-                            Text("部門がありません").foregroundStyle(.secondary)
-                        }
-                        ForEach(depts) { d in
-                            LabeledContent(d.name, value: "\(book.staff.filter { $0.departmentID == d.id }.count)人")
-                        }
-                    }
                     Section {
-                        Button("この店舗を表示する") {
-                            store.currentStoreID = storeInfo.id
-                            dismiss()
-                        }
-                        .disabled(store.currentStoreID == storeInfo.id)
                         Button("この店舗を削除", role: .destructive) { confirmDelete = true }
                             .disabled(book.allStores.count <= 1)
                     } footer: {
@@ -190,7 +375,7 @@ struct StoreEditView: View {
                     }
                 }
             }
-            .navigationTitle(isNew ? "店舗を追加" : "店舗")
+            .navigationTitle(isNew ? "店舗を追加" : "店舗を編集")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("やめる") { dismiss() } }
@@ -200,6 +385,17 @@ struct StoreEditView: View {
                         do { try store.save(storeInfo); dismiss() } catch { self.error = error.localizedDescription }
                     }
                     .disabled(storeInfo.name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+            .onChange(of: pickedPhoto) {
+                guard let item = pickedPhoto else { return }
+                Task {
+                    if let data = try? await item.loadTransferable(type: Data.self), let small = StorePhoto.shrink(data) {
+                        storeInfo.photo = small
+                    } else {
+                        error = "写真を読み込めませんでした"
+                    }
+                    pickedPhoto = nil
                 }
             }
             .confirmationDialog("「\(storeInfo.name)」を削除しますか？", isPresented: $confirmDelete, titleVisibility: .visible) {
