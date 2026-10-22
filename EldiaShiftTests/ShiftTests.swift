@@ -1114,6 +1114,20 @@ struct MultiStoreTests {
         #expect(PublishDiff.changes(store.book, month: month)?.changes.isEmpty == true)
     }
 
+    @Test("店舗の略称：決めていなければ、店舗名の共通の頭を除いて見分けられる名前にする")
+    func storeShortName() {
+        var b = ShiftBook()
+        b.stores = [Store(id: "a", name: "ELDIA神戸 LUXURY"), Store(id: "b", name: "ELDIA神戸 MODERN", sortOrder: 1),
+                    Store(id: "c", name: "大阪", short: "大", sortOrder: 2)]
+        #expect(b.shortName(of: b.stores[2]) == "大")
+        b.stores.removeLast()
+        #expect(b.shortName(of: b.stores[0]) == "LU")
+        #expect(b.shortName(of: b.stores[1]) == "MO")
+        b.stores = [Store(id: "a", name: "本館"), Store(id: "b", name: "本館別棟", sortOrder: 1)]
+        #expect(b.shortName(of: b.stores[0]) == "本館")
+        #expect(b.shortName(of: b.stores[1]) == "別棟")
+    }
+
     @Test("会社の色：明るすぎる色は白い文字が読みにくいと分かる")
     func brandContrast() {
         #expect(BrandColor.contrastWithWhite(0x1E3A8A) > 4.5)

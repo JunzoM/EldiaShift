@@ -16,10 +16,12 @@ struct StoreBadgeLabel: View {
 /// 表のマスに出す、ほかの店舗の小さな印（例：「大阪」）
 struct StoreTag: View {
     let store: Store
+    /// 略称（ShiftBook.shortName(of:)）
+    let label: String
     var size: CGFloat = 9
 
     var body: some View {
-        Text(store.shortName)
+        Text(label)
             .font(.system(size: size, weight: .heavy))
             .foregroundStyle(PaletteColor.fg(store.colorIndex))
             .padding(.horizontal, 3).padding(.vertical, 1)
@@ -108,7 +110,7 @@ struct StoreListView: View {
         let staff = book.staff.filter { $0.active && $0.leaveDate.isEmpty && book.homeStoreID(of: $0) == st.id }.count
         let helpers = book.staff.filter { $0.active && $0.extraStoreIDs.contains(st.id) && book.homeStoreID(of: $0) != st.id }.count
         return HStack(spacing: 12) {
-            Text(st.shortName)
+            Text(book.shortName(of: st))
                 .font(.headline)
                 .foregroundStyle(PaletteColor.fg(st.colorIndex))
                 .frame(width: 44, height: 44)
@@ -149,6 +151,11 @@ struct StoreEditView: View {
                     TextField("住所", text: $storeInfo.address)
                     TextField("電話番号", text: $storeInfo.phone).keyboardType(.phonePad)
                     TextField("営業時間（例：24時間）", text: $storeInfo.hours)
+                }
+                Section {
+                    TextField("略称（例：本館）", text: $storeInfo.short)
+                } footer: {
+                    Text("掛け持ちの人がこの店舗で勤務する日に、ほかの店舗の表のマスへ小さく出します。空なら店舗名から自動で作ります（いまは「\(book.shortName(of: storeInfo))」）。")
                 }
                 Section {
                     ColorChoice(index: $storeInfo.colorIndex)
