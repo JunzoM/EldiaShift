@@ -11,6 +11,8 @@ struct CellEditorSheet: View {
     @State private var outM = 18 * 60
     @State private var error: String?
     @State private var search = ""
+    /// 勤務する店舗（掛け持ちの人だけ選べる）
+    @State private var workStore: String?
 
     private var key: CellKey { CellKey(staffID: member.id, day: day) }
 
@@ -28,8 +30,35 @@ struct CellEditorSheet: View {
         let issues = LaborCheck.issues(book, members: [member], days: [day])[key] ?? []
         let fresh = book.staff.first { $0.id == member.id } ?? member
 
+        let storeIDs = book.storeIDs(of: fresh)
+        let chosenStore = workStore ?? (current?.isOff == false ? current?.storeID : nil) ?? store.currentStoreID
+
         NavigationStack {
             Form {
+                if storeIDs.count > 1 && q.isEmpty {
+                    Section {
+                        Picker("勤務する店舗", selection: Binding(get: { chosenStore }, set: { id in
+                            workStore = id
+                            // 手で入れた勤務なら、そのまま店舗だけ変える
+                            if let c = book.cells[key], !c.isOff {
+                                var e = c
+                                e.storeID = id
+                                save(e)
+                            }
+                        })) {
+                            ForEach(storeIDs, id: \.self) { id in Text(book.store(id)?.name ?? id).tag(id) }
+                        }
+                        .pickerStyle(.segmented)
+                    } header: {
+                        Text("勤務する店舗")
+                    } footer: {
+                        if let c = current, !c.isOff, c.storeID != store.currentStoreID {
+                            Text("この日は\(book.store(c.storeID)?.name ?? "ほかの店舗")で勤務です。1日に入れる店舗は1か所です。")
+                        } else {
+                            Text("ここで選んだ店舗で、下の時間を入れます。")
+                        }
+                    }
+                }
                 if !issues.isEmpty {
                     Section {
                         ForEach(issues, id: \.self) { i in
@@ -144,11 +173,25 @@ struct CellEditorSheet: View {
     }
 
     private func apply(_ entry: CellEntry?) {
+        var e = entry
+        if e?.isOff == false, let ws = workStore ?? currentWorkStore { e?.storeID = ws }
+        if save(e) { dismiss() }
+    }
+
+    /// 開いたときの勤務の店舗（ほかの店舗で勤務する日なら、その店舗のまま時間を変える）
+    private var currentWorkStore: String? {
+        guard let r = Schedule.resolve(member, on: day, in: store.book), !r.isOff else { return nil }
+        return r.storeID
+    }
+
+    @discardableResult
+    private func save(_ entry: CellEntry?) -> Bool {
         do {
             try store.setCell(key, to: entry)
-            dismiss()
+            return true
         } catch {
             self.error = error.localizedDescription
+            return false
         }
     }
 }

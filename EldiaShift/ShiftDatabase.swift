@@ -140,6 +140,8 @@ enum ShiftModel {
             attr("name", .stringAttributeType),
             attr("colorIndex", .integer16AttributeType, default: 0),
             attr("sortOrder", .integer32AttributeType, default: 0),
+            // 属する店舗（空は最初の店舗）
+            attr("storeKey", .stringAttributeType),
             attr("updatedAt", .dateAttributeType)
         ])
         let template = entity(Entity.template, [
@@ -173,6 +175,8 @@ enum ShiftModel {
             attr("outTime", .stringAttributeType),
             attr("blockKey", .stringAttributeType),
             attr("isOff", .booleanAttributeType, default: false),
+            // 掛け持ちでほかの店舗に入る日の店舗（空はその人の店舗）
+            attr("storeKey", .stringAttributeType),
             attr("updatedAt", .dateAttributeType),
             attr("updatedBy", .stringAttributeType)
         ])

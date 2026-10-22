@@ -122,7 +122,7 @@ struct DayTimelineView: View {
                 gridLines(perMinute: perMinute)
                     .contentShape(Rectangle())
                     .gesture(SpatialTapGesture().onEnded { v in
-                        guard store.editing, live == nil, r?.isOff != true else { return }
+                        guard store.editing, live == nil, r?.isOff != true, r?.elsewhere != true else { return }
                         let at = TimelineMath.start + TimelineMath.snap(Double(v.location.x / perMinute) - 15)
                         if let s = TimelineMath.newSpan(at: at) { save(m, s) }
                     })
@@ -133,6 +133,10 @@ struct DayTimelineView: View {
                         .padding(.horizontal, 10).padding(.vertical, 4)
                         .background(PaletteColor.bg(block?.colorIndex ?? 8), in: Capsule())
                         .padding(.leading, 8)
+                        .onTapGesture { if store.editing { editing = Edit(member: m) } }
+                } else if let r, r.elsewhere, let s = TimelineMath.span(of: r) {
+                    // ほかの店舗で勤務する日：薄く出すだけ（この店舗では動かさない）
+                    elsewhereBar(r, span: s, book: book, perMinute: perMinute)
                         .onTapGesture { if store.editing { editing = Edit(member: m) } }
                 } else if let s = live {
                     bar(m, span: s, resolved: r, block: block, perMinute: perMinute, firstBarID: firstBarID)
@@ -180,6 +184,24 @@ struct DayTimelineView: View {
             let n = TimelineMath.drag(.move, in0: s.inM, out0: s.outM, delta: dir == .increment ? 30 : -30)
             save(m, n)
         }
+    }
+
+    private func elsewhereBar(_ r: ResolvedShift, span s: (inM: Int, outM: Int), book: ShiftBook, perMinute: CGFloat) -> some View {
+        let x = CGFloat(s.inM - TimelineMath.start) * perMinute
+        let w = max(CGFloat(s.outM - s.inM) * perMinute, 16)
+        return HStack(spacing: 6) {
+            if let st = book.store(r.storeID) { StoreTag(store: st, size: 10) }
+            Text("\(TimelineMath.label(s.inM))〜\(TimelineMath.label(s.outM))")
+                .font(.caption2).monospacedDigit().foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.6)
+        }
+        .padding(.horizontal, 8)
+        .frame(width: w, height: rowHeight - 14, alignment: .leading)
+        .background(Color(.secondarySystemBackground).overlay(ElsewhereHatch().opacity(0.5)), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color(.separator), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .offset(x: x)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(book.store(r.storeID)?.name ?? "ほかの店舗")で勤務、\(TimelineMath.label(s.inM))から\(TimelineMath.label(s.outM))")
     }
 
     /// 両端のつまみ（指で掴みやすいよう幅を取る）
@@ -236,7 +258,10 @@ struct DayTimelineView: View {
 
     /// 部門の、時間ごとの 実際/必要（必要人数を決めている時間だけ。足りない＝赤）
     private func needRow(_ g: DepartmentGroup, resolved: [String: ResolvedShift?], book: ShiftBook, perMinute: CGFloat) -> some View {
-        let spans = g.members.compactMap { TimelineMath.span(of: resolved[$0.id] ?? nil) }
+        let spans = g.members.compactMap { m -> (inM: Int, outM: Int)? in
+            guard let r = resolved[m.id] ?? nil, !r.elsewhere else { return nil }
+            return TimelineMath.span(of: r)
+        }
         return HStack(spacing: 0) {
             ForEach(hours, id: \.self) { h in
                 let n = TimelineMath.headcount(spans, hour: h)
@@ -261,7 +286,11 @@ struct DayTimelineView: View {
 
     /// 時間帯ごとの人数
     private func headcountRow(resolved: [String: ResolvedShift?], perMinute: CGFloat) -> some View {
-        let spans = resolved.values.compactMap { TimelineMath.span(of: $0) }
+        // ほかの店舗で勤務する人は数えない
+        let spans = resolved.values.compactMap { r -> (inM: Int, outM: Int)? in
+            guard let r, !r.elsewhere else { return nil }
+            return TimelineMath.span(of: r)
+        }
         return HStack(spacing: 0) {
             Text("人数").font(.caption2).foregroundStyle(.secondary).frame(width: nameWidth)
             HStack(spacing: 0) {

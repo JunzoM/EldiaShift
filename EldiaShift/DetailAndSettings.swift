@@ -161,7 +161,20 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("シフト表の中身") {
+                Section("会社・店舗") {
+                    NavigationLink { StoreListView() } label: {
+                        LabeledContent("店舗", value: "\(store.book.allStores.count)店舗")
+                    }
+                    NavigationLink { BrandColorView() } label: {
+                        HStack {
+                            Text("会社の色")
+                            Spacer()
+                            Circle().fill(store.book.brandColor.map { Color(hex: $0) } ?? Color.accentColor).frame(width: 18, height: 18)
+                        }
+                    }
+                }
+
+                Section("シフト表の中身（\(store.currentStore.name)）") {
                     NavigationLink("スタッフ") { StaffListView() }
                     NavigationLink("部門") { DepartmentListView() }
                     NavigationLink("時間のひな形") { TemplateListView() }

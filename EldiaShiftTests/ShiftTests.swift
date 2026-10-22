@@ -974,3 +974,149 @@ struct UndoHistoryTests {
         #expect(try ShiftRecords.load(store.db.viewContext).published.count == 1)
     }
 }
+
+@Suite("複数店舗・掛け持ち・会社の色")
+@MainActor
+struct MultiStoreTests {
+    static let day = DayKey(2026, 11, 2)   // 月曜
+
+    /// 本店（メイク：佐藤）・大阪店（メイク：鈴木。本店にも掛け持ち）。鈴木は毎日 9:00〜18:00 のパターン
+    static func book() -> ShiftBook {
+        var b = ShiftBook()
+        b.stores = [Store(id: "kobe", name: "神戸本店", colorIndex: 0, sortOrder: 0),
+                    Store(id: "osaka", name: "大阪店", colorIndex: 4, sortOrder: 1)]
+        b.departments = [Department(id: "k-make", name: "メイク", colorIndex: 7, sortOrder: 0, storeID: "kobe"),
+                         Department(id: "o-make", name: "メイク", colorIndex: 7, sortOrder: 1, storeID: "osaka"),
+                         Department(id: "o-front", name: "フロント", colorIndex: 0, sortOrder: 2, storeID: "osaka")]
+        b.templates = [TimeBlock(id: "t1", label: "日勤", short: "日", inMinutes: 9 * 60, outMinutes: 18 * 60, colorIndex: 0)]
+            + BackupFile.defaultOffBlocks
+        let every: [String?] = Array(repeating: "t1", count: 7)
+        func member(_ id: String, _ name: String, _ dept: String, extra: [String] = []) -> StaffMember {
+            StaffMember(id: id, number: 1, name: name, departmentID: dept, active: true, joinDate: "", leaveDate: "",
+                        timeBlocks: [], patterns: [WeekPattern(id: "p\(id)", label: "通常", colorIndex: 0, days: every, activeFrom: nil)],
+                        activePatternID: "p\(id)", periodPatterns: [], extraStoreIDs: extra)
+        }
+        b.staff = [member("1", "佐藤", "k-make"), member("2", "鈴木", "o-make", extra: ["kobe"]), member("3", "高橋", "o-front")]
+        return b
+    }
+
+    @Test("店舗を作っていない前の版のデータは「本店」1つとして、今までどおり出る")
+    func legacyIsOneStore() {
+        var b = Self.book()
+        b.stores = []
+        b.departments = b.departments.map { var d = $0; d.storeID = ""; return d }
+        b.scopeStoreID = Store.defaultID
+        #expect(b.allStores.map(\.id) == [Store.defaultID])
+        #expect(b.staffByDepartment(visibleIn: MonthKey(Self.day)).flatMap(\.members).map(\.name) == ["佐藤", "鈴木", "高橋"])
+    }
+
+    @Test("店舗ごとに部門を絞り、掛け持ちの人は同じ名前の部門の後ろに出る")
+    func scopedGroups() {
+        var b = Self.book()
+        b.scopeStoreID = "kobe"
+        let kobe = b.staffByDepartment(visibleIn: MonthKey(Self.day))
+        #expect(kobe.map(\.department.id) == ["k-make"])
+        #expect(kobe[0].members.map(\.name) == ["佐藤", "鈴木"])
+        b.scopeStoreID = "osaka"
+        #expect(b.staffByDepartment(visibleIn: MonthKey(Self.day)).flatMap(\.members).map(\.name) == ["鈴木", "高橋"])
+        #expect(b.storeIDs(of: b.staff[1]) == ["kobe", "osaka"])
+    }
+
+    @Test("ほかの店舗で勤務する日は、その店舗の人数に数えない")
+    func elsewhereNotCounted() {
+        var b = Self.book()
+        let suzuki = b.staff[1]
+        b.scopeStoreID = "kobe"
+        // パターンの勤務は自分の店舗（大阪）
+        #expect(Schedule.resolve(suzuki, on: Self.day, in: b)?.elsewhere == true)
+        #expect(Headcount.working(b.staff, on: Self.day, hour: 10, in: b) == 1)   // 佐藤だけ
+        b.scopeStoreID = "osaka"
+        #expect(Schedule.resolve(suzuki, on: Self.day, in: b)?.elsewhere == false)
+        // 本店に入れた日は、大阪では数えず、本店で数える
+        b.cells[CellKey(staffID: "2", day: Self.day)] = CellEntry(inTime: "09:00", outTime: "18:00", blockID: "t1", isOff: false, storeID: "kobe")
+        #expect(Headcount.working([b.staff[1], b.staff[2]], on: Self.day, hour: 10, in: b) == 1)
+        b.scopeStoreID = "kobe"
+        #expect(Headcount.working(b.staff, on: Self.day, hour: 10, in: b) == 2)
+    }
+
+    @Test("見ている店舗で入れた勤務はその店舗になり、自分の店舗なら空になる。保存・読み直しでも同じ")
+    func stampAndPersist() throws {
+        let store = ShiftStore(db: ShiftDatabase(inMemory: true))
+        try store.replaceAll(with: Self.book())
+        store.currentStoreID = "kobe"
+        let k2 = CellKey(staffID: "2", day: Self.day)
+        try store.setCell(k2, to: CellEntry(inTime: "10:00", outTime: "19:00", blockID: nil, isOff: false))
+        #expect(store.book.cells[k2]?.storeID == "kobe")
+        let k1 = CellKey(staffID: "1", day: Self.day)
+        try store.setCell(k1, to: CellEntry(inTime: "10:00", outTime: "19:00", blockID: nil, isOff: false))
+        #expect(store.book.cells[k1]?.storeID == nil)
+        // 掛け持ちしていない店舗には入らない（自分の店舗になる）
+        store.currentStoreID = "osaka"
+        let k3 = CellKey(staffID: "1", day: Self.day.adding(days: 1))
+        try store.setCell(k3, to: CellEntry(inTime: "10:00", outTime: "19:00", blockID: nil, isOff: false))
+        #expect(store.book.cells[k3]?.storeID == nil)
+        // 休みは店舗を持たない
+        try store.setCell(k2, to: CellEntry(inTime: "", outTime: "", blockID: "off1", isOff: true, storeID: "kobe"))
+        #expect(store.book.cells[k2]?.storeID == nil)
+        try store.undo()
+        #expect(store.book.cells[k2]?.storeID == "kobe")
+
+        try store.setBrandColor(0x1E3A8A)
+        let loaded = try ShiftRecords.load(store.db.viewContext)
+        #expect(loaded.stores.map(\.id) == ["kobe", "osaka"])
+        #expect(loaded.departments.first { $0.id == "o-make" }?.storeID == "osaka")
+        #expect(loaded.staff.first { $0.id == "2" }?.extraStoreIDs == ["kobe"])
+        #expect(loaded.cells[k2]?.storeID == "kobe")
+        #expect(loaded.brandColor == 0x1E3A8A)
+    }
+
+    @Test("バックアップに店舗・掛け持ち・会社の色が入り、読み戻せる")
+    func backupRoundTrip() throws {
+        var b = Self.book()
+        b.brandColor = 0x0F766E
+        b.cells[CellKey(staffID: "2", day: Self.day)] = CellEntry(inTime: "09:00", outTime: "18:00", blockID: "t1", isOff: false, storeID: "kobe")
+        let (back, _) = try BackupFile.read(try BackupFile.write(b))
+        #expect(back.stores == b.stores)
+        #expect(back.departments.first { $0.id == "o-front" }?.storeID == "osaka")
+        #expect(back.staff.first { $0.id == "2" }?.extraStoreIDs == ["kobe"])
+        #expect(back.cells[CellKey(staffID: "2", day: Self.day)]?.storeID == "kobe")
+        #expect(back.brandColor == 0x0F766E)
+    }
+
+    @Test("部門がある店舗・最後の店舗は消せない。消すと掛け持ち先からも外れる")
+    func deleteStore() throws {
+        let store = ShiftStore(db: ShiftDatabase(inMemory: true))
+        try store.replaceAll(with: Self.book())
+        #expect(throws: StoreError.self) { try store.deleteStore(store.book.store("osaka")!) }
+        let extra = Store(id: "kyoto", name: "京都店", sortOrder: 2)
+        try store.save(extra)
+        var m = store.book.staff.first { $0.id == "1" }!
+        m.extraStoreIDs = ["kyoto"]
+        try store.save(m)
+        try store.deleteStore(extra)
+        #expect(store.book.allStores.map(\.id) == ["kobe", "osaka"])
+        #expect(store.book.staff.first { $0.id == "1" }?.extraStoreIDs == [])
+        // 消した店舗を見ていたら、最初の店舗に戻る
+        store.currentStoreID = "kyoto"
+        #expect(store.currentStoreID == "kobe")
+    }
+
+    @Test("公開の記録は店舗ごとに分かれる（最初の店舗は前の版と同じ書き方）")
+    func publishPerStore() throws {
+        let store = ShiftStore(db: ShiftDatabase(inMemory: true))
+        try store.replaceAll(with: Self.book())
+        let month = MonthKey(Self.day)
+        store.currentStoreID = "kobe"
+        try store.markPublished(month)
+        store.currentStoreID = "osaka"
+        try store.markPublished(month)
+        #expect(Set(store.book.published.map(\.month)) == ["2026-11", "2026-11@osaka"])
+        #expect(PublishDiff.changes(store.book, month: month)?.changes.isEmpty == true)
+    }
+
+    @Test("会社の色：明るすぎる色は白い文字が読みにくいと分かる")
+    func brandContrast() {
+        #expect(BrandColor.contrastWithWhite(0x1E3A8A) > 4.5)
+        #expect(BrandColor.contrastWithWhite(0xFDE68A) < 3)
+    }
+}

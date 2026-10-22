@@ -4,12 +4,60 @@ import Foundation
 // 保存は Core Data（ShiftDatabase）。読み込むとこの形になり、書き出し（バックアップ）もこの形から作る。
 // 旧シフト表（PC版）のバックアップと同じ項目を持つので、行き来できる。
 
+/// 店舗（例：本店・大阪店）。部門は店舗に属する
+struct Store: Identifiable, Hashable, Codable, Sendable {
+    var id: String
+    var name: String
+    var address: String = ""
+    var phone: String = ""
+    /// 営業時間（例：「24時間」「6:00〜24:00」）
+    var hours: String = ""
+    var note: String = ""
+    /// 店舗を見分ける小さな色の印（Palette の番号）
+    var colorIndex: Int = 0
+    var sortOrder: Int = 0
+
+    /// 店舗をまだ1つも作っていないとき（前の版のデータ）に使う店舗
+    static let defaultID = "main"
+    static func makeDefault() -> Store { Store(id: defaultID, name: "本店") }
+
+    /// 表のマスに出す短い名前（先頭2文字）
+    var shortName: String { String(name.prefix(2)) }
+
+    init(id: String, name: String, address: String = "", phone: String = "", hours: String = "",
+         note: String = "", colorIndex: Int = 0, sortOrder: Int = 0) {
+        self.id = id
+        self.name = name
+        self.address = address
+        self.phone = phone
+        self.hours = hours
+        self.note = note
+        self.colorIndex = colorIndex
+        self.sortOrder = sortOrder
+    }
+
+    /// 項目が足りない記録（あとから足した項目）も読めるように
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        address = try c.decodeIfPresent(String.self, forKey: .address) ?? ""
+        phone = try c.decodeIfPresent(String.self, forKey: .phone) ?? ""
+        hours = try c.decodeIfPresent(String.self, forKey: .hours) ?? ""
+        note = try c.decodeIfPresent(String.self, forKey: .note) ?? ""
+        colorIndex = try c.decodeIfPresent(Int.self, forKey: .colorIndex) ?? 0
+        sortOrder = try c.decodeIfPresent(Int.self, forKey: .sortOrder) ?? 0
+    }
+}
+
 /// 部門（例：調理・ホール）。並び順の小さい方が上
 struct Department: Identifiable, Hashable, Codable, Sendable {
     var id: String
     var name: String
     var colorIndex: Int
     var sortOrder: Int
+    /// 属する店舗。空は最初の店舗（前の版のデータ）
+    var storeID: String = ""
 }
 
 /// 時間のひな形（出勤〜退勤）。inMinutes が nil のものは「休み」
@@ -66,6 +114,8 @@ struct StaffMember: Identifiable, Hashable, Codable, Sendable {
     var periodPatterns: [PeriodPattern]
     /// 希望休の日（"yyyy-MM-dd"、日付順）
     var offRequests: [String] = []
+    /// 掛け持ちで入る、ほかの店舗（自分の部門の店舗は含めない）
+    var extraStoreIDs: [String] = []
 
     func requestsOff(_ d: DayKey) -> Bool { offRequests.contains(d.description) }
 }
@@ -76,6 +126,8 @@ struct CellEntry: Hashable, Codable, Sendable {
     var outTime: String
     var blockID: String?
     var isOff: Bool
+    /// 勤務する店舗。nil はその人の部門の店舗（掛け持ちでほかの店舗に入る日だけ入れる）
+    var storeID: String? = nil
 }
 
 /// 1人×1日を表すキー
@@ -111,8 +163,14 @@ struct ShiftBook: Sendable, Equatable {
     var staffing = StaffingPlan()
     /// 労務の注意（連勤・勤務間隔・週の時間・有休5日）
     var labor = LaborRules()
-    /// スタッフに公開した内容（変更点を出すため。月ごと）
+    /// スタッフに公開した内容（変更点を出すため。月ごと・店舗ごと）
     var published: [PublishedMonth] = []
+    /// 店舗（空なら「本店」1つとして扱う）
+    var stores: [Store] = []
+    /// 会社の色（アプリ全体の色。nil は標準の色）
+    var brandColor: UInt32? = nil
+    /// いま見ている店舗（保存しない。表・集計・人数はこの店舗に絞る。nil はすべて）
+    var scopeStoreID: String? = nil
 
     /// まだ何も作っていない（スタッフ・部門・ひな形・シフトのどれも無い）
     var isEmpty: Bool { staff.isEmpty && cells.isEmpty && departments.isEmpty && templates.isEmpty }
@@ -122,21 +180,99 @@ struct ShiftBook: Sendable, Equatable {
         return member.timeBlocks.first { $0.id == id } ?? templates.first { $0.id == id }
     }
 
-    /// 部門の並び順に、部門ごとのスタッフ（番号順）
+    // MARK: 店舗
+
+    /// 店舗の一覧（並び順。作っていなければ「本店」1つ）
+    var allStores: [Store] {
+        stores.isEmpty ? [Store.makeDefault()] : stores.sorted { ($0.sortOrder, $0.name) < ($1.sortOrder, $1.name) }
+    }
+
+    func store(_ id: String?) -> Store? {
+        guard let id else { return nil }
+        return allStores.first { $0.id == id }
+    }
+
+    /// 部門の店舗（店舗が決まっていない・消した店舗なら最初の店舗）
+    func storeID(ofDepartment id: String) -> String {
+        let all = allStores
+        let sid = departments.first { $0.id == id }?.storeID ?? ""
+        return all.contains { $0.id == sid } ? sid : all[0].id
+    }
+
+    /// その人の店舗（部門の店舗）
+    func homeStoreID(of m: StaffMember) -> String { storeID(ofDepartment: m.departmentID) }
+
+    /// その人が入れる店舗（自分の店舗＋掛け持ち先。並び順）
+    func storeIDs(of m: StaffMember) -> [String] {
+        let home = homeStoreID(of: m)
+        return allStores.map(\.id).filter { $0 == home || m.extraStoreIDs.contains($0) }
+    }
+
+    /// その店舗の部門（並び順）。店舗を決めていなければ全部
+    func departments(in storeID: String?) -> [Department] {
+        let sorted = departments.sorted { $0.sortOrder < $1.sortOrder }
+        guard let storeID else { return sorted }
+        return sorted.filter { self.storeID(ofDepartment: $0.id) == storeID }
+    }
+
+    /// いま見ている店舗の部門
+    var scopedDepartments: [Department] { departments(in: scopeStoreID) }
+
+    /// 手で入れたマスの店舗（消した店舗・未指定なら、その人の店舗）
+    func storeID(of entry: CellEntry, for m: StaffMember) -> String {
+        if let s = entry.storeID, allStores.contains(where: { $0.id == s }) { return s }
+        return homeStoreID(of: m)
+    }
+
+    /// 部門の並び順に、部門ごとのスタッフ（番号順）。
+    /// 店舗を見ているときは、その店舗の部門だけ。掛け持ちでほかの店舗から入る人は、同じ名前の部門の後ろ
+    /// （同じ名前の部門が無ければ「応援」）に並べる
     func staffByDepartment(visibleIn month: MonthKey, includeInactive: Bool = false) -> [DepartmentGroup] {
         let visible = staff.filter { includeInactive || $0.isVisible(in: month) }
-        var result: [DepartmentGroup] = departments.sorted { $0.sortOrder < $1.sortOrder }.compactMap { dept -> DepartmentGroup? in
-            let members = visible.filter { $0.departmentID == dept.id }.sorted(by: StaffMember.order)
-            return members.isEmpty ? nil : DepartmentGroup(department: dept, members: members)
+        let depts = scopedDepartments
+        var result: [DepartmentGroup] = depts.map { dept in
+            DepartmentGroup(department: dept,
+                            members: visible.filter { $0.departmentID == dept.id }.sorted(by: StaffMember.order))
         }
-        // 部門が見つからない人は最後に「その他」としてまとめる
         let known = Set(departments.map(\.id))
-        let orphans = visible.filter { !known.contains($0.departmentID) }.sorted(by: StaffMember.order)
+        let first = allStores[0].id
+        // 部門が見つからない人は最後に「その他」としてまとめる（最初の店舗に出す）
+        var orphans: [StaffMember] = []
+        if scopeStoreID == nil || scopeStoreID == first {
+            orphans = visible.filter { !known.contains($0.departmentID) }.sorted(by: StaffMember.order)
+        }
+        // 掛け持ちでこの店舗にも入る人
+        var support: [StaffMember] = []
+        if let scope = scopeStoreID {
+            let helpers = visible.filter { known.contains($0.departmentID) && homeStoreID(of: $0) != scope && $0.extraStoreIDs.contains(scope) }
+            for h in helpers.sorted(by: helperOrder) {
+                let homeName = departments.first { $0.id == h.departmentID }?.name ?? ""
+                if let i = result.firstIndex(where: { $0.department.name == homeName }) {
+                    result[i].members.append(h)
+                } else {
+                    support.append(h)
+                }
+            }
+        }
+        result = result.filter { !$0.members.isEmpty }
+        if !support.isEmpty {
+            result.append(DepartmentGroup(department: Department(id: "support-\(scopeStoreID ?? "")", name: "応援（ほかの店舗から）",
+                                                                 colorIndex: 8, sortOrder: .max - 1, storeID: scopeStoreID ?? ""),
+                                          members: support))
+        }
         if !orphans.isEmpty {
             result.append(DepartmentGroup(department: Department(id: "", name: "その他", colorIndex: 8, sortOrder: .max),
                                           members: orphans))
         }
         return result
+    }
+
+    /// 掛け持ちの人の並び：店舗 → 部門 → 番号
+    private func helperOrder(_ a: StaffMember, _ b: StaffMember) -> Bool {
+        let order = Dictionary(allStores.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { x, _ in x })
+        let da = departments.first { $0.id == a.departmentID }?.sortOrder ?? 0
+        let db = departments.first { $0.id == b.departmentID }?.sortOrder ?? 0
+        return (order[homeStoreID(of: a)] ?? 0, da, a.number, a.name) < (order[homeStoreID(of: b)] ?? 0, db, b.number, b.name)
     }
 }
 

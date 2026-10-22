@@ -217,7 +217,7 @@ struct MonthGridView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 14) {
                 Button {
-                    staffSheet = StaffSheet(member: store.newStaff(in: store.book.departments.first?.id ?? ""), isNew: true)
+                    staffSheet = StaffSheet(member: store.newStaff(in: store.book.scopedDepartments.first?.id ?? store.book.departments.first?.id ?? ""), isNew: true)
                 } label: {
                     Label("スタッフを追加", systemImage: "person.badge.plus")
                 }
@@ -338,9 +338,11 @@ struct MonthGridView: View {
             for d in days {
                 let to = d.adding(days: 7)
                 guard !m.hasLeft(on: to), let r = table.get(m, d) else { continue }
-                let entry = CellEntry(inTime: r.inTime, outTime: r.outTime, blockID: r.blockID, isOff: r.isOff)
+                let entry = CellEntry(inTime: r.inTime, outTime: r.outTime, blockID: r.blockID, isOff: r.isOff,
+                                      storeID: r.isOff ? nil : r.storeID)
                 if let now = Schedule.resolve(m, on: to, in: book),
-                   now.inTime == entry.inTime, now.outTime == entry.outTime, now.blockID == entry.blockID, now.isOff == entry.isOff {
+                   now.inTime == entry.inTime, now.outTime == entry.outTime, now.blockID == entry.blockID, now.isOff == entry.isOff,
+                   now.isOff || now.storeID == entry.storeID {
                     continue
                 }
                 items.append((CellKey(staffID: m.id, day: to), entry))
@@ -750,6 +752,10 @@ struct ShiftCellView: View {
     private func background(_ block: TimeBlock?) -> some View {
         if member.hasLeft(on: day) {
             Color(.secondarySystemBackground)
+        } else if resolved?.elsewhere == true {
+            // ほかの店舗で勤務する日：斜線で薄く
+            Color(.secondarySystemBackground)
+                .overlay(ElsewhereHatch().opacity(0.5))
         } else if resolved?.isOff == true {
             PaletteColor.bg(block?.colorIndex ?? 8)
         } else if isToday {
@@ -767,6 +773,13 @@ struct ShiftCellView: View {
     private func content(_ block: TimeBlock?) -> some View {
         if member.hasLeft(on: day) {
             Text("－").font(.caption2).foregroundStyle(.tertiary)
+        } else if let r = resolved, r.elsewhere {
+            VStack(spacing: 2) {
+                if let st = book.store(r.storeID) { StoreTag(store: st, size: large ? 11 : 9) }
+                Text(r.inTime.isEmpty ? "—" : r.inTime).font(.system(size: large ? 12 : 10)).foregroundStyle(.secondary)
+                if large { Text(r.outTime).font(.system(size: 11)).foregroundStyle(.tertiary) }
+            }
+            .monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
         } else if let r = resolved {
             if r.isOff {
                 Text(large ? (block?.label ?? "休み") : (block?.short ?? "休"))
@@ -823,7 +836,25 @@ struct ShiftCellView: View {
         if member.hasLeft(on: day) { return "\(date)、退職後" }
         guard let r = resolved else { return "\(date)、未定" }
         if r.isOff { return "\(date)、\(block?.label ?? "休み")" }
+        if r.elsewhere { return "\(date)、\(book.store(r.storeID)?.name ?? "ほかの店舗")で\(r.inTime)から\(r.outTime)" }
         return "\(date)、\(r.inTime)から\(r.outTime)\(r.isAuto ? "、自動" : "")"
+    }
+}
+
+/// ほかの店舗で勤務する日の斜線
+struct ElsewhereHatch: View {
+    var body: some View {
+        Canvas { ctx, size in
+            var p = Path()
+            var x: CGFloat = -size.height
+            while x < size.width {
+                p.move(to: CGPoint(x: x, y: size.height))
+                p.addLine(to: CGPoint(x: x + size.height, y: 0))
+                x += 7
+            }
+            ctx.stroke(p, with: .color(Color(.separator)), lineWidth: 1)
+        }
+        .accessibilityHidden(true)
     }
 }
 

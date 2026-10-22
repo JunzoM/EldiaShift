@@ -132,9 +132,10 @@ extension ShiftStore {
                            joinDate: "", leaveDate: "", timeBlocks: [], patterns: [], activePatternID: nil, periodPatterns: [])
     }
 
+    /// 新しい部門（いま見ている店舗に作る）
     func newDepartment() -> Department {
         Department(id: UUID().uuidString, name: "", colorIndex: book.departments.count % Palette.colors.count,
-                   sortOrder: (book.departments.map(\.sortOrder).max() ?? -1) + 1)
+                   sortOrder: (book.departments.map(\.sortOrder).max() ?? -1) + 1, storeID: currentStoreID)
     }
 
     func newTemplate(off: Bool) -> TimeBlock {
@@ -159,6 +160,7 @@ extension ShiftRecords {
         r.setValue(d.name, forKey: "name")
         r.setValue(Int16(d.colorIndex), forKey: "colorIndex")
         r.setValue(Int32(clamping: d.sortOrder), forKey: "sortOrder")
+        r.setValue(d.storeID, forKey: "storeKey")
         r.setValue(Date(), forKey: "updatedAt")
     }
 
@@ -184,7 +186,7 @@ extension ShiftRecords {
         r.setValue(s.leaveDate, forKey: "leaveDate")
         let detail = StaffDetail(timeBlocks: s.timeBlocks, patterns: s.patterns,
                                  activePatternID: s.activePatternID, periodPatterns: s.periodPatterns,
-                                 offRequests: s.offRequests)
+                                 offRequests: s.offRequests, extraStoreIDs: s.extraStoreIDs)
         r.setValue(try JSONEncoder().encode(detail), forKey: "detail")
         r.setValue(Date(), forKey: "updatedAt")
     }
@@ -260,6 +262,8 @@ extension ShiftStore {
         try autoBackup(reason: "消去前")
         var kept = ShiftBook()
         kept.departments = book.departments
+        kept.stores = book.stores
+        kept.brandColor = book.brandColor
         kept.breakRules = book.breakRules
         kept.staffing = book.staffing
         kept.labor = book.labor

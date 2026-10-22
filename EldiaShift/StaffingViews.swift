@@ -26,7 +26,7 @@ struct StaffingSettingsView: View {
 
     var body: some View {
         let plan = store.book.staffing
-        let depts = store.book.departments.sorted { $0.sortOrder < $1.sortOrder }
+        let depts = store.book.scopedDepartments
         List {
             Section {
                 Text("部門ごとに「この時間帯は何人いてほしいか」を、平日・土曜・日祝で決めます。表の「時間帯別在籍人数」とタイムラインで、足りない時間が赤、多すぎる時間がオレンジになります。")

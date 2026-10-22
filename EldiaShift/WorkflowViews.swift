@@ -46,7 +46,7 @@ struct CandidatesSheet: View {
         let book = store.book
         let d = target.day
         let dept = target.department
-        let members = book.staffByDepartment(visibleIn: MonthKey(d)).flatMap(\.members).filter { $0.departmentID == dept.id }
+        let members = book.staffByDepartment(visibleIn: MonthKey(d)).first { $0.department.id == dept.id }?.members ?? []
         let short = ShortageFinder.shortHours(book, department: dept.id, members: members, on: d)
         let list = ShortageFinder.candidates(book, department: dept.id, on: d, includeOthers: includeOthers)
 

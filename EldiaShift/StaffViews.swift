@@ -14,7 +14,7 @@ struct StaffListView: View {
 
     var body: some View {
         let book = store.book
-        let depts = book.departments.sorted { $0.sortOrder < $1.sortOrder }
+        let depts = book.scopedDepartments
         List {
             ForEach(sections(book)) { group in
                 Section {
@@ -32,7 +32,7 @@ struct StaffListView: View {
                         }
                     }
                     .onMove { from, to in
-                        guard search.isEmpty else { return }
+                        guard search.isEmpty, group.department.id != "support" else { return }
                         var list = group.members
                         list.move(fromOffsets: from, toOffset: to)
                         run { try store.reorderStaff(list) }
@@ -118,13 +118,22 @@ struct StaffListView: View {
         let shown = book.staff.filter {
             (showInactive || ($0.active && $0.leaveDate.isEmpty)) && (q.isEmpty || $0.name.contains(q))
         }
-        var result: [DepartmentGroup] = book.departments.sorted { $0.sortOrder < $1.sortOrder }.compactMap { d -> DepartmentGroup? in
+        // いま見ている店舗の部門だけ
+        var result: [DepartmentGroup] = book.scopedDepartments.compactMap { d -> DepartmentGroup? in
             let m = shown.filter { $0.departmentID == d.id }.sorted(by: StaffMember.order)
             return m.isEmpty ? nil : DepartmentGroup(department: d, members: m)
         }
         let known = Set(book.departments.map(\.id))
+        // 掛け持ちでこの店舗にも入る人（並べ替えは自分の店舗で）
+        if let scope = book.scopeStoreID {
+            let helpers = shown.filter { known.contains($0.departmentID) && book.homeStoreID(of: $0) != scope && $0.extraStoreIDs.contains(scope) }
+            if !helpers.isEmpty {
+                result.append(DepartmentGroup(department: Department(id: "support", name: "掛け持ち（ほかの店舗から）", colorIndex: 8,
+                                                                     sortOrder: .max - 1), members: helpers.sorted(by: StaffMember.order)))
+            }
+        }
         let others = shown.filter { !known.contains($0.departmentID) }.sorted(by: StaffMember.order)
-        if !others.isEmpty {
+        if !others.isEmpty, book.scopeStoreID == nil || book.scopeStoreID == book.allStores[0].id {
             result.append(DepartmentGroup(department: Department(id: "", name: "部門なし", colorIndex: 8, sortOrder: .max), members: others))
         }
         return result
@@ -157,12 +166,20 @@ struct StaffEditView: View {
             Section("基本") {
                 TextField("名前", text: $member.name)
                     .textContentType(.name)
-                Picker("部署", selection: $member.departmentID) {
+                Picker("部署", selection: Binding(get: { member.departmentID }, set: { id in
+                    member.departmentID = id
+                    // 自分の店舗は掛け持ち先に入れない
+                    let home = book.storeID(ofDepartment: id)
+                    member.extraStoreIDs.removeAll { $0 == home }
+                })) {
                     if !book.departments.contains(where: { $0.id == member.departmentID }) {
                         Text("なし").tag(member.departmentID)
                     }
-                    ForEach(book.departments.sorted { $0.sortOrder < $1.sortOrder }) { d in
-                        Text(d.name).tag(d.id)
+                    let multi = book.allStores.count > 1
+                    ForEach(book.allStores) { st in
+                        ForEach(book.departments(in: st.id)) { d in
+                            Text(multi ? "\(st.name)・\(d.name)" : d.name).tag(d.id)
+                        }
                     }
                 }
                 Picker("在職", selection: $member.active) {
@@ -172,6 +189,24 @@ struct StaffEditView: View {
                 .pickerStyle(.segmented)
                 OptionalDateRow(title: "入社日", text: $member.joinDate)
                 OptionalDateRow(title: "退職日", text: $member.leaveDate)
+            }
+
+            if book.allStores.count > 1 {
+                let home = book.storeID(ofDepartment: member.departmentID)
+                Section {
+                    ForEach(book.allStores.filter { $0.id != home }) { st in
+                        Toggle(isOn: Binding(get: { member.extraStoreIDs.contains(st.id) }, set: { on in
+                            member.extraStoreIDs.removeAll { $0 == st.id }
+                            if on { member.extraStoreIDs.append(st.id) }
+                        })) {
+                            StoreBadgeLabel(store: st)
+                        }
+                    }
+                } header: {
+                    Text("掛け持ち")
+                } footer: {
+                    Text("オンにした店舗のシフト表にも、この人が出ます。同じ日に2つの店舗へは入れません（1日1か所）。週間パターンは自分の店舗（\(book.store(home)?.name ?? "")）の勤務になります。")
+                }
             }
 
             Section {
