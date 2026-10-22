@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 @main
 struct EldiaShiftApp: App {
@@ -119,7 +120,14 @@ struct RootView: View {
         }
         .onChange(of: db.changeToken) { store.refreshIfNeeded() }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { store.refreshIfNeeded() }
+            if phase == .active {
+                store.refreshIfNeeded()
+                store.refreshToday()
+            }
+        }
+        // 開いたまま日付が変わったとき
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: RunLoop.main)) { _ in
+            store.refreshToday()
         }
     }
 }

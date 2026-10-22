@@ -140,6 +140,8 @@ struct StaffListView: View {
 struct StaffEditView: View {
     @State var member: StaffMember
     let isNew: Bool
+    /// シートで開いたとき（表の名前から）。「閉じる」を出す
+    var inSheet = false
 
     @Environment(ShiftStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -232,8 +234,8 @@ struct StaffEditView: View {
                     Button("保存") { save() }
                         .disabled(member.name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
-                if isNew {
-                    ToolbarItem(placement: .cancellationAction) { Button("やめる") { dismiss() } }
+                if isNew || inSheet {
+                    ToolbarItem(placement: .cancellationAction) { Button(isNew ? "やめる" : "閉じる") { dismiss() } }
                 }
             }
             .sheet(item: $editingBlock) { b in TemplateEditView(template: b, personal: $member.timeBlocks) }

@@ -642,3 +642,72 @@ struct BreakRuleTests {
         #expect(store.book.breakRules == .laborStandard)
     }
 }
+
+@Suite("速さの改良・不具合の修正")
+@MainActor
+struct PerfAndFixTests {
+    @Test("まとめて計算した表は、1マスずつ計算したときと同じ結果になる")
+    func tableMatches() throws {
+        let (book, _) = try legacyBook()
+        let days = MonthKey(2026, 10).days
+        let table = ScheduleTable(book: book, members: book.staff, days: days)
+        for m in book.staff {
+            #expect(table.summary(m, days: days) == MonthSummary.of(m, days: days, in: book))
+            for d in days { #expect(table.get(m, d) == Schedule.resolve(m, on: d, in: book)) }
+        }
+        for d in days.prefix(7) {
+            for h in 0..<24 {
+                #expect(table.working(book.staff, on: d, hour: h) == Headcount.working(book.staff, on: d, hour: h, in: book))
+            }
+        }
+    }
+
+    @Test("チームが2つできても、1つにまとめて記録は消えない")
+    func mergeTeams() throws {
+        let db = ShiftDatabase(inMemory: true)
+        let ctx = db.viewContext
+        let a = try ShiftRecords.currentTeam(ctx)
+        let b = NSEntityDescription.insertNewObject(forEntityName: ShiftModel.Entity.team, into: ctx)
+        b.setValue(UUID(), forKey: "id"); b.setValue("シフト表", forKey: "name")
+        b.setValue(Date().addingTimeInterval(60), forKey: "createdAt")
+        b.setValue(try JSONEncoder().encode(TeamSettings(breakRules: .laborStandard)), forKey: "settings")
+        for (team, staffKey) in [(a, "1"), (b, "2")] {
+            let r = NSEntityDescription.insertNewObject(forEntityName: ShiftModel.Entity.cell, into: ctx)
+            r.setValue(team, forKey: "team"); r.setValue(staffKey, forKey: "staffKey")
+            r.setValue("2026-10-01", forKey: "day"); r.setValue("09:00", forKey: "inTime")
+            r.setValue("18:00", forKey: "outTime"); r.setValue(Date(), forKey: "updatedAt")
+        }
+        try db.save()
+        let book = try ShiftRecords.load(ctx)
+        try db.save()
+        #expect(book.cells.count == 2)
+        #expect(book.breakRules == .laborStandard)
+        #expect(try ctx.fetch(NSFetchRequest<NSManagedObject>(entityName: ShiftModel.Entity.team)).count == 1)
+        #expect(try ShiftRecords.load(ctx).cells.count == 2)
+    }
+
+    @Test("スタッフを保存すると、読み直さなくても表に反映され、読み直しても同じ")
+    func inPlaceSave() throws {
+        let store = ShiftStore(db: ShiftDatabase(inMemory: true))
+        try store.startNew()
+        var m = store.newStaff(in: store.book.departments[0].id)
+        m.name = "見本"
+        try store.save(m)
+        #expect(store.book.staff.contains { $0.name == "見本" })
+        m.name = "見本2"
+        try store.save(m)
+        #expect(store.book.staff.filter { $0.id == m.id }.map(\.name) == ["見本2"])
+        let reloaded = try ShiftRecords.load(store.db.viewContext)
+        #expect(reloaded.staff.first { $0.id == m.id }?.name == "見本2")
+    }
+
+    @Test("PDF を1枚ずつ作っても同じ枚数になる")
+    func asyncPDF() async throws {
+        let (book, _) = try legacyBook()
+        let pages = PrintPlanner.pages(format: .monthByDepartment, half: .both, departments: book.departments, anchor: DayKey(2026, 10, 1))
+        var seen = 0
+        let data = await PDFMaker.makeAsync(pages: pages, book: book, title: "t") { seen = $0 }
+        #expect(seen == pages.count)
+        #expect(!data.isEmpty)
+    }
+}

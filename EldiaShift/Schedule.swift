@@ -146,3 +146,44 @@ enum Headcount {
         }.count
     }
 }
+
+// MARK: - 表の計算をまとめて1回で（速さのため）
+
+/// 表に出す人×日の勤務を、描くたびではなく一度だけ決めておく
+/// （時間帯別在籍人数は 24時間×日×人 を数えるので、毎回決めていると重い）
+struct ScheduleTable {
+    private var resolved: [CellKey: ResolvedShift] = [:]
+    let rules: BreakRules
+
+    init(book: ShiftBook, members: [StaffMember], days: [DayKey]) {
+        rules = book.breakRules
+        resolved.reserveCapacity(members.count * days.count)
+        for m in members {
+            for d in days {
+                if let r = Schedule.resolve(m, on: d, in: book) { resolved[CellKey(staffID: m.id, day: d)] = r }
+            }
+        }
+    }
+
+    func get(_ m: StaffMember, _ d: DayKey) -> ResolvedShift? {
+        resolved[CellKey(staffID: m.id, day: d)]
+    }
+
+    func summary(_ m: StaffMember, days: [DayKey]) -> MonthSummary {
+        var s = MonthSummary()
+        for d in days {
+            guard let r = get(m, d) else { continue }
+            if r.isOff { s.offDays += 1 } else if let h = r.netHours(rules) { s.workDays += 1; s.hours += h }
+        }
+        return s
+    }
+
+    /// その日の h 時台に勤務している人数（Headcount.working と同じ数え方）
+    func working(_ members: [StaffMember], on d: DayKey, hour h: Int) -> Int {
+        members.filter { m in
+            guard let r = get(m, d), !r.isOff, let s = ClockTime.parse(r.inTime), let e = ClockTime.parse(r.outTime) else { return false }
+            let hs = h * 60, he = (h + 1) * 60
+            return e > s ? (s < he && e > hs) : (s < he || e > hs)
+        }.count
+    }
+}

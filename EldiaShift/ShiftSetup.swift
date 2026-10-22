@@ -9,23 +9,26 @@ extension ShiftStore {
         try replaceAll(with: StarterBook.make())
     }
 
+    // 1件の保存では、データベースを読み直さず、変えたものだけ入れ替える（速さのため）
+
     func save(_ d: Department) throws {
         try ShiftRecords.upsert(d, in: db.viewContext)
         try db.save()
-        reload()
+        if let i = book.departments.firstIndex(where: { $0.id == d.id }) { book.departments[i] = d } else { book.departments.append(d) }
+        book.departments.sort { $0.sortOrder < $1.sortOrder }
     }
 
     func save(_ t: TimeBlock, sortOrder: Int? = nil) throws {
         let order = sortOrder ?? book.templates.firstIndex { $0.id == t.id } ?? book.templates.count
         try ShiftRecords.upsert(t, sortOrder: order, in: db.viewContext)
         try db.save()
-        reload()
+        if let i = book.templates.firstIndex(where: { $0.id == t.id }) { book.templates[i] = t } else { book.templates.append(t) }
     }
 
     func save(_ s: StaffMember) throws {
         try ShiftRecords.upsert(s, in: db.viewContext)
         try db.save()
-        reload()
+        if let i = book.staff.firstIndex(where: { $0.id == s.id }) { book.staff[i] = s } else { book.staff.append(s) }
     }
 
     /// 部門の並び替え（表の上からの順）

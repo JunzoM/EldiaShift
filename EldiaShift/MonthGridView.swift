@@ -45,6 +45,7 @@ struct MonthGridView: View {
     @AppStorage("showInactive") private var showInactive = false
     @State private var openHourly: Set<String> = []
     @State private var staffSheet: StaffSheet?
+    @State private var saveError: String?
 
     private var compact: Bool { sizeClass == .compact }
     private var nameWidth: CGFloat { compact ? 104 : 156 }
@@ -90,7 +91,9 @@ struct MonthGridView: View {
     var body: some View {
         let book = store.book
         let rows = rows(book)
-        let today = DayKey.today
+        // 表に出す全員×全日の勤務を、ここで一度だけ決める
+        let table = ScheduleTable(book: book, members: rows.compactMap { if case .staff(let m) = $0 { m } else { nil } }, days: days)
+        let today = store.today
 
         // 上：日付の行（縦には動かない。横は下の表と同じだけずらす）
         // 下：縦に動く。左に名前の列、右に横に動く表
@@ -139,7 +142,7 @@ struct MonthGridView: View {
                                 HStack(spacing: 0) {
                                     ForEach(days, id: \.self) { d in Color.clear.frame(width: cellWidth, height: 1).id(d) }
                                 }
-                                ForEach(rows) { r in rightCells(r, book: book, today: today).frame(height: height(r)) }
+                                ForEach(rows) { r in rightCells(r, book: book, table: table, today: today).frame(height: height(r)) }
                             }
                             .background(GeometryReader { g in
                                 // iOS 17 用：表の位置が変わったら日付の行を合わせる（iOS 18 以降は下の onScrollGeometryChange）
@@ -173,11 +176,12 @@ struct MonthGridView: View {
                     .presentationDetents([.medium])
             }
         }
+        .errorAlert($saveError)
         .sheet(item: $staffSheet) { s in
             if s.isNew {
                 StaffEditView(member: s.member, isNew: true)
             } else {
-                NavigationStack { StaffEditView(member: s.member, isNew: false) }
+                NavigationStack { StaffEditView(member: s.member, isNew: false, inSheet: true) }
             }
         }
     }
@@ -257,7 +261,7 @@ struct MonthGridView: View {
     }
 
     @ViewBuilder
-    private func rightCells(_ r: Row, book: ShiftBook, today: DayKey) -> some View {
+    private func rightCells(_ r: Row, book: ShiftBook, table: ScheduleTable, today: DayKey) -> some View {
         switch r {
         case .section:
             Rectangle().fill(Color(.secondarySystemBackground))
@@ -265,13 +269,13 @@ struct MonthGridView: View {
         case .staff(let m):
             HStack(spacing: 0) {
                 ForEach(days, id: \.self) { d in
-                    ShiftCellView(member: m, day: d, resolved: Schedule.resolve(m, on: d, in: book),
+                    ShiftCellView(member: m, day: d, resolved: table.get(m, d),
                                   book: book, isToday: d == today, compact: compact, large: isWeek)
                         .frame(width: cellWidth, height: rowHeight)
                         .contentShape(Rectangle())
                         .onTapGesture { if !m.hasLeft(on: d) { selected = Selection(member: m, day: d) } }
                 }
-                summaryCell(MonthSummary.of(m, days: days, in: book))
+                summaryCell(table.summary(m, days: days))
             }
             .overlay(alignment: .bottom) { Divider() }
         case .hourToggle:
@@ -282,7 +286,7 @@ struct MonthGridView: View {
             let night = h <= 8
             HStack(spacing: 0) {
                 ForEach(days, id: \.self) { d in
-                    let n = Headcount.working(members, on: d, hour: h, in: book)
+                    let n = table.working(members, on: d, hour: h)
                     Text(n == 0 ? "0" : "\(n)")
                         .font(.system(size: n > 2 ? 13 : 11, weight: n > 2 ? .heavy : n > 0 ? .bold : .regular))
                         .monospacedDigit()
@@ -340,7 +344,7 @@ struct MonthGridView: View {
                                 Button {
                                     var x = m
                                     x.activePatternID = p.id
-                                    try? store.save(x)
+                                    do { try store.save(x) } catch { saveError = error.localizedDescription }
                                     CoachCenter.shared.show(.pattern("pattern-\(m.id)"), after: 0.5)
                                 } label: {
                                     if p.id == m.activePatternID { Label(patternTitle(p), systemImage: "checkmark") }
