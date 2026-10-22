@@ -46,6 +46,12 @@ struct MonthGridView: View {
     @State private var openHourly: Set<String> = DemoMode.hourly ? ["hall", "kitchen"] : []
     @State private var staffSheet: StaffSheet?
     @State private var saveError: String?
+    /// まとめて入れるために選んだマス
+    @State private var selecting = false
+    @State private var picked: Set<CellKey> = []
+    @State private var pickAnchor: CellKey?
+    @State private var shortage: ShortageTarget?
+    @State private var showRequests = false
 
     private var compact: Bool { sizeClass == .compact }
     private var nameWidth: CGFloat { compact ? 104 : 156 }
@@ -92,8 +98,11 @@ struct MonthGridView: View {
         let book = store.book
         let rows = rows(book)
         // 表に出す全員×全日の勤務を、ここで一度だけ決める
-        let table = ScheduleTable(book: book, members: rows.compactMap { if case .staff(let m) = $0 { m } else { nil } }, days: days)
+        let shown = rows.compactMap { if case .staff(let m) = $0 { m } else { nil } }
+        let table = ScheduleTable(book: book, members: shown, days: days)
         let today = store.today
+        // 連勤・勤務の間隔・週の時間・希望休の注意
+        let issues = LaborCheck.issues(book, members: shown, days: days)
         // 必要人数に足りない日（日付の上に赤い点）
         let shortDays: Set<DayKey> = book.staffing.isEmpty ? [] : Set(days.filter { d in
             rows.contains { r in
@@ -107,7 +116,7 @@ struct MonthGridView: View {
         // 画面の幅は外から受け取る（表の中身の幅を測ると、広がった幅をまた使ってしまい、名前の列が画面の外に出る）
         GeometryReader { geo in
         VStack(spacing: 0) {
-            toolbarRow
+            toolbarRow(table: table, shown: shown)
             HStack(spacing: 0) {
                 HStack(spacing: 0) {
                     Text("No").frame(width: 26)
@@ -149,7 +158,9 @@ struct MonthGridView: View {
                                 HStack(spacing: 0) {
                                     ForEach(days, id: \.self) { d in Color.clear.frame(width: cellWidth, height: 1).id(d) }
                                 }
-                                ForEach(rows) { r in rightCells(r, book: book, table: table, today: today).frame(height: height(r)) }
+                                ForEach(rows) { r in
+                                    rightCells(r, book: book, table: table, today: today, issues: issues, shown: shown).frame(height: height(r))
+                                }
                             }
                             .background(GeometryReader { g in
                                 // iOS 17 用：表の位置が変わったら日付の行を合わせる（iOS 18 以降は下の onScrollGeometryChange）
@@ -183,6 +194,12 @@ struct MonthGridView: View {
                     .presentationDetents([.medium])
             }
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if selecting { selectionBar(book) }
+        }
+        .sheet(item: $shortage) { t in CandidatesSheet(target: t).presentationDetents([.medium, .large]) }
+        .sheet(isPresented: $showRequests) { OffRequestSheet(month: MonthKey(days[days.count / 2])) }
+        .onChange(of: store.editing) { if !store.editing { selecting = false; picked = []; pickAnchor = nil } }
         .errorAlert($saveError)
         .sheet(item: $staffSheet) { s in
             if s.isNew {
@@ -195,33 +212,143 @@ struct MonthGridView: View {
 
     // MARK: 表の上の操作
 
-    private var toolbarRow: some View {
-        HStack(spacing: 14) {
-            Button {
-                staffSheet = StaffSheet(member: store.newStaff(in: store.book.departments.first?.id ?? ""), isNew: true)
-            } label: {
-                Label("スタッフを追加", systemImage: "person.badge.plus")
-            }
-            Toggle("退職者も表示", isOn: $showInactive)
-                .toggleStyle(.button)
-            Spacer(minLength: 0)
-            if !compact {
-                HStack(spacing: 4) {
-                    Circle().fill(Color.orange.opacity(0.8)).frame(width: 6, height: 6)
-                    Text("パターンから自動で入ったシフト")
+    private func toolbarRow(table: ScheduleTable, shown: [StaffMember]) -> some View {
+        // iPhone では入りきらないので、横に動かせるようにする
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 14) {
+                Button {
+                    staffSheet = StaffSheet(member: store.newStaff(in: store.book.departments.first?.id ?? ""), isNew: true)
+                } label: {
+                    Label("スタッフを追加", systemImage: "person.badge.plus")
                 }
-                .font(.caption).foregroundStyle(.secondary)
+                Toggle("退職者も表示", isOn: $showInactive)
+                    .toggleStyle(.button)
+                Spacer(minLength: 0)
+                if !compact {
+                    HStack(spacing: 4) {
+                        Circle().fill(Color.orange.opacity(0.8)).frame(width: 6, height: 6)
+                        Text("パターンから自動で入ったシフト")
+                    }
+                    .font(.caption).foregroundStyle(.secondary)
+                }
+                if store.editing {
+                    UndoRedoButtons()
+                    Toggle(isOn: Binding(get: { selecting }, set: { selecting = $0; if !$0 { picked = []; pickAnchor = nil } })) {
+                        Label("まとめて選ぶ", systemImage: "checklist")
+                    }
+                    .toggleStyle(.button)
+                    Menu {
+                        Button { showRequests = true } label: { Label("希望休を入れる", systemImage: "calendar.badge.minus") }
+                        if isWeek {
+                            Button { copyWeek(table: table, shown: shown) } label: {
+                                Label("この週を翌週へコピー", systemImage: "doc.on.doc")
+                            }
+                        }
+                    } label: {
+                        Label("便利な操作", systemImage: "ellipsis.circle")
+                    }
+                    EditingChip()
+                } else {
+                    Text("ロック中（鉛筆で編集）").font(.caption).foregroundStyle(.secondary)
+                }
             }
-            if store.editing {
-                EditingChip()
-            } else {
-                Text("ロック中（鉛筆で編集）").font(.caption).foregroundStyle(.secondary)
+            .font(.subheadline)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .frame(minWidth: availableWidth, alignment: .leading)
+        }
+        .overlay(alignment: .bottom) { Divider() }
+    }
+
+    // MARK: まとめて入れる
+
+    private func togglePick(_ key: CellKey) {
+        if picked.contains(key) { picked.remove(key) } else { picked.insert(key); pickAnchor = key }
+    }
+
+    /// 前に選んだマスから key までの四角（人×日）を選ぶ
+    private func pickRange(to key: CellKey, shown: [StaffMember]) {
+        guard let a = pickAnchor,
+              let r1 = shown.firstIndex(where: { $0.id == a.staffID }), let r2 = shown.firstIndex(where: { $0.id == key.staffID }),
+              let c1 = days.firstIndex(of: a.day), let c2 = days.firstIndex(of: key.day) else {
+            togglePick(key)
+            return
+        }
+        for r in min(r1, r2)...max(r1, r2) {
+            for c in min(c1, c2)...max(c1, c2) where !shown[r].hasLeft(on: days[c]) {
+                picked.insert(CellKey(staffID: shown[r].id, day: days[c]))
             }
         }
-        .font(.subheadline)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .overlay(alignment: .bottom) { Divider() }
+        pickAnchor = key
+    }
+
+    private func selectionBar(_ book: ShiftBook) -> some View {
+        let common = book.templates.filter { !$0.isOff }
+        let off = book.templates.filter(\.isOff)
+        return HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text("\(picked.count)マスを選択中").font(.subheadline.weight(.bold)).monospacedDigit()
+                Text("押して選ぶ・長押しで前のマスから四角く選ぶ").font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            Menu {
+                Section("勤務") {
+                    ForEach(common) { b in Button("\(b.label)（\(b.inTime)〜\(b.outTime)）") { applyPicked(b) } }
+                }
+                Section("休み") {
+                    ForEach(off) { b in Button(b.label) { applyPicked(b) } }
+                }
+                Section {
+                    Button("自動（パターン）に戻す", role: .destructive) { applyPicked(nil) }
+                }
+            } label: {
+                Label("入れる", systemImage: "square.and.pencil").font(.subheadline.weight(.bold))
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(picked.isEmpty)
+            Button("選び直す") { picked = []; pickAnchor = nil }.disabled(picked.isEmpty)
+            Button("終える") { selecting = false; picked = []; pickAnchor = nil }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
+    }
+
+    private func applyPicked(_ b: TimeBlock?) {
+        let entry: CellEntry? = b.map {
+            $0.isOff ? CellEntry(inTime: "", outTime: "", blockID: $0.id, isOff: true)
+                     : CellEntry(inTime: $0.inTime, outTime: $0.outTime, blockID: $0.id, isOff: false)
+        }
+        let n = picked.count
+        let keys = picked.sorted { a, b in a.day != b.day ? a.day < b.day : a.staffID < b.staffID }
+        do {
+            try store.setCells(keys.map { ($0, entry) }, title: "\(n)マスを「\(b?.label ?? "自動")」にしました")
+            picked = []
+            pickAnchor = nil
+        } catch {
+            saveError = error.localizedDescription
+        }
+    }
+
+    /// 表示している週を、翌週の同じ曜日へ写す（同じ内容になる日は飛ばす）
+    private func copyWeek(table: ScheduleTable, shown: [StaffMember]) {
+        let book = store.book
+        var items: [(CellKey, CellEntry?)] = []
+        for m in shown {
+            for d in days {
+                let to = d.adding(days: 7)
+                guard !m.hasLeft(on: to), let r = table.get(m, d) else { continue }
+                let entry = CellEntry(inTime: r.inTime, outTime: r.outTime, blockID: r.blockID, isOff: r.isOff)
+                if let now = Schedule.resolve(m, on: to, in: book),
+                   now.inTime == entry.inTime, now.outTime == entry.outTime, now.blockID == entry.blockID, now.isOff == entry.isOff {
+                    continue
+                }
+                items.append((CellKey(staffID: m.id, day: to), entry))
+            }
+        }
+        guard !items.isEmpty else { saveError = "翌週はもう同じ内容です。"; return }
+        do { try store.setCells(items, title: "この週を翌週へコピーしました（\(items.count)マス）") }
+        catch { saveError = error.localizedDescription }
     }
 
     // MARK: 行の中身
@@ -264,7 +391,8 @@ struct MonthGridView: View {
     }
 
     @ViewBuilder
-    private func rightCells(_ r: Row, book: ShiftBook, table: ScheduleTable, today: DayKey) -> some View {
+    private func rightCells(_ r: Row, book: ShiftBook, table: ScheduleTable, today: DayKey,
+                            issues: [CellKey: [LaborIssue]], shown: [StaffMember]) -> some View {
         switch r {
         case .section:
             Rectangle().fill(Color(.secondarySystemBackground))
@@ -272,11 +400,20 @@ struct MonthGridView: View {
         case .staff(let m):
             HStack(spacing: 0) {
                 ForEach(days, id: \.self) { d in
+                    let key = CellKey(staffID: m.id, day: d)
                     ShiftCellView(member: m, day: d, resolved: table.get(m, d),
-                                  book: book, isToday: d == today, compact: compact, large: isWeek)
+                                  book: book, isToday: d == today, compact: compact, large: isWeek,
+                                  issues: issues[key] ?? [], requested: m.requestsOff(d), picked: picked.contains(key))
                         .frame(width: cellWidth, height: rowHeight)
                         .contentShape(Rectangle())
-                        .onTapGesture { if !m.hasLeft(on: d) { selected = Selection(member: m, day: d) } }
+                        .onTapGesture {
+                            guard !m.hasLeft(on: d) else { return }
+                            if selecting { togglePick(key) } else { selected = Selection(member: m, day: d) }
+                        }
+                        .onLongPressGesture(minimumDuration: 0.35) {
+                            // 選んでいるとき：前に選んだマスからここまでを四角く選ぶ
+                            if selecting { pickRange(to: key, shown: shown) }
+                        }
                 }
                 summaryCell(table.summary(m, days: days))
             }
@@ -290,11 +427,17 @@ struct MonthGridView: View {
                         let g = StaffingCheck.gap(plan, department: dept.id, members: members, on: d) { table.working($0, on: $1, hour: $2) }
                         Group {
                             if g.short > 0 {
-                                Text("−\(g.short)").font(.system(size: 10, weight: .heavy)).monospacedDigit()
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 3)
-                                    .background(StaffingStyle.short, in: RoundedRectangle(cornerRadius: 3))
-                                    .accessibilityLabel("\(d.day)日 \(dept.name) 不足 \(g.short)人時")
+                                // 押すと、その日に入れられる人を出す
+                                Button { shortage = ShortageTarget(department: dept, day: d) } label: {
+                                    Text("−\(g.short)").font(.system(size: 11, weight: .heavy)).monospacedDigit()
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 4).padding(.vertical, 3)
+                                        .background(StaffingStyle.short, in: RoundedRectangle(cornerRadius: 4))
+                                        .frame(width: cellWidth, height: toggleHeight)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("\(d.day)日 \(dept.name) 不足 \(g.short)人時。入れられる人を見る")
                             } else {
                                 Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(StaffingStyle.ok.opacity(0.7))
                             }
@@ -331,7 +474,10 @@ struct MonthGridView: View {
                         .frame(width: cellWidth, height: hourHeight)
                         .background(n < need ? c.opacity(0.85) : c.opacity(0.15))
                         .overlay(alignment: .trailing) { Rectangle().fill(Color(.separator)).frame(width: 0.5) }
+                        .contentShape(Rectangle())
+                        .onTapGesture { if n < need { shortage = ShortageTarget(department: dept, day: d) } }
                         .accessibilityLabel("\(h)時 \(n)人（必要\(need)人）")
+                        .accessibilityAddTraits(n < need ? .isButton : [])
                     } else {
                     Text(n == 0 ? "0" : "\(n)")
                         .font(.system(size: n > 2 ? 13 : 11, weight: n > 2 ? .heavy : n > 0 ? .bold : .regular))
@@ -552,6 +698,12 @@ struct ShiftCellView: View {
     let compact: Bool
     /// 週表示（マスが大きい）：時刻を大きく、勤務時間とひな形の名前も出す
     var large = false
+    /// 連勤などの注意
+    var issues: [LaborIssue] = []
+    /// 希望休の日
+    var requested = false
+    /// まとめて入れるために選んでいる
+    var picked = false
 
     var body: some View {
         let block = book.block(resolved?.blockID, for: member)
@@ -566,9 +718,32 @@ struct ShiftCellView: View {
                     .accessibilityHidden(true)
             }
         }
+        .overlay(alignment: .topLeading) {
+            if !issues.isEmpty {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: large ? 11 : 9))
+                    .foregroundStyle(issues.contains(.requestedOff) ? Color.purple : Color.orange)
+                    .padding(2)
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            if requested {
+                Text("希").font(.system(size: 8, weight: .heavy)).foregroundStyle(.white)
+                    .padding(.horizontal, 2)
+                    .background(Color.purple, in: RoundedRectangle(cornerRadius: 2))
+                    .padding(2)
+            }
+        }
+        .overlay {
+            if picked {
+                Rectangle().fill(Color.accentColor.opacity(0.18))
+                    .overlay(Rectangle().strokeBorder(Color.accentColor, lineWidth: 2.5))
+            }
+        }
         .overlay(alignment: .trailing) { Rectangle().fill(Color(.separator)).frame(width: 0.5) }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText(block))
+        .accessibilityAddTraits(picked ? .isSelected : [])
     }
 
     @ViewBuilder
@@ -639,6 +814,11 @@ struct ShiftCellView: View {
     }
 
     private func accessibilityText(_ block: TimeBlock?) -> String {
+        let extra = (requested ? "、希望休" : "") + (issues.isEmpty ? "" : "、注意：" + issues.map(\.text).joined(separator: "、"))
+        return base(block) + extra
+    }
+
+    private func base(_ block: TimeBlock?) -> String {
         let date = "\(day.month)月\(day.day)日 \(member.name)"
         if member.hasLeft(on: day) { return "\(date)、退職後" }
         guard let r = resolved else { return "\(date)、未定" }

@@ -8,6 +8,7 @@ struct DayTimelineView: View {
     @Environment(ShiftStore.self) private var store
     @State private var drag: DragState?
     @State private var editing: Edit?
+    @State private var shortage: ShortageTarget?
     @State private var error: String?
 
     private struct DragState: Equatable {
@@ -51,6 +52,7 @@ struct DayTimelineView: View {
             .overlay(alignment: .bottom) { Divider() }
         } else {
             HStack {
+                UndoRedoButtons()
                 Spacer()
                 EditingChip()
             }
@@ -91,6 +93,7 @@ struct DayTimelineView: View {
         }
         .onAppear { if store.editing { CoachCenter.shared.show(.timeline("timelineBar")) } }
         .onChange(of: store.editing) { if store.editing { CoachCenter.shared.show(.timeline("timelineBar"), after: 0.6) } }
+        .sheet(item: $shortage) { t in CandidatesSheet(target: t).presentationDetents([.medium, .large]) }
         .sheet(item: $editing) { e in
             CellEditorSheet(member: e.member, day: day).presentationDetents([.medium, .large])
         }
@@ -244,6 +247,8 @@ struct DayTimelineView: View {
                             .foregroundStyle(n < need ? .white : c)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .background(n < need ? c.opacity(0.85) : c.opacity(0.15))
+                            .contentShape(Rectangle())
+                            .onTapGesture { if n < need { shortage = ShortageTarget(department: g.department, day: day) } }
                             .accessibilityLabel("\(h % 24)時 \(n)人（必要\(need)人）")
                     } else {
                         Color.clear

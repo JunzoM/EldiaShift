@@ -17,15 +17,32 @@ final class ShiftStore {
 
     /// 編集できる状態か（初期値：見るだけ。うっかり変えないように）
     var editing = false
-    /// 直前の変更（「元に戻す」に使う）
-    private(set) var lastChange: CellChange?
+    /// 直前の操作（下に数秒出す「元に戻す」の表示用。消えても履歴は残る）
+    private(set) var lastChange: ChangeSet?
+    /// 元に戻せる操作（新しいものが最後）。まとめて入れた操作は1つとして戻る
+    private(set) var undoStack: [ChangeSet] = []
+    private(set) var redoStack: [ChangeSet] = []
+    private let historyLimit = 50
+
+    var canUndo: Bool { !undoStack.isEmpty }
+    var canRedo: Bool { !redoStack.isEmpty }
 
     struct CellChange: Equatable {
         let key: CellKey
         let before: CellEntry?
         let after: CellEntry?
         let staffName: String
+    }
+
+    /// 1回の操作（1マスでも、まとめて入れた何マスでも）
+    struct ChangeSet: Equatable, Identifiable {
         let id = UUID()
+        let title: String
+        let changes: [CellChange]
+        /// 1マスだけの操作なら、そのマス（以前の「直前の変更」と同じ使い方用）
+        var key: CellKey? { changes.count == 1 ? changes[0].key : nil }
+        var before: CellEntry? { changes.first?.before }
+        var after: CellEntry? { changes.first?.after }
     }
 
     @ObservationIgnored let db: ShiftDatabase
@@ -55,30 +72,76 @@ final class ShiftStore {
     func replaceAll(with newBook: ShiftBook) throws {
         try ShiftRecords.replaceAll(with: newBook, in: db.viewContext)
         try db.save()
+        clearHistory()
         reload()
     }
 
     /// 1人×1日を変える（nil は手入力を消して、くり返し・期間の予定に戻す）
     func setCell(_ key: CellKey, to entry: CellEntry?) throws {
-        let before = book.cells[key]
-        guard before != entry else { return }
-        try ShiftRecords.upsertCell(key, entry, in: db.viewContext)
-        try db.save()
-        if let entry { book.cells[key] = entry } else { book.cells.removeValue(forKey: key) }
         let name = book.staff.first { $0.id == key.staffID }?.name ?? ""
-        lastChange = CellChange(key: key, before: before, after: entry, staffName: name)
+        try setCells([(key, entry)], title: "\(name) \(key.day.month)/\(key.day.day) を変更しました")
     }
 
-    /// 直前の変更を取り消す
-    func undo() throws {
-        guard let c = lastChange else { return }
-        try ShiftRecords.upsertCell(c.key, c.before, in: db.viewContext)
+    /// 何マスかをまとめて変える（元に戻すときも1回で戻る）。変わらないマスは飛ばす
+    func setCells(_ items: [(CellKey, CellEntry?)], title: String) throws {
+        var changes: [CellChange] = []
+        var seen = Set<CellKey>()
+        for (key, entry) in items where seen.insert(key).inserted {
+            let before = book.cells[key]
+            guard before != entry else { continue }
+            let name = book.staff.first { $0.id == key.staffID }?.name ?? ""
+            changes.append(CellChange(key: key, before: before, after: entry, staffName: name))
+        }
+        guard !changes.isEmpty else { return }
+        try write(changes.map { ($0.key, $0.after) })
+        let set = ChangeSet(title: title, changes: changes)
+        undoStack.append(set)
+        if undoStack.count > historyLimit { undoStack.removeFirst(undoStack.count - historyLimit) }
+        redoStack.removeAll()
+        lastChange = set
+    }
+
+    private func write(_ items: [(CellKey, CellEntry?)]) throws {
+        for (k, e) in items { try ShiftRecords.upsertCell(k, e, in: db.viewContext) }
         try db.save()
-        if let b = c.before { book.cells[c.key] = b } else { book.cells.removeValue(forKey: c.key) }
+        for (k, e) in items {
+            if let e { book.cells[k] = e } else { book.cells.removeValue(forKey: k) }
+        }
+    }
+
+    /// いちばん新しい操作を取り消す
+    func undo() throws {
+        guard let set = undoStack.last else { return }
+        try write(set.changes.reversed().map { ($0.key, $0.before) })
+        undoStack.removeLast()
+        redoStack.append(set)
+        lastChange = nil
+    }
+
+    /// 取り消した操作をやり直す
+    func redo() throws {
+        guard let set = redoStack.last else { return }
+        try write(set.changes.map { ($0.key, $0.after) })
+        redoStack.removeLast()
+        undoStack.append(set)
         lastChange = nil
     }
 
     func clearLastChange() { lastChange = nil }
+
+    /// 履歴を消す（取り込み・消去のあとなど、戻すと食い違うとき）
+    func clearHistory() {
+        undoStack.removeAll()
+        redoStack.removeAll()
+        lastChange = nil
+    }
+
+    /// その人に関わる履歴を消す（スタッフを消したとき）
+    func dropHistory(for staffID: String) {
+        undoStack.removeAll { $0.changes.contains { $0.key.staffID == staffID } }
+        redoStack.removeAll { $0.changes.contains { $0.key.staffID == staffID } }
+        if lastChange?.changes.contains(where: { $0.key.staffID == staffID }) == true { lastChange = nil }
+    }
 
     /// 休憩の決まりを変える
     func setBreakRules(_ rules: BreakRules) throws {
@@ -98,6 +161,37 @@ final class ShiftStore {
         book.staffing = plan
     }
 
+    /// チーム全体の設定（休憩・適正人員・労務・公開の記録）を book の内容で保存する
+    private func updateSettings(_ change: (inout ShiftBook) -> Void) throws {
+        var b = book
+        change(&b)
+        for team in try ShiftRecords.allTeams(db.viewContext) { try ShiftRecords.saveSettings(b, team: team) }
+        try db.save()
+        book.breakRules = b.breakRules
+        book.staffing = b.staffing
+        book.labor = b.labor
+        book.published = b.published
+    }
+
+    func setLaborRules(_ rules: LaborRules) throws { try updateSettings { $0.labor = rules } }
+
+    /// その月をスタッフに公開した（今の内容を「公開した内容」として残す。新しい3か月分だけ持つ）
+    func markPublished(_ month: MonthKey) throws {
+        let snap = PublishedMonth.snapshot(of: book, month: month)
+        try updateSettings { b in
+            b.published.removeAll { $0.month == snap.month }
+            b.published.append(snap)
+            b.published = Array(b.published.sorted { $0.month < $1.month }.suffix(3))
+        }
+    }
+
+    /// 希望休を変える（その人の記録だけを書き換える）
+    func setOffRequests(_ days: Set<DayKey>, for staffID: String) throws {
+        guard var m = book.staff.first(where: { $0.id == staffID }) else { return }
+        m.offRequests = days.map(\.description).sorted()
+        try save(m)
+    }
+
     func exportData() throws -> Data {
         try BackupFile.write(book)
     }
@@ -111,6 +205,8 @@ enum ShiftRecords {
         var patterns: [WeekPattern]
         var activePatternID: String?
         var periodPatterns: [PeriodPattern]
+        /// 希望休の日（"yyyy-MM-dd"）。前の版の記録には無い
+        var offRequests: [String]? = nil
     }
 
     static func load(_ ctx: NSManagedObjectContext) throws -> ShiftBook {
@@ -126,6 +222,8 @@ enum ShiftRecords {
            let settings = try? JSONDecoder().decode(TeamSettings.self, from: data) {
             book.breakRules = settings.breakRules
             book.staffing = settings.staffing ?? StaffingPlan()
+            book.labor = settings.labor ?? LaborRules()
+            book.published = settings.published ?? []
         }
 
         book.departments = try newestByKey(fetch(ShiftModel.Entity.department, ctx), key: "key", ctx: ctx).map { r in
@@ -150,7 +248,8 @@ enum ShiftRecords {
                                departmentID: r.str("departmentKey"), active: r.value(forKey: "active") as? Bool ?? true,
                                joinDate: r.str("joinDate"), leaveDate: r.str("leaveDate"),
                                timeBlocks: detail?.timeBlocks ?? [], patterns: detail?.patterns ?? [],
-                               activePatternID: detail?.activePatternID, periodPatterns: detail?.periodPatterns ?? [])
+                               activePatternID: detail?.activePatternID, periodPatterns: detail?.periodPatterns ?? [],
+                               offRequests: detail?.offRequests ?? [])
         }
 
         for r in try newestByKey(fetch(ShiftModel.Entity.cell, ctx), keyOf: { "\($0.str("staffKey"))|\($0.str("day"))" }, ctx: ctx) {
@@ -201,7 +300,8 @@ enum ShiftRecords {
             r.setValue(s.joinDate, forKey: "joinDate")
             r.setValue(s.leaveDate, forKey: "leaveDate")
             let detail = StaffDetail(timeBlocks: s.timeBlocks, patterns: s.patterns,
-                                     activePatternID: s.activePatternID, periodPatterns: s.periodPatterns)
+                                     activePatternID: s.activePatternID, periodPatterns: s.periodPatterns,
+                                     offRequests: s.offRequests)
             r.setValue(try encoder.encode(detail), forKey: "detail")
         }
         for (k, c) in book.cells {
@@ -242,7 +342,8 @@ enum ShiftRecords {
 
     /// チーム全体の設定を保存
     static func saveSettings(_ book: ShiftBook, team: NSManagedObject) throws {
-        team.setValue(try JSONEncoder().encode(TeamSettings(breakRules: book.breakRules, staffing: book.staffing)), forKey: "settings")
+        team.setValue(try JSONEncoder().encode(TeamSettings(breakRules: book.breakRules, staffing: book.staffing,
+                                                                    labor: book.labor, published: book.published)), forKey: "settings")
     }
 
     static func allTeams(_ ctx: NSManagedObjectContext) throws -> [NSManagedObject] {
@@ -325,4 +426,6 @@ struct TeamSettings: Codable {
     var breakRules: BreakRules
     /// 前の版で保存した設定には無い
     var staffing: StaffingPlan?
+    var labor: LaborRules?
+    var published: [PublishedMonth]?
 }

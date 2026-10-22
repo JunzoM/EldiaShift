@@ -318,6 +318,15 @@ struct PrintSheet: View {
     @State private var busy = false
     @State private var progress = 0
     @State private var failure: String?
+    /// 変更点の文章も一緒に送る
+    @AppStorage("shareWithChanges") private var withChanges = true
+    @State private var images: ImageFiles?
+    @State private var publishedNote: String?
+
+    struct ImageFiles: Identifiable {
+        let urls: [URL]
+        var id: String { urls.map(\.path).joined() }
+    }
 
     var body: some View {
         let book = store.book
@@ -353,6 +362,20 @@ struct PrintSheet: View {
                     TextField("表の上に出す名前（例：店名）", text: $title)
                 } footer: {
                     Text("白黒で印刷しても見分けられるよう、日曜は濃い灰色・土曜は中くらいの灰色にします。有休は○有、当欠は○欠で印刷し、公休は空白にします。")
+                }
+
+                changesSection(book)
+                Section {
+                    Button {
+                        makeImages(chosen, book: book)
+                    } label: {
+                        Label("一人ずつのシフト画像を作って送る", systemImage: "person.crop.rectangle.stack")
+                    }
+                    .disabled(chosen.isEmpty || busy)
+                } header: {
+                    Text("一人ずつ")
+                } footer: {
+                    Text("選んだ部門の全員分、\(MonthKey(anchor).month)月の自分のシフトだけの縦長の画像を作ります。LINE で本人に送れます。")
                 }
 
                 Section("プレビュー（\(pages.count)枚）") {
@@ -394,7 +417,7 @@ struct PrintSheet: View {
                     if busy {
                         HStack(spacing: 10) {
                             ProgressView()
-                            Text("PDFを作成中… \(progress)/\(pages.count)枚").font(.subheadline).monospacedDigit()
+                            Text("作成中… \(progress)枚目").font(.subheadline).monospacedDigit()
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(.bar)
@@ -402,7 +425,13 @@ struct PrintSheet: View {
                 }
             }
             .coachOverlay(.sheet)
-            .sheet(item: $shareFile) { f in ShareSheet(items: [f.url]) }
+            .sheet(item: $shareFile) { f in
+                ShareSheet(items: shareItems(f.url, book: book)) { done in if done { publish() } }
+            }
+            .sheet(item: $images) { f in ShareSheet(items: f.urls) }
+            .alert("公開済みにしました", isPresented: Binding(get: { publishedNote != nil }, set: { if !$0 { publishedNote = nil } })) {
+                Button("OK") { publishedNote = nil }
+            } message: { Text(publishedNote ?? "") }
             .errorAlert($failure)
             .interactiveDismissDisabled(busy)
             .presentationDetents([.large])
@@ -450,6 +479,80 @@ struct PrintSheet: View {
         let c = UIPrintInteractionController.shared
         c.printInfo = info
         c.printingItem = url
-        c.present(animated: true)
+        c.present(animated: true) { _, completed, _ in
+            if completed { publish() }
+        }
+    }
+
+    // MARK: 公開と変更点
+
+    @ViewBuilder
+    private func changesSection(_ book: ShiftBook) -> some View {
+        let month = MonthKey(anchor)
+        let diff = PublishDiff.changes(book, month: month)
+        Section {
+            if let diff {
+                if diff.changes.isEmpty {
+                    Text("前回の公開から変更はありません").foregroundStyle(.secondary)
+                } else {
+                    ForEach(Array(diff.changes.prefix(8).enumerated()), id: \.offset) { item in
+                        let c = item.element
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text("\(c.day.month)/\(c.day.day)").monospacedDigit().frame(width: 44, alignment: .leading)
+                            Text(c.staffName).bold()
+                            Text("\(c.before.isEmpty ? "なし" : c.before) → \(c.after.isEmpty ? "なし" : c.after)")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    }
+                    if diff.changes.count > 8 {
+                        Text("ほか \(diff.changes.count - 8)件").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Toggle("PDFと一緒に変更点の文章も送る", isOn: $withChanges)
+            } else {
+                Text("\(month.month)月分はまだ公開していません。").foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("\(month.month)月の変更点（前回の公開から）")
+        } footer: {
+            if let diff {
+                Text("前回の公開：\(diff.since.formatted(date: .abbreviated, time: .shortened))。PDFを送るか印刷すると、今の内容を「公開済み」として残し、次からはそこからの変更を出します。")
+            } else {
+                Text("PDFを送るか印刷すると、今の内容を「公開済み」として残します。次からは、そこからの変更点を LINE などに貼れる文章で一緒に送れます。")
+            }
+        }
+    }
+
+    private func shareItems(_ url: URL, book: ShiftBook) -> [Any] {
+        let month = MonthKey(anchor)
+        guard withChanges, let diff = PublishDiff.changes(book, month: month), !diff.changes.isEmpty else { return [url] }
+        return [PublishDiff.text(diff.changes, month: month, title: title), url]
+    }
+
+    private func publish() {
+        let month = MonthKey(anchor)
+        do {
+            try store.markPublished(month)
+            publishedNote = "\(month.month)月分の今の内容を公開済みとして残しました。次からは、ここからの変更点を出します。"
+        } catch {
+            failure = "公開の記録を残せませんでした（\(error.localizedDescription)）"
+        }
+    }
+
+    private func makeImages(_ chosen: [Department], book: ShiftBook) {
+        guard !busy else { return }
+        let month = MonthKey(anchor)
+        let ids = Set(chosen.map(\.id))
+        let members = book.staffByDepartment(visibleIn: month).filter { ids.contains($0.department.id) }.flatMap(\.members)
+        busy = true; progress = 0
+        Task {
+            defer { busy = false }
+            do {
+                let urls = try await PersonalScheduleImage.files(for: members, month: month, book: book, title: title) { progress = $0 }
+                if urls.isEmpty { failure = "画像を作れませんでした" } else { images = ImageFiles(urls: urls) }
+            } catch {
+                failure = "画像を作れませんでした（\(error.localizedDescription)）"
+            }
+        }
     }
 }

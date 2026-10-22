@@ -25,8 +25,31 @@ struct CellEditorSheet: View {
         let selectedID = current?.isAuto == false ? current?.blockID : nil
         let firstID = personal.first?.id ?? common.first?.id ?? off.first?.id
 
+        let issues = LaborCheck.issues(book, members: [member], days: [day])[key] ?? []
+        let fresh = book.staff.first { $0.id == member.id } ?? member
+
         NavigationStack {
             Form {
+                if !issues.isEmpty {
+                    Section {
+                        ForEach(issues, id: \.self) { i in
+                            Label(i.text, systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(i == .requestedOff ? Color.purple : Color.orange)
+                        }
+                    }
+                }
+                if q.isEmpty {
+                    Section {
+                        Toggle(isOn: Binding(get: { fresh.requestsOff(day) }, set: { on in
+                            var set = Set(fresh.offRequests.compactMap { DayKey($0) })
+                            if on { set.insert(day) } else { set.remove(day) }
+                            do { try store.setOffRequests(set, for: member.id) } catch { self.error = error.localizedDescription }
+                        })) {
+                            Label("希望休", systemImage: "calendar.badge.minus")
+                        }
+                        .tint(.purple)
+                    }
+                }
                 if !personal.isEmpty {
                     Section("\(member.name)の個人の時間") { blockGrid(personal, selectedID, firstID: firstID) }
                 }

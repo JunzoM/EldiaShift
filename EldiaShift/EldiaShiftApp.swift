@@ -47,6 +47,14 @@ struct RootView: View {
             Group {
                 if DemoMode.staffing {
                     StaffingAnalysisView(month: MonthKey(anchor))
+                } else if DemoMode.flag("-demoLabor") {
+                    LaborIssuesView(month: MonthKey(anchor))
+                } else if DemoMode.flag("-demoCandidates"), let hall = store.book.departments.first {
+                    CandidatesSheet(target: ShortageTarget(department: hall, day: .today))
+                } else if DemoMode.flag("-demoRequests") {
+                    OffRequestSheet(month: MonthKey(anchor))
+                } else if DemoMode.flag("-demoPersonal"), let m = store.book.staff.first {
+                    ScrollView { PersonalScheduleImage(member: m, month: MonthKey(anchor), book: store.book, title: "見本ホテル") }
                 } else if DemoMode.printPage, let spec = PrintPlanner.pages(format: DemoMode.printLandscape ? .monthLandscape : .monthCombined,
                                                                     half: .first, departments: store.book.departments,
                                                                     anchor: .today).first {
@@ -183,7 +191,7 @@ struct UndoBar: View {
         Group {
             if let c = store.lastChange {
                 HStack(spacing: 12) {
-                    Text("\(c.staffName) \(c.key.day.month)/\(c.key.day.day) を変更しました")
+                    Text(c.title)
                         .font(.subheadline).lineLimit(1)
                     Button("元に戻す") {
                         do { try store.undo() } catch { self.error = error.localizedDescription }
@@ -225,6 +233,7 @@ struct GlassCapsule: ViewModifier {
 enum DemoMode {
     static var enabled: Bool { ProcessInfo.processInfo.arguments.contains("-demoLayout") }
     static var printPage: Bool { enabled && ProcessInfo.processInfo.arguments.contains("-demoPrintPage") }
+    static func flag(_ name: String) -> Bool { enabled && ProcessInfo.processInfo.arguments.contains(name) }
     static var staffing: Bool { enabled && ProcessInfo.processInfo.arguments.contains("-demoStaffing") }
     static var hourly: Bool { enabled && ProcessInfo.processInfo.arguments.contains("-demoHourly") }
     static var printLandscape: Bool { ProcessInfo.processInfo.arguments.contains("-demoLandscapePage") }
@@ -262,6 +271,12 @@ enum DemoMode {
         b.staffing.setType(.busy, for: today.adding(days: 2))
         b.cells[CellKey(staffID: "1", day: today)] = CellEntry(inTime: "10:00", outTime: "19:30", blockID: nil, isOff: false)
         b.cells[CellKey(staffID: "2", day: today.adding(days: 1))] = CellEntry(inTime: "", outTime: "", blockID: "off2", isOff: true)
+        // 希望休（1人目は希望休の日に勤務が入っている → 注意が出る）
+        b.staff[0].offRequests = [today.adding(days: 3).description]
+        b.staff[3].offRequests = [today.adding(days: 5).description, today.adding(days: 6).description]
+        // 夜勤明けの翌日に早番（勤務の間隔の注意）
+        b.cells[CellKey(staffID: "3", day: today.adding(days: 1))] = CellEntry(inTime: "09:00", outTime: "18:00", blockID: "t1", isOff: false)
+        b.staff[0].joinDate = "2024-04-01"
         return b
     }
 }

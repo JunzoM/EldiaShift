@@ -64,6 +64,10 @@ struct StaffMember: Identifiable, Hashable, Codable, Sendable {
     var patterns: [WeekPattern]
     var activePatternID: String?
     var periodPatterns: [PeriodPattern]
+    /// 希望休の日（"yyyy-MM-dd"、日付順）
+    var offRequests: [String] = []
+
+    func requestsOff(_ d: DayKey) -> Bool { offRequests.contains(d.description) }
 }
 
 /// 1人×1日の入力（手で決めたもの）
@@ -105,6 +109,10 @@ struct ShiftBook: Sendable, Equatable {
     var breakRules: BreakRules = .pcDefault
     /// 適正人員（部門ごと・時間帯ごとの必要人数）
     var staffing = StaffingPlan()
+    /// 労務の注意（連勤・勤務間隔・週の時間・有休5日）
+    var labor = LaborRules()
+    /// スタッフに公開した内容（変更点を出すため。月ごと）
+    var published: [PublishedMonth] = []
 
     /// まだ何も作っていない（スタッフ・部門・ひな形・シフトのどれも無い）
     var isEmpty: Bool { staff.isEmpty && cells.isEmpty && departments.isEmpty && templates.isEmpty }
