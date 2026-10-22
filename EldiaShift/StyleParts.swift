@@ -80,41 +80,76 @@ extension BrandColor {
 struct AppSidebar: View {
     @Binding var tab: AppTab
     @Environment(ShiftStore.self) private var store
+    /// アイコンだけの細いサイドバーにする（端末ごとに覚える）
+    @AppStorage("sidebarCompact") private var compact = false
 
     static let main: [AppTab] = [.home, .schedule, .requests, .staff, .summary, .print, .stores]
+    static let fullWidth: CGFloat = 240
+    static let compactWidth: CGFloat = 76
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: compact ? .center : .leading, spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "building.columns.fill").font(.title2)
-                VStack(alignment: .leading, spacing: -2) {
-                    Text("HOTEL").font(.caption.weight(.heavy))
-                    Text("SHIFT").font(.headline.weight(.heavy))
+                if !compact {
+                    VStack(alignment: .leading, spacing: -2) {
+                        Text("HOTEL").font(.caption.weight(.heavy))
+                        Text("SHIFT").font(.headline.weight(.heavy))
+                    }
+                    .transition(.opacity)
                 }
             }
             .foregroundStyle(.white)
-            .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 16)
+            .padding(.horizontal, compact ? 0 : 20).padding(.top, 18).padding(.bottom, 16)
+            .frame(maxWidth: .infinity, alignment: compact ? .center : .leading)
 
-            StoreSwitcher()
+            StoreSwitcher(iconOnly: compact)
                 .tint(.white)
                 .foregroundStyle(.white)
-                .padding(.horizontal, 12).padding(.vertical, 10)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, compact ? 0 : 12).padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: compact ? .center : .leading)
                 .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .padding(.horizontal, 12).padding(.bottom, 14)
+                .padding(.horizontal, compact ? 10 : 12).padding(.bottom, 14)
 
             ScrollView {
                 VStack(spacing: 4) {
                     ForEach(Self.main) { item($0) }
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, compact ? 10 : 12)
             }
             Spacer(minLength: 0)
-            item(.settings).padding(.horizontal, 12).padding(.bottom, 16)
+            VStack(spacing: 4) {
+                item(.settings)
+                collapseButton
+            }
+            .padding(.horizontal, compact ? 10 : 12).padding(.bottom, 16)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(width: compact ? Self.compactWidth : Self.fullWidth)
+        .frame(maxHeight: .infinity, alignment: .top)
         .background(BrandColor.sidebar(store.book.brandColor).ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+    }
+
+    /// たたむ・広げる
+    private var collapseButton: some View {
+        Button {
+            withAnimation(.snappy(duration: 0.25)) { compact.toggle() }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: compact ? "sidebar.right" : "sidebar.left").frame(width: 22)
+                if !compact {
+                    Text("サイドバーをたたむ")
+                    Spacer(minLength: 0)
+                }
+            }
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(Color.white.opacity(0.6))
+            .padding(.horizontal, compact ? 0 : 14).padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: compact ? .center : .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(compact ? "サイドバーを広げる" : "サイドバーをたたむ")
     }
 
     private func item(_ t: AppTab) -> some View {
@@ -122,17 +157,22 @@ struct AppSidebar: View {
         return Button { tab = t } label: {
             HStack(spacing: 12) {
                 Image(systemName: t.systemImage).frame(width: 22)
-                Text(t.title)
-                Spacer(minLength: 0)
+                if !compact {
+                    Text(t.title)
+                    Spacer(minLength: 0)
+                }
             }
-            .font(.body.weight(on ? .bold : .medium))
+            .font(compact ? .title3.weight(on ? .bold : .regular) : .body.weight(on ? .bold : .medium))
             .foregroundStyle(on ? Color.white : Color.white.opacity(0.72))
-            .padding(.horizontal, 14).padding(.vertical, 11)
+            .padding(.horizontal, compact ? 0 : 14).padding(.vertical, compact ? 12 : 11)
+            .frame(maxWidth: .infinity, alignment: compact ? .center : .leading)
             .background(on ? Color.white.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(t.title)
         .accessibilityAddTraits(on ? .isSelected : [])
+        .help(t.title)
     }
 }
 
