@@ -271,7 +271,6 @@ struct StaffingAnalysisView: View {
                 }
                 Section {
                     heatmap(cells, days: days)
-                        .frame(height: 380)
                         .padding(.vertical, 6)
                 } header: {
                     Text("日×時間（実際 − 必要）")
@@ -309,24 +308,48 @@ struct StaffingAnalysisView: View {
         return StaffingStyle.ok.opacity(0.35)
     }
 
+    /// 日×時間の色の表（グラフ部品だと細い線になってしまうため、四角を並べて描く）
+    /// 必要人数を決めている時間だけ行にする
     private func heatmap(_ cells: [Cell], days: [DayKey]) -> some View {
-        Chart(cells) { c in
-            RectangleMark(x: .value("日", "\(c.day.day)"), y: .value("時", label(c.hour)), width: .ratio(0.92), height: .ratio(0.9))
-                .foregroundStyle(cellColor(c))
-                .annotation(position: .overlay) {
-                    if c.diff != 0, sizeClass != .compact {
-                        Text(c.diff > 0 ? "+\(c.diff)" : "\(c.diff)").font(.system(size: 8, weight: .bold)).foregroundStyle(.white)
+        let byKey = Dictionary(cells.map { ("\($0.day)-\($0.hour)", $0) }, uniquingKeysWith: { a, _ in a })
+        let rowHours = hours.filter { h in cells.contains { $0.hour == h } }
+        let labelWidth: CGFloat = 40, rowHeight: CGFloat = 18
+        return GeometryReader { geo in
+            let w = max(4, (geo.size.width - labelWidth) / CGFloat(days.count))
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(rowHours, id: \.self) { h in
+                    HStack(spacing: 0) {
+                        Text(label(h)).font(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
+                            .frame(width: labelWidth, alignment: .leading)
+                        ForEach(days, id: \.self) { d in
+                            let c = byKey["\(d)-\(h)"]
+                            Rectangle()
+                                .fill(c.map(cellColor) ?? Color(.secondarySystemBackground))
+                                .overlay {
+                                    if let c, c.diff != 0, w >= 22 {
+                                        Text(c.diff > 0 ? "+\(c.diff)" : "\(c.diff)")
+                                            .font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
+                                    }
+                                }
+                                .frame(width: w, height: rowHeight)
+                                .overlay(alignment: .trailing) { Rectangle().fill(Color(.systemBackground)).frame(width: 1) }
+                        }
+                    }
+                    .overlay(alignment: .bottom) { Rectangle().fill(Color(.systemBackground)).frame(height: 1) }
+                }
+                HStack(spacing: 0) {
+                    Color.clear.frame(width: labelWidth, height: 16)
+                    ForEach(days, id: \.self) { d in
+                        Text(d.day == 1 || d.day % 5 == 0 ? "\(d.day)" : "")
+                            .font(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
+                            .fixedSize()
+                            .frame(width: w, height: 16)
                     }
                 }
+            }
         }
-        .chartXScale(domain: days.map { "\($0.day)" })
-        .chartYScale(domain: hours.map(label))
-        .chartXAxis {
-            AxisMarks(values: days.filter { $0.day == 1 || $0.day % 5 == 0 }.map { "\($0.day)" })
-        }
-        .chartYAxis {
-            AxisMarks(position: .leading, values: hours.filter { $0 % 3 == 0 }.map(label))
-        }
+        .frame(height: CGFloat(rowHours.count) * rowHeight + 16)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("日と時間ごとの不足と過剰")
     }
 
@@ -356,7 +379,11 @@ struct StaffingAnalysisView: View {
         }
         .chartXScale(domain: rows.map { "\($0.day.day)" })
         .chartXAxis {
-            AxisMarks(values: rows.map(\.day).filter { $0.day == 1 || $0.day % 5 == 0 }.map { "\($0.day)" })
+            AxisMarks(values: rows.map(\.day).filter { $0.day == 1 || $0.day % 5 == 0 }.map { "\($0.day)" }) { v in
+                AxisGridLine()
+                // 1日分の幅が狭い iPhone でも「…」にならないように
+                AxisValueLabel(collisionResolution: .disabled) { Text(v.as(String.self) ?? "").fixedSize() }
+            }
         }
         .chartYAxis {
             AxisMarks { v in
