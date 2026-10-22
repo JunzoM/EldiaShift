@@ -225,9 +225,15 @@ struct MonthGridView: View {
                     .toggleStyle(.button)
                 Spacer(minLength: 0)
                 if !compact {
+                    // シフトの種類の凡例
+                    HStack(spacing: 6) {
+                        ForEach(store.book.templates.prefix(8)) { t in
+                            ShiftChip(text: t.label, colorIndex: t.colorIndex, height: 24, fontSize: 12).fixedSize()
+                        }
+                    }
                     HStack(spacing: 4) {
                         Circle().fill(Color.orange.opacity(0.8)).frame(width: 6, height: 6)
-                        Text("パターンから自動で入ったシフト")
+                        Text("自動")
                     }
                     .font(.caption).foregroundStyle(.secondary)
                 }
@@ -524,6 +530,10 @@ struct MonthGridView: View {
         let active = m.patterns.first { $0.id == m.activePatternID }
         return HStack(alignment: .center, spacing: 0) {
             Text("\(m.number)").font(.caption2).foregroundStyle(.secondary).monospacedDigit().frame(width: 22)
+            if !compact {
+                InitialAvatar(name: m.name, colorIndex: book.departments.first { $0.id == m.departmentID }?.colorIndex ?? 8, size: 28)
+                    .padding(.trailing, 6)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(m.name)
                     .font(compact ? .footnote.weight(.bold) : .subheadline.weight(.bold))
@@ -756,7 +766,7 @@ struct ShiftCellView: View {
             // ほかの店舗で勤務する日：斜線で薄く
             Color(.secondarySystemBackground)
                 .overlay(ElsewhereHatch().opacity(0.5))
-        } else if resolved?.isOff == true {
+        } else if resolved?.isOff == true && large {
             PaletteColor.bg(block?.colorIndex ?? 8)
         } else if isToday {
             Color.accentColor.opacity(0.10)
@@ -782,9 +792,14 @@ struct ShiftCellView: View {
             .monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
         } else if let r = resolved {
             if r.isOff {
-                Text(large ? (block?.label ?? "休み") : (block?.short ?? "休"))
-                    .font(large ? .headline : .subheadline.weight(.bold))
-                    .foregroundStyle(PaletteColor.fg(block?.colorIndex ?? 8))
+                if large {
+                    Text(block?.label ?? "休み")
+                        .font(.headline)
+                        .foregroundStyle(PaletteColor.fg(block?.colorIndex ?? 8))
+                } else {
+                    ShiftChip(text: block.map(ShiftChip.label) ?? "休み", colorIndex: block?.colorIndex ?? 8)
+                        .padding(.horizontal, 4)
+                }
             } else {
                 if large {
                     VStack(spacing: 2) {
@@ -809,18 +824,21 @@ struct ShiftCellView: View {
                     .minimumScaleFactor(0.7)
                     .padding(.horizontal, 2)
                 } else {
-                VStack(spacing: 0) {
-                    Text(r.inTime.isEmpty ? "—" : r.inTime).font(.system(size: compact ? 11 : 12, weight: .bold))
-                    Text(r.outTime.isEmpty ? "—" : r.outTime).font(.system(size: compact ? 11 : 12))
-                        .foregroundStyle(.secondary)
-                    if let block {
-                        Text(block.short).font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(PaletteColor.fg(block.colorIndex))
+                // 月：シフトの種類のチップと、その下に短い時刻（ひな形のままでない日は時刻をチップに）
+                VStack(spacing: 2) {
+                    if let block, block.inTime == r.inTime, block.outTime == r.outTime {
+                        ShiftChip(text: ShiftChip.label(block), colorIndex: block.colorIndex)
+                        Text("\(ShortTime.compact(r.inTime))-\(ShortTime.compact(r.outTime))")
+                            .font(.system(size: 9)).foregroundStyle(.secondary)
+                    } else {
+                        ShiftChip(text: r.inTime.isEmpty ? "—" : r.inTime, colorIndex: block?.colorIndex ?? 8)
+                        Text("〜\(r.outTime)").font(.system(size: 9)).foregroundStyle(.secondary)
                     }
                 }
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
+                .padding(.horizontal, 4)
                 }
             }
         }

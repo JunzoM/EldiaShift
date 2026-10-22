@@ -4,7 +4,10 @@ import SwiftUI
 
 struct StaffListView: View {
     @Environment(ShiftStore.self) private var store
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var adding: StaffMember?
+    /// 部門で絞る（空はすべて）
+    @State private var deptFilter = ""
     @State private var showInactive = false
     @State private var search = ""
     @State private var moveFrom = ""
@@ -72,14 +75,16 @@ struct StaffListView: View {
                 }
             }
         }
+        .safeAreaInset(edge: .top, spacing: 0) { filterBar(book) }
         .searchable(text: $search, prompt: "名前で検索")
         .navigationTitle("スタッフ")
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 EditButton()
                 Button {
-                    adding = store.newStaff(in: depts.first?.id ?? "")
-                } label: { Image(systemName: "plus") }
+                    adding = store.newStaff(in: deptFilter.isEmpty ? (depts.first?.id ?? "") : deptFilter)
+                } label: { Label("新規登録", systemImage: "plus") }
+                    .buttonStyle(.borderedProminent)
                     .accessibilityLabel("スタッフを追加")
             }
         }
@@ -94,26 +99,91 @@ struct StaffListView: View {
         .errorAlert($error)
     }
 
-    private func row(_ m: StaffMember) -> some View {
-        HStack(spacing: 8) {
-            Text("\(m.number)").font(.caption).foregroundStyle(.secondary).monospacedDigit().frame(width: 24)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(m.name)
-                let p = m.patterns.first { $0.id == m.activePatternID } ?? m.patterns.first
-                Text([p.map { "パターン：\($0.label)" }, m.timeBlocks.isEmpty ? nil : "個人の時間 \(m.timeBlocks.count)件",
-                      m.periodPatterns.isEmpty ? nil : "期間限定 \(m.periodPatterns.count)件"].compactMap { $0 }.joined(separator: "・"))
-                    .font(.caption).foregroundStyle(.secondary)
+    /// 部門のタブ（すべて・部門ごと、人数つき）
+    private func filterBar(_ book: ShiftBook) -> some View {
+        let active = book.staff.filter { showInactive || ($0.active && $0.leaveDate.isEmpty) }
+        let groups = sections(book, ignoringFilter: true)
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                tabButton("すべて", count: groups.reduce(0) { $0 + $1.members.count }, id: "")
+                ForEach(groups) { g in
+                    tabButton(g.department.name, count: g.members.count, id: g.department.id)
+                }
             }
-            Spacer()
-            if !m.leaveDate.isEmpty {
-                Text("退職 \(m.leaveDate)").font(.caption).foregroundStyle(.secondary)
-            } else if !m.active {
-                Text("退職").font(.caption).foregroundStyle(.secondary)
-            }
+            .padding(.horizontal, 16).padding(.vertical, 8)
         }
+        .background(.bar)
+        .overlay(alignment: .bottom) { Divider() }
+        .id(active.count)
     }
 
-    private func sections(_ book: ShiftBook) -> [DepartmentGroup] {
+    private func tabButton(_ title: String, count: Int, id: String) -> some View {
+        let on = deptFilter == id
+        return Button { deptFilter = id } label: {
+            HStack(spacing: 6) {
+                Text(title).font(.subheadline.weight(.semibold))
+                Text("\(count)").font(.caption.weight(.bold)).monospacedDigit()
+                    .padding(.horizontal, 6).padding(.vertical, 1)
+                    .background(on ? Color.white.opacity(0.25) : Color(.tertiarySystemFill), in: Capsule())
+            }
+            .foregroundStyle(on ? Color.white : Color.primary)
+            .padding(.horizontal, 14).padding(.vertical, 7)
+            .background(on ? Color.accentColor : Color(.secondarySystemFill), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    private func row(_ m: StaffMember) -> some View {
+        let book = store.book
+        let dept = book.departments.first { $0.id == m.departmentID }
+        let p = m.patterns.first { $0.id == m.activePatternID } ?? m.patterns.first
+        let wide = sizeClass != .compact
+        return HStack(spacing: 12) {
+            InitialAvatar(name: m.name, colorIndex: dept?.colorIndex ?? 8, size: 36)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(m.name).font(.body.weight(.semibold))
+                Text(wide ? "No.\(m.number)" : [dept?.name, p.map { $0.label }].compactMap { $0 }.joined(separator: "・"))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            if wide {
+                Text(dept?.name ?? "—").font(.subheadline).frame(width: 96, alignment: .leading)
+                Text(p?.label ?? "—").font(.subheadline).foregroundStyle(.secondary).frame(width: 96, alignment: .leading)
+                Text(Self.usualHours(m, book: book)).font(.subheadline).monospacedDigit().frame(width: 120, alignment: .leading)
+            }
+            status(m)
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func status(_ m: StaffMember) -> some View {
+        if let leave = DayKey(m.leaveDate) {
+            return leave >= store.today ? StatusPill(text: "退職予定", color: .orange) : StatusPill(text: "退職", color: .gray)
+        }
+        return m.active ? StatusPill(text: "在籍", color: .green) : StatusPill(text: "退職", color: .gray)
+    }
+
+    /// いつもの勤務時間（使用中の週間パターンでいちばん多い勤務）
+    static func usualHours(_ m: StaffMember, book: ShiftBook) -> String {
+        guard let p = m.patterns.first(where: { $0.id == m.activePatternID }) ?? m.patterns.first else { return "—" }
+        let blocks = p.days.compactMap { $0 }.compactMap { book.block($0, for: m) }.filter { !$0.isOff }
+        let counts = Dictionary(blocks.map { ($0.id, 1) }, uniquingKeysWith: +)
+        guard let top = counts.max(by: { $0.value < $1.value }), let b = blocks.first(where: { $0.id == top.key }) else { return "—" }
+        func hm(_ t: String) -> String {
+            guard let v = ClockTime.parse(t) else { return t }
+            return "\(v / 60):\(String(format: "%02d", v % 60))"
+        }
+        return "\(hm(b.inTime))〜\(hm(b.outTime))"
+    }
+
+    private func sections(_ book: ShiftBook, ignoringFilter: Bool = false) -> [DepartmentGroup] {
+        let all = allSections(book)
+        guard !ignoringFilter, !deptFilter.isEmpty else { return all }
+        return all.filter { $0.department.id == deptFilter }
+    }
+
+    private func allSections(_ book: ShiftBook) -> [DepartmentGroup] {
         let q = search.trimmingCharacters(in: .whitespaces)
         let shown = book.staff.filter {
             (showInactive || ($0.active && $0.leaveDate.isEmpty)) && (q.isEmpty || $0.name.contains(q))

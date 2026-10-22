@@ -191,13 +191,13 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Button("バックアップを取り込む") { importing = true }
-                    Button("バックアップを書き出す") { export() }
-                        .disabled(store.book.isEmpty)
+                    NavigationLink { BackupView() } label: {
+                        Label("バックアップ・復元", systemImage: "externaldrive")
+                    }
                 } header: {
                     Text("バックアップ")
                 } footer: {
-                    Text("PC版シフト表の「バックアップを保存」で作ったファイルを取り込めます。書き出したファイルは PC版でも読み込めます。")
+                    Text("PC版シフト表の「バックアップを保存」で作ったファイルも取り込めます。書き出したファイルは PC版でも読み込めます。")
                 }
 
                 Section {

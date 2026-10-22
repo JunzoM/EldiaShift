@@ -4,7 +4,7 @@ import SwiftUI
 
 enum AppTab: String, Hashable, Identifiable {
     var id: String { rawValue }
-    case home, schedule, staff, summary, settings
+    case home, schedule, requests, staff, summary, stores, settings
 }
 
 extension AppTab {
@@ -12,8 +12,10 @@ extension AppTab {
         switch self {
         case .home: "ホーム"
         case .schedule: "シフト表"
+        case .requests: "希望休"
         case .staff: "スタッフ"
         case .summary: "集計"
+        case .stores: "店舗"
         case .settings: "設定"
         }
     }
@@ -22,8 +24,10 @@ extension AppTab {
         switch self {
         case .home: "house"
         case .schedule: "calendar"
+        case .requests: "calendar.badge.minus"
         case .staff: "person.2"
         case .summary: "chart.bar.doc.horizontal"
+        case .stores: "building.2"
         case .settings: "gearshape"
         }
     }
@@ -49,7 +53,9 @@ struct MainTabsView: View {
         }
         .onAppear {
             if DemoMode.enabled {
-                tab = DemoMode.flag("-demoHome") ? .home : .schedule
+                tab = DemoMode.flag("-demoHome") ? .home
+                    : DemoMode.flag("-demoTabRequests") ? .requests
+                    : DemoMode.flag("-demoTabStaff") ? .staff : .schedule
             } else {
                 tab = savedTab
             }
@@ -61,21 +67,8 @@ struct MainTabsView: View {
 
     private var split: some View {
         NavigationSplitView(columnVisibility: $columns) {
-            List(selection: Binding<AppTab?>(get: { tab }, set: { if let t = $0 { tab = t } })) {
-                Section {
-                    StoreSwitcher()
-                }
-                Section {
-                    ForEach([AppTab.home, .schedule, .staff, .summary]) { t in
-                        Label(t.title, systemImage: t.systemImage).tag(t)
-                    }
-                }
-                Section {
-                    Label(AppTab.settings.title, systemImage: AppTab.settings.systemImage).tag(AppTab.settings)
-                }
-            }
-            .navigationTitle("シフト表")
-            .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 280)
+            AppSidebar(tab: $tab)
+                .navigationSplitViewColumnWidth(min: 210, ideal: 240, max: 280)
         } detail: {
             content(tab, storeInToolbar: false)
                 .id(tab)
@@ -88,7 +81,7 @@ struct MainTabsView: View {
 
     @ViewBuilder
     private var tabs: some View {
-        let all: [AppTab] = [.home, .schedule, .staff, .summary, .settings]
+        let all: [AppTab] = [.home, .schedule, .requests, .staff, .summary, .stores, .settings]
         if #available(iOS 18.0, *) {
             TabView(selection: $tab) {
                 ForEach(all) { t in
@@ -125,6 +118,13 @@ struct MainTabsView: View {
                 SummaryView(month: MonthKey(anchor))
                     .toolbar { if storeInToolbar { ToolbarItem(placement: .topBarLeading) { StoreSwitcher() } } }
             }
+        case .requests:
+            NavigationStack {
+                OffRequestListView()
+                    .toolbar { if storeInToolbar { ToolbarItem(placement: .topBarLeading) { StoreSwitcher() } } }
+            }
+        case .stores:
+            NavigationStack { StoreListView() }
         case .settings:
             SettingsView(inTab: true)
         }
@@ -249,7 +249,7 @@ struct HomeView: View {
             }
             ForEach(info.working) { w in
                 HStack(spacing: 10) {
-                    Circle().fill(PaletteColor.fg(w.department?.colorIndex ?? 8)).frame(width: 8, height: 8)
+                    InitialAvatar(name: w.member.name, colorIndex: w.department?.colorIndex ?? 8, size: 32)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(w.member.name).font(.body.weight(.semibold))
                         Text(w.department?.name ?? "").font(.caption).foregroundStyle(.secondary)
@@ -310,6 +310,8 @@ struct HomeView: View {
                 QuickButton(title: "スタッフを追加", systemImage: "person.badge.plus") {
                     adding = store.newStaff(in: store.book.scopedDepartments.first?.id ?? store.book.departments.first?.id ?? "")
                 }
+                QuickButton(title: "希望休", systemImage: "calendar.badge.minus") { openTab(.requests) }
+                QuickButton(title: "集計", systemImage: "chart.bar.doc.horizontal") { openTab(.summary) }
                 QuickButton(title: "店舗", systemImage: "building.2") { showStores = true }
             }
             .padding(.vertical, 4)
