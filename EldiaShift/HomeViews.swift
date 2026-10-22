@@ -86,7 +86,6 @@ struct MainTabsView: View {
 
     // MARK: iPhone：タブ
 
-    @ViewBuilder
     /// 下のタブに出す項目（5つまで）
     static let compactTabs: [AppTab] = [.home, .schedule, .requests, .summary, .settings]
 
@@ -98,6 +97,7 @@ struct MainTabsView: View {
         }
     }
 
+    @ViewBuilder
     private var tabs: some View {
         // 5つまで（6つ以上だと「その他」の中に入り、設定の中を開くと画面が崩れるため）。
         // スタッフ・店舗は設定から、印刷はシフト表の上のボタンから開く
