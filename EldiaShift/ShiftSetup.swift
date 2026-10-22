@@ -112,7 +112,7 @@ extension ShiftStore {
             try ShiftRecords.upsert(m, in: db.viewContext)
         }
         try db.save()
-        if lastChange?.key.staffID == s.id { clearLastChange() }
+        dropHistory(for: s.id)
         reload()
     }
 
@@ -183,7 +183,8 @@ extension ShiftRecords {
         r.setValue(s.joinDate, forKey: "joinDate")
         r.setValue(s.leaveDate, forKey: "leaveDate")
         let detail = StaffDetail(timeBlocks: s.timeBlocks, patterns: s.patterns,
-                                 activePatternID: s.activePatternID, periodPatterns: s.periodPatterns)
+                                 activePatternID: s.activePatternID, periodPatterns: s.periodPatterns,
+                                 offRequests: s.offRequests)
         r.setValue(try JSONEncoder().encode(detail), forKey: "detail")
         r.setValue(Date(), forKey: "updatedAt")
     }
@@ -261,9 +262,9 @@ extension ShiftStore {
         kept.departments = book.departments
         kept.breakRules = book.breakRules
         kept.staffing = book.staffing
+        kept.labor = book.labor
         kept.templates = book.templates.filter(\.isOff)
         if kept.templates.isEmpty { kept.templates = BackupFile.defaultOffBlocks }
         try replaceAll(with: kept)
-        clearLastChange()
     }
 }

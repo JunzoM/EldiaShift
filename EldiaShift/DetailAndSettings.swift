@@ -33,6 +33,11 @@ struct CellDetailSheet: View {
                             if let block { LabeledContent("ひな形", value: block.label) }
                         }
                         LabeledContent("決まり方", value: source(r))
+                        if member.requestsOff(day) { Label("希望休の日です", systemImage: "calendar.badge.minus").foregroundStyle(.purple) }
+                        ForEach(LaborCheck.issues(book, members: [member], days: [day])[CellKey(staffID: member.id, day: day)] ?? [],
+                                id: \.self) { i in
+                            Label(i.text, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                        }
                     } else {
                         Text("まだ決まっていません").foregroundStyle(.secondary)
                     }
@@ -163,6 +168,7 @@ struct SettingsView: View {
                     NavigationLink { BreakRulesView() } label: {
                         LabeledContent("休憩の決まり", value: store.book.breakRules.summary)
                     }
+                    NavigationLink { LaborRulesView() } label: { Text("労務の注意（連勤・勤務の間隔・有休5日）") }
                     NavigationLink { StaffingSettingsView() } label: {
                         LabeledContent("適正人員", value: store.book.staffing.isEmpty ? "未設定" : "\(store.book.staffing.bands.count)件の時間帯")
                     }
@@ -236,9 +242,15 @@ struct ExportFile: Identifiable {
 /// iOS の共有シート
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
+    /// 送った・保存したときに true（やめたときは false）
+    var onComplete: ((Bool) -> Void)? = nil
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
+        let c = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        if let onComplete {
+            c.completionWithItemsHandler = { _, completed, _, _ in onComplete(completed) }
+        }
+        return c
     }
 
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}

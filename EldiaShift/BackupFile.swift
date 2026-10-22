@@ -95,6 +95,11 @@ enum BackupFile {
            let rules = try? JSONDecoder().decode(BreakRules.self, from: data) {
             book.breakRules = rules
         }
+        if let settings = root["settings"] as? [String: Any], let lb = settings["labor"],
+           let data = try? JSONSerialization.data(withJSONObject: lb),
+           let rules = try? JSONDecoder().decode(LaborRules.self, from: data) {
+            book.labor = rules
+        }
         if let settings = root["settings"] as? [String: Any], let st = settings["staffing"],
            let data = try? JSONSerialization.data(withJSONObject: st),
            let plan = try? JSONDecoder().decode(StaffingPlan.self, from: data) {
@@ -130,7 +135,9 @@ enum BackupFile {
                 "periodPatterns": s.periodPatterns.map { p -> [String: Any] in
                     ["id": p.id, "label": p.label, "colorIdx": p.colorIndex,
                      "startDate": p.startDate ?? "", "endDate": p.endDate ?? "", "days": p.days] as [String: Any]
-                }
+                },
+                // このアプリだけの項目（PC版は読み飛ばす）
+                "offRequests": s.offRequests
             ]
         }
         var cells: [String: Any] = [:]
@@ -140,9 +147,10 @@ enum BackupFile {
                                     "isOff": c.isOff, "auto": false] as [String: Any]
         }
         let rulesJSON = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(book.breakRules))) ?? [:]
+        let laborJSON = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(book.labor))) ?? [:]
         let staffingJSON = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(book.staffing))) ?? [:]
         let root: [String: Any] = [
-            "settings": ["breakRules": rulesJSON, "staffing": staffingJSON],
+            "settings": ["breakRules": rulesJSON, "staffing": staffingJSON, "labor": laborJSON],
             "staff": staff,
             "globalTemplates": book.templates.map(json),
             "cellData": cells,
@@ -207,7 +215,8 @@ enum BackupFile {
             timeBlocks: (s["timeBlocks"] as? [Any] ?? []).compactMap { block($0) },
             patterns: patterns,
             activePatternID: string(s["activePatternId"]).flatMap { $0.isEmpty ? nil : $0 },
-            periodPatterns: periods
+            periodPatterns: periods,
+            offRequests: (s["offRequests"] as? [Any] ?? []).compactMap { string($0).flatMap { DayKey($0)?.description } }.sorted()
         )
     }
 

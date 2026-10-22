@@ -66,6 +66,11 @@ jobs:
           shoot "$PAD" ipad-hourly -demoHourly
           shoot "$PAD" ipad-staffing -demoStaffing
           shoot "$PHONE" iphone-staffing -demoStaffing
+          shoot "$PAD" ipad-labor -demoLabor
+          shoot "$PAD" ipad-candidates -demoCandidates
+          shoot "$PHONE" iphone-requests -demoRequests
+          shoot "$PHONE" iphone-personal -demoPersonal
+          shoot "$PAD" ipad-week-edit -demoWeek -demoEdit
           shoot "$PAD" coach-edit -demoEdit -demoCoach -demoCoachEdit
           shoot "$PAD" coach-timeline -demoDay -demoEdit -demoCoach
           shoot "$PAD" coach-print -demoPrint -demoCoach

@@ -780,3 +780,197 @@ struct StaffingTests {
         #expect(book.staffing == p)
     }
 }
+
+// MARK: - 候補・労務の注意・公開・希望休・元に戻す
+
+private func miniBook() -> ShiftBook {
+    var b = ShiftBook()
+    b.departments = [Department(id: "d", name: "フロント", colorIndex: 0, sortOrder: 0)]
+    b.templates = [
+        TimeBlock(id: "e", label: "早番", short: "早", inMinutes: 9 * 60, outMinutes: 18 * 60, colorIndex: 2),
+        TimeBlock(id: "n", label: "夜勤", short: "夜", inMinutes: 21 * 60, outMinutes: 9 * 60, colorIndex: 8)
+    ] + BackupFile.defaultOffBlocks
+    b.staff = (1...3).map { i in
+        StaffMember(id: "\(i)", number: i, name: "S\(i)", departmentID: "d", active: true, joinDate: "", leaveDate: "",
+                    timeBlocks: [], patterns: [], activePatternID: nil, periodPatterns: [])
+    }
+    return b
+}
+
+private func put(_ b: inout ShiftBook, _ id: String, _ d: DayKey, _ block: String) {
+    let t = b.templates.first { $0.id == block }!
+    b.cells[CellKey(staffID: id, day: d)] = t.isOff
+        ? CellEntry(inTime: "", outTime: "", blockID: t.id, isOff: true)
+        : CellEntry(inTime: t.inTime, outTime: t.outTime, blockID: t.id, isOff: false)
+}
+
+@Suite("労務の注意")
+struct LaborTests {
+    @Test("6連勤と週40時間超え（10/5 月〜10/10 土、9:00〜18:00＝実働8時間）")
+    func consecutiveAndWeekly() {
+        var b = miniBook()
+        let days = (5...10).map { DayKey(2026, 10, $0) }
+        for d in days { put(&b, "1", d, "e") }
+        let issues = LaborCheck.issues(b, members: b.staff, days: MonthKey(2026, 10).days)
+        let last = issues[CellKey(staffID: "1", day: DayKey(2026, 10, 10))] ?? []
+        #expect(last.contains(.consecutive(6)))
+        #expect(last.contains(.weekly(hours: 48)))
+        #expect(issues[CellKey(staffID: "1", day: DayKey(2026, 10, 9))]?.contains(.consecutive(5)) != true)
+        // 週40時間を超えるのは6日目から
+        #expect(issues[CellKey(staffID: "1", day: DayKey(2026, 10, 9))] == nil)
+    }
+
+    @Test("夜勤明けの日の早番は間隔の注意、希望休の日の勤務も注意")
+    func intervalAndRequest() {
+        var b = miniBook()
+        put(&b, "2", DayKey(2026, 10, 5), "n")
+        put(&b, "2", DayKey(2026, 10, 6), "e")
+        b.staff[2].offRequests = ["2026-10-07"]
+        put(&b, "3", DayKey(2026, 10, 7), "e")
+        let issues = LaborCheck.issues(b, members: b.staff, days: MonthKey(2026, 10).days)
+        #expect(issues[CellKey(staffID: "2", day: DayKey(2026, 10, 6))] == [.interval(minutes: 0)])
+        #expect(issues[CellKey(staffID: "3", day: DayKey(2026, 10, 7))] == [.requestedOff])
+        // 切ると出ない
+        b.labor.intervalEnabled = false
+        #expect(LaborCheck.issues(b, members: b.staff, days: [DayKey(2026, 10, 6)]).isEmpty)
+    }
+
+    @Test("有休の年5日：付与日から1年のうちに入れた有休を数える")
+    func leaveObligation() {
+        var b = miniBook()
+        b.staff[0].joinDate = "2025-04-01"            // 18か月で11日付与（2026-10-01）
+        put(&b, "1", DayKey(2026, 10, 15), "off2")
+        put(&b, "1", DayKey(2026, 11, 2), "off2")
+        put(&b, "1", DayKey(2026, 9, 30), "off2")      // 付与日より前は数えない
+        let o = LaborCheck.leaveObligation(of: b.staff[0], in: b, today: DayKey(2026, 10, 20))
+        #expect(o?.since == DayKey(2026, 10, 1))
+        #expect(o?.deadline == DayKey(2027, 9, 30))
+        #expect(o?.taken == 2)
+        #expect(o?.needed == 3)
+        // 入社6か月（10日付与）でも対象、6か月未満は対象外
+        b.staff[1].joinDate = "2026-06-01"
+        #expect(LaborCheck.leaveObligation(of: b.staff[1], in: b, today: DayKey(2026, 10, 20)) == nil)
+    }
+}
+
+@Suite("足りない時間に入れられる人")
+struct CandidateTests {
+    @Test("勤務が無い人を出し、希望休の人は出さない。足りない時間を埋めるひな形を選ぶ")
+    func candidates() {
+        var b = miniBook()
+        b.staffing.bands = [StaffingBand(departmentID: "d", startHour: 9, endHour: 18, weekday: 2, saturday: 2, holiday: 2)]
+        let mon = DayKey(2026, 10, 5)
+        put(&b, "1", mon, "e")
+        b.staff[2].offRequests = [mon.description]
+        #expect(ShortageFinder.shortHours(b, department: "d", members: b.staff, on: mon) == Array(9..<18))
+        let list = ShortageFinder.candidates(b, department: "d", on: mon, includeOthers: false)
+        #expect(list.map(\.member.id) == ["2"])
+        #expect(list.first?.block.id == "e")
+        #expect(list.first?.covers == 9)
+        // 有休の人も出さない
+        put(&b, "2", mon, "off2")
+        #expect(ShortageFinder.candidates(b, department: "d", on: mon, includeOthers: false).isEmpty)
+    }
+}
+
+@Suite("公開と変更点")
+struct PublishTests {
+    @Test("前回の公開からの変更を日付順に出し、文章にする")
+    func diff() {
+        var b = miniBook()
+        let oct = MonthKey(2026, 10)
+        put(&b, "1", DayKey(2026, 10, 5), "e")
+        #expect(PublishDiff.changes(b, month: oct) == nil)
+        b.published = [PublishedMonth.snapshot(of: b, month: oct)]
+        #expect(PublishDiff.changes(b, month: oct)?.changes.isEmpty == true)
+
+        put(&b, "1", DayKey(2026, 10, 5), "off1")
+        put(&b, "2", DayKey(2026, 10, 3), "e")
+        let c = PublishDiff.changes(b, month: oct)!.changes
+        #expect(c.map(\.day) == [DayKey(2026, 10, 3), DayKey(2026, 10, 5)])
+        #expect(c[1].before == "早番 09:00〜18:00")
+        #expect(c[1].after == "公休")
+        #expect(c[0].before == "")
+        let text = PublishDiff.text(c, month: oct, title: "")
+        #expect(text.contains("■10/5（月）"))
+        #expect(text.contains("・S1：早番 09:00〜18:00 → 公休"))
+        #expect(text.contains("・S2：なし → 早番 09:00〜18:00"))
+    }
+}
+
+@Suite("希望休の文章を読む")
+struct OffRequestParseTests {
+    let oct = MonthKey(2026, 10)
+
+    @Test("日付・月日・範囲")
+    func basics() {
+        #expect(OffRequestParser.parse("10/5、12日、20〜22日 休み希望", month: oct)
+                == [5, 12, 20, 21, 22].map { DayKey(2026, 10, $0) })
+        #expect(OffRequestParser.parse("11月3日と4日", month: oct) == [DayKey(2026, 11, 3), DayKey(2026, 11, 4)])
+        #expect(OffRequestParser.parse("２５日でお願いします", month: oct) == [DayKey(2026, 10, 25)])
+        #expect(OffRequestParser.parse("2026/10/8 から 10/9", month: oct) == [DayKey(2026, 10, 8), DayKey(2026, 10, 9)])
+    }
+
+    @Test("時刻は日付にしない・年をまたぐ・ない日は飛ばす")
+    func edges() {
+        #expect(OffRequestParser.parse("9:00から出られます", month: oct).isEmpty)
+        #expect(OffRequestParser.parse("1/5", month: MonthKey(2026, 12)) == [DayKey(2027, 1, 5)])
+        #expect(OffRequestParser.parse("11/31", month: oct).isEmpty)
+    }
+}
+
+@Suite("元に戻す（何段階でも）")
+@MainActor
+struct UndoHistoryTests {
+    @Test("まとめて入れた操作は1回で戻り、やり直せる。新しく変えるとやり直しは消える")
+    func history() throws {
+        let store = ShiftStore(db: ShiftDatabase(inMemory: true))
+        try store.replaceAll(with: miniBook())
+        let e = CellEntry(inTime: "09:00", outTime: "18:00", blockID: "e", isOff: false)
+        let keys = (5...7).map { CellKey(staffID: "1", day: DayKey(2026, 10, $0)) }
+        try store.setCells(keys.map { ($0, e) }, title: "3マス")
+        try store.setCell(CellKey(staffID: "2", day: DayKey(2026, 10, 5)), to: e)
+        #expect(store.undoStack.count == 2)
+
+        try store.undo()
+        #expect(store.book.cells[CellKey(staffID: "2", day: DayKey(2026, 10, 5))] == nil)
+        #expect(store.book.cells.count == 3)
+        try store.undo()
+        #expect(store.book.cells.isEmpty)
+        #expect(try ShiftRecords.load(store.db.viewContext).cells.isEmpty)
+        #expect(!store.canUndo)
+
+        try store.redo()
+        #expect(store.book.cells.count == 3)
+        #expect(store.canRedo)
+        try store.setCell(CellKey(staffID: "3", day: DayKey(2026, 10, 9)), to: e)
+        #expect(!store.canRedo)
+    }
+
+    @Test("希望休と労務の決まりは保存され、バックアップにも入る")
+    func requestsPersist() throws {
+        let store = ShiftStore(db: ShiftDatabase(inMemory: true))
+        try store.replaceAll(with: miniBook())
+        try store.setOffRequests([DayKey(2026, 10, 9), DayKey(2026, 10, 2)], for: "1")
+        var rules = LaborRules()
+        rules.consecutiveDays = 5
+        try store.setLaborRules(rules)
+        let loaded = try ShiftRecords.load(store.db.viewContext)
+        #expect(loaded.staff.first { $0.id == "1" }?.offRequests == ["2026-10-02", "2026-10-09"])
+        #expect(loaded.labor.consecutiveDays == 5)
+        let (b, _) = try BackupFile.read(try store.exportData())
+        #expect(b.staff.first { $0.id == "1" }?.offRequests == ["2026-10-02", "2026-10-09"])
+        #expect(b.labor.consecutiveDays == 5)
+    }
+
+    @Test("公開済みにすると変更点が空になる")
+    func publish() throws {
+        let store = ShiftStore(db: ShiftDatabase(inMemory: true))
+        var b = miniBook()
+        put(&b, "1", DayKey(2026, 10, 5), "e")
+        try store.replaceAll(with: b)
+        try store.markPublished(MonthKey(2026, 10))
+        #expect(PublishDiff.changes(store.book, month: MonthKey(2026, 10))?.changes.isEmpty == true)
+        #expect(try ShiftRecords.load(store.db.viewContext).published.count == 1)
+    }
+}

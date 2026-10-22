@@ -10,12 +10,13 @@ struct SummaryView: View {
 
     var body: some View {
         Group {
-            if tab == 1 { StaffingAnalysisView(month: month) } else { hoursList }
+            if tab == 1 { StaffingAnalysisView(month: month) } else if tab == 2 { LaborIssuesView(month: month) } else { hoursList }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             Picker("見るもの", selection: $tab) {
                 Text("勤務時間・有休").tag(0)
                 Text("適正人員").tag(1)
+                Text("注意").tag(2)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 16).padding(.vertical, 8)
@@ -29,6 +30,10 @@ struct SummaryView: View {
                 if tab == 1 {
                     NavigationLink { StaffingSettingsView() } label: { Image(systemName: "slider.horizontal.3") }
                         .accessibilityLabel("適正人員を決める")
+                }
+                if tab == 2 {
+                    NavigationLink { LaborRulesView() } label: { Image(systemName: "slider.horizontal.3") }
+                        .accessibilityLabel("注意の決まりを変える")
                 }
                 Button { month = month.adding(months: -1) } label: { Image(systemName: "chevron.left") }
                     .accessibilityLabel("前の月")
