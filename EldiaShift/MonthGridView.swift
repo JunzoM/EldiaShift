@@ -425,7 +425,7 @@ struct MonthGridView: View {
                 summaryCell(table.summary(m, days: days))
             }
             .overlay(alignment: .bottom) { Divider() }
-        case .hourToggle(let dept, let members):
+        case .hourToggle(let dept, _):
             let plan = book.staffing
             if plan.hasPlan(for: dept.id) {
                 // 必要人数を決めている部門は、閉じていても日ごとの不足が見える
@@ -464,7 +464,7 @@ struct MonthGridView: View {
                     .contentShape(Rectangle())
                     .onTapGesture { toggleHourly(dept) }
             }
-        case .hour(let dept, let members, let h):
+        case .hour(let dept, _, let h):
             let night = h <= 8
             HStack(spacing: 0) {
                 ForEach(days, id: \.self) { d in
