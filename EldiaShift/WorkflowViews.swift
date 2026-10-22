@@ -319,7 +319,7 @@ struct LaborIssuesView: View {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(m.name).font(.headline)
-                                    Text("期限 \(o.deadline.year)/\(o.deadline.month)/\(o.deadline.day)（あと\(left)日）")
+                                    Text("期限 \(String(o.deadline.year))/\(o.deadline.month)/\(o.deadline.day)（あと\(left)日）")
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
@@ -420,7 +420,7 @@ struct PersonalScheduleImage: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 2) {
                 if !title.isEmpty { Text(title).font(.system(size: 12)).foregroundStyle(.secondary) }
-                Text("\(member.name)さん　\(month.year)年\(month.month)月のシフト").font(.system(size: 18, weight: .bold))
+                Text("\(member.name)さん　\(String(month.year))年\(month.month)月のシフト").font(.system(size: 18, weight: .bold))
             }
             .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 10)
             ForEach(days, id: \.self) { d in
