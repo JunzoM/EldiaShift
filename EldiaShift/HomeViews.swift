@@ -31,7 +31,7 @@ extension AppTab {
 
 /// iPad（横幅が広いとき）は左にサイドバー、iPhone は下にタブ。
 /// iPad で上部のタブバーにすると、シフト表の月の移動ボタンがツールバーからあふれて「…」に隠れるため、サイドバーにする
-@available(iOS 18.0, *)
+/// iOS 17 でも使える（サイドバーは iOS 16 から、下のタブは iOS 17 では従来の書き方）
 struct MainTabsView: View {
     @Binding var anchor: DayKey
 
@@ -86,10 +86,22 @@ struct MainTabsView: View {
 
     // MARK: iPhone：タブ
 
+    @ViewBuilder
     private var tabs: some View {
-        TabView(selection: $tab) {
-            ForEach([AppTab.home, .schedule, .staff, .summary, .settings]) { t in
-                Tab(t.title, systemImage: t.systemImage, value: t) { content(t, storeInToolbar: true) }
+        let all: [AppTab] = [.home, .schedule, .staff, .summary, .settings]
+        if #available(iOS 18.0, *) {
+            TabView(selection: $tab) {
+                ForEach(all) { t in
+                    Tab(t.title, systemImage: t.systemImage, value: t) { content(t, storeInToolbar: true) }
+                }
+            }
+        } else {
+            TabView(selection: $tab) {
+                ForEach(all) { t in
+                    content(t, storeInToolbar: true)
+                        .tabItem { Label(t.title, systemImage: t.systemImage) }
+                        .tag(t)
+                }
             }
         }
     }

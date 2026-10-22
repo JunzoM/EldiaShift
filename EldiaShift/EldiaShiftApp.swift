@@ -32,7 +32,7 @@ struct EldiaShiftApp: App {
     }
 }
 
-/// いちばん外側。iOS 18 以降はサイドバー（iPad）・タブ（iPhone）、iOS 17 はシフト表だけ
+/// いちばん外側。サイドバー（iPad）・タブ（iPhone）。iOS 17 の iPad でも出す
 struct RootView: View {
     @Environment(ShiftDatabase.self) private var db
     @Environment(ShiftStore.self) private var store
@@ -51,10 +51,8 @@ struct RootView: View {
         Group {
             if boardOnly {
                 ShiftBoardView(anchor: $anchor)
-            } else if #available(iOS 18.0, *) {
-                MainTabsView(anchor: $anchor)
             } else {
-                ShiftBoardView(anchor: $anchor)
+                MainTabsView(anchor: $anchor)
             }
         }
         .onChange(of: db.changeToken) { store.refreshIfNeeded() }
