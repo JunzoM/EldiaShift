@@ -18,6 +18,8 @@ struct Store: Identifiable, Hashable, Codable, Sendable {
     /// 店舗を見分ける小さな色の印（Palette の番号）
     var colorIndex: Int = 0
     var sortOrder: Int = 0
+    /// 店舗の写真（小さく縮めた JPEG。iCloud 同期・バックアップに入るので数十KBにする）
+    var photo: Data? = nil
 
     /// 店舗をまだ1つも作っていないとき（前の版のデータ）に使う店舗
     static let defaultID = "main"
@@ -51,6 +53,7 @@ struct Store: Identifiable, Hashable, Codable, Sendable {
         short = try c.decodeIfPresent(String.self, forKey: .short) ?? ""
         colorIndex = try c.decodeIfPresent(Int.self, forKey: .colorIndex) ?? 0
         sortOrder = try c.decodeIfPresent(Int.self, forKey: .sortOrder) ?? 0
+        photo = try c.decodeIfPresent(Data.self, forKey: .photo)
     }
 }
 

@@ -174,7 +174,7 @@ struct SettingsView: View {
 
                 Section("会社・店舗") {
                     NavigationLink { StoreListView() } label: {
-                        LabeledContent("店舗", value: "\(store.book.allStores.count)店舗")
+                        LabeledContent("店舗管理", value: "\(store.book.allStores.count)店舗")
                     }
                     NavigationLink { BrandColorView() } label: {
                         HStack {

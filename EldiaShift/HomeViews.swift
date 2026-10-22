@@ -46,8 +46,6 @@ struct MainTabsView: View {
     @AppStorage("appTab") private var savedTab: AppTab = .home
     @State private var tab: AppTab = .home
     @AppStorage("viewMode") private var mode: GridMode = .month
-    /// iPad を縦にしてもサイドバー（ホームなどの切替）を隠さない
-    @State private var columns: NavigationSplitViewVisibility = .all
 
     var body: some View {
         Group {
@@ -59,6 +57,7 @@ struct MainTabsView: View {
                     : DemoMode.flag("-demoTabRequests") ? .requests
                     : DemoMode.flag("-demoTabStaff") ? .staff
                     : DemoMode.flag("-demoTabPrint") ? .print
+                    : DemoMode.flag("-demoTabStores") ? .stores
                     : DemoMode.flag("-demoTabBackup") ? .settings : .schedule
             } else {
                 tab = savedTab
@@ -69,23 +68,25 @@ struct MainTabsView: View {
 
     // MARK: iPad：サイドバー
 
+    /// サイドバーと中身を横に並べるだけにする（NavigationSplitView だと、設定の中を開いたときに
+    /// 中身の画面がサイドバーの後ろへ回り込むなど、画面の切り替わりが崩れることがあったため）
     private var split: some View {
-        NavigationSplitView(columnVisibility: $columns) {
+        HStack(spacing: 0) {
             AppSidebar(tab: $tab)
-                .navigationSplitViewColumnWidth(min: 210, ideal: 240, max: 280)
-        } detail: {
+                .frame(width: 240)
             content(tab, storeInToolbar: false)
                 .id(tab)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        // 縦向きでもサイドバーを重ねずに横に並べる（隠れるとホームへ戻れない）
-        .navigationSplitViewStyle(.balanced)
     }
 
     // MARK: iPhone：タブ
 
     @ViewBuilder
     private var tabs: some View {
-        let all: [AppTab] = [.home, .schedule, .requests, .staff, .summary, .print, .stores, .settings]
+        // 5つまで（6つ以上だと「その他」の中に入り、設定の中を開くと画面が崩れるため）。
+        // スタッフ・店舗は設定から、印刷はシフト表の上のボタンから開く
+        let all: [AppTab] = [.home, .schedule, .requests, .summary, .settings]
         if #available(iOS 18.0, *) {
             TabView(selection: $tab) {
                 ForEach(all) { t in
