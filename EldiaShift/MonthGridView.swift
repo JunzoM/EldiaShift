@@ -58,7 +58,7 @@ struct MonthGridView: View {
     private var rowHeight: CGFloat { isWeek ? (compact ? 78 : 70) : 58 }
     private let headerHeight: CGFloat = 46
     private let sectionHeight: CGFloat = 28
-    private let toggleHeight: CGFloat = 26
+    private let toggleHeight: CGFloat = 44
     private let hourHeight: CGFloat = 22
     private let summaryWidth: CGFloat = 70
     /// 時間帯別在籍人数の並び（PC版と同じ：9時〜翌8時）
@@ -234,18 +234,14 @@ struct MonthGridView: View {
         case .staff(let m):
             nameCell(m, book: book)
         case .hourToggle(let d, _):
-            Button {
-                if openHourly.contains(d.id) { openHourly.remove(d.id) } else {
-                    openHourly.insert(d.id)
-                    CoachCenter.shared.show(.hourly("hourly-\(d.id)"), after: 0.3)
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: openHourly.contains(d.id) ? "chevron.down" : "chevron.right").font(.caption2)
-                    Text("時間帯別在籍人数").font(.caption.weight(.bold)).lineLimit(1).minimumScaleFactor(0.7)
+            Button { toggleHourly(d) } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: openHourly.contains(d.id) ? "chevron.down.circle.fill" : "chevron.right.circle.fill")
+                        .font(.body)
+                    Text("時間帯別在籍人数").font(.subheadline.weight(.bold)).lineLimit(1).minimumScaleFactor(0.6)
                     Spacer(minLength: 0)
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.accentColor)
                 .padding(.horizontal, 8)
                 .frame(maxHeight: .infinity)
                 .contentShape(Rectangle())
@@ -309,10 +305,14 @@ struct MonthGridView: View {
                 }
                 .background(Color(.systemBackground))
                 .overlay(alignment: .bottom) { Divider() }
+                .contentShape(Rectangle())
+                .onTapGesture { toggleHourly(dept) }
             } else {
                 Color(.systemBackground)
                     .frame(width: cellWidth * CGFloat(days.count) + summaryWidth)
                     .overlay(alignment: .bottom) { Divider() }
+                    .contentShape(Rectangle())
+                    .onTapGesture { toggleHourly(dept) }
             }
         case .hour(let dept, let members, let h):
             let night = h <= 8
@@ -427,6 +427,14 @@ struct MonthGridView: View {
 
     private func patternTitle(_ p: WeekPattern) -> String {
         (p.label.isEmpty ? "パターン" : p.label) + (p.activeFrom.map { "（\($0)〜）" } ?? "（標準）")
+    }
+
+    /// 時間帯別在籍人数を開く・閉じる（左の見出しでも、右の行のどこを押しても）
+    private func toggleHourly(_ d: Department) {
+        if openHourly.contains(d.id) { openHourly.remove(d.id) } else {
+            openHourly.insert(d.id)
+            CoachCenter.shared.show(.hourly("hourly-\(d.id)"), after: 0.3)
+        }
     }
 
     private func dayHeader(_ d: DayKey, today: DayKey, short: Bool) -> some View {
