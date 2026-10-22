@@ -201,7 +201,9 @@ struct MonthGridView: View {
                 }
                 .font(.caption).foregroundStyle(.secondary)
             }
-            if !store.editing {
+            if store.editing {
+                EditingChip()
+            } else {
                 Text("ロック中（鉛筆で編集）").font(.caption).foregroundStyle(.secondary)
             }
         }

@@ -49,6 +49,13 @@ struct DayTimelineView: View {
             .padding(.horizontal, 12).padding(.vertical, 8)
             .background(Color.yellow.opacity(0.12))
             .overlay(alignment: .bottom) { Divider() }
+        } else {
+            HStack {
+                Spacer()
+                EditingChip()
+            }
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .overlay(alignment: .bottom) { Divider() }
         }
         GeometryReader { geo in
             let trackWidth = max(240, geo.size.width - nameWidth - 16)
@@ -246,6 +253,23 @@ struct DayTimelineView: View {
     }
 }
 
+/// 編集中の印（押すとロックに戻る）。コーチマークで明るく残す場所でもある
+struct EditingChip: View {
+    @Environment(ShiftStore.self) private var store
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Label("編集中", systemImage: "pencil").font(.caption.weight(.bold)).foregroundStyle(Color.accentColor)
+            Button("終える") { store.editing = false }
+                .font(.caption.weight(.bold))
+                .buttonStyle(.bordered).controlSize(.mini)
+        }
+        .padding(.leading, 10).padding(.trailing, 4).padding(.vertical, 3)
+        .background(Color.accentColor.opacity(0.1), in: Capsule())
+        .coachTarget("editing")
+    }
+}
+
 /// 編集する・見るだけ の切り替え
 struct EditToggle: View {
     @Environment(ShiftStore.self) private var store
@@ -257,7 +281,6 @@ struct EditToggle: View {
         } label: {
             Label(store.editing ? "編集を終える" : "編集する", systemImage: store.editing ? "checkmark.circle.fill" : "pencil")
         }
-        .coachTarget("edit")
         .accessibilityHint(store.editing ? "見るだけに戻します" : "マスを押して変えられるようにします")
     }
 }

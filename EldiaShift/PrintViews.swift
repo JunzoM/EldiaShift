@@ -340,13 +340,24 @@ struct PrintSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } }
-                ToolbarItemGroup(placement: .confirmationAction) {
-                    Button { printNow(pages, book: book) } label: { Label("印刷", systemImage: "printer") }
-                        .disabled(pages.isEmpty || busy)
-                    Button { share(pages, book: book) } label: { Label("PDFを共有", systemImage: "square.and.arrow.up") }
-                        .disabled(pages.isEmpty || busy)
-                        .coachTarget("printShare")
+            }
+            // 印刷・共有は下に大きく（見つけやすく、押しやすく）
+            .safeAreaInset(edge: .bottom) {
+                HStack(spacing: 12) {
+                    Button { printNow(pages, book: book) } label: {
+                        Label("印刷", systemImage: "printer").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    Button { share(pages, book: book) } label: {
+                        Label("PDFを共有", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .coachTarget("printShare")
                 }
+                .controlSize(.large)
+                .disabled(pages.isEmpty || busy)
+                .padding(.horizontal, 16).padding(.vertical, 10)
+                .background(.bar)
             }
             .coachOverlay(.sheet)
             .sheet(item: $shareFile) { f in ShareSheet(items: [f.url]) }
