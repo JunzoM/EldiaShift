@@ -1,6 +1,5 @@
 import SwiftUI
 import UIKit
-import TipKit
 
 // MARK: - 印刷・PDF（PC版の「印刷 / PDF」と同じ4つの形式。白黒で印刷しても見分けられる）
 
@@ -297,9 +296,6 @@ struct PrintSheet: View {
 
         NavigationStack {
             Form {
-                TipView(PrintTip())
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
                 Section("形式") {
                     Picker("形式", selection: $format) {
                         ForEach(PrintFormat.allCases) { Text($0.title).tag($0) }
@@ -344,16 +340,32 @@ struct PrintSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } }
-                ToolbarItemGroup(placement: .confirmationAction) {
-                    Button { printNow(pages, book: book) } label: { Label("印刷", systemImage: "printer") }
-                        .disabled(pages.isEmpty || busy)
-                    Button { share(pages, book: book) } label: { Label("PDFを共有", systemImage: "square.and.arrow.up") }
-                        .disabled(pages.isEmpty || busy)
-                }
             }
+            // 印刷・共有は下に大きく（見つけやすく、押しやすく）
+            .safeAreaInset(edge: .bottom) {
+                HStack(spacing: 12) {
+                    Button { printNow(pages, book: book) } label: {
+                        Label("印刷", systemImage: "printer").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    Button { share(pages, book: book) } label: {
+                        Label("PDFを共有", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .coachTarget("printShare")
+                }
+                .controlSize(.large)
+                .disabled(pages.isEmpty || busy)
+                .padding(.horizontal, 16).padding(.vertical, 10)
+                .background(.bar)
+            }
+            .coachOverlay(.sheet)
             .sheet(item: $shareFile) { f in ShareSheet(items: [f.url]) }
             .presentationDetents([.large])
-            .onAppear { if selected.isEmpty { selected = Set(depts.map(\.id)) } }
+            .onAppear {
+                if selected.isEmpty { selected = Set(depts.map(\.id)) }
+                CoachCenter.shared.show(.print(), after: 0.7)
+            }
         }
     }
 
@@ -367,7 +379,6 @@ struct PrintSheet: View {
 
     /// LINE・メール・AirDrop・ファイルに保存 など（iPad の共有）
     private func share(_ pages: [PrintPageSpec], book: ShiftBook) {
-        PrintTip().invalidate(reason: .actionPerformed)
         busy = true
         defer { busy = false }
         if let url = try? pdfURL(pages, book: book) { shareFile = ExportFile(url: url) }

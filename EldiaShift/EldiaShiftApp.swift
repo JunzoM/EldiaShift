@@ -6,7 +6,7 @@ struct EldiaShiftApp: App {
     @State private var store: ShiftStore
 
     init() {
-        CoachTips.configure()
+        HandFont.register()
         // 画面確認用（CI のスクリーンショット）は、保存しないデータベースに見本を入れて表示する
         let d = ShiftDatabase(inMemory: DemoMode.enabled)
         let s = ShiftStore(db: d)
@@ -113,6 +113,10 @@ struct RootView: View {
             .backupImporter(isPresented: $importing)
         }
         .overlay(alignment: .bottom) { UndoBar() }
+        .coachOverlay(.main)
+        .onAppear {
+            if ProcessInfo.processInfo.arguments.contains("-demoCoachEdit") { CoachCenter.shared.show(.edit(), after: 1.5) }
+        }
         .onChange(of: db.changeToken) { store.refreshIfNeeded() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { store.refreshIfNeeded() }
@@ -179,6 +183,8 @@ struct UndoBar: View {
                 .padding(.horizontal, 18).padding(.vertical, 12)
                 .modifier(GlassCapsule())
                 .padding(.bottom, 12)
+                .coachTarget("undo")
+                .onAppear { CoachCenter.shared.show(.undo(), after: 0.6) }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .task(id: c.id) {
                     try? await Task.sleep(nanoseconds: 5_000_000_000)

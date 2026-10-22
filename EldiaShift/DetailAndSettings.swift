@@ -147,12 +147,12 @@ struct SettingsView: View {
                 Section {
                     NavigationLink { ManualView() } label: { Label("操作マニュアル", systemImage: "questionmark.circle") }
                     Button {
-                        CoachTips.resetOnNextLaunch()
+                        CoachCenter.shared.resetAll()
                         tipsReset = true
                     } label: { Label("操作のヒントをもう一度見る", systemImage: "lightbulb") }
                 } footer: {
                     if tipsReset {
-                        Text("次にアプリを開いたときから、ボタンを初めて押したときのヒントがもう一度出ます。")
+                        Text("ボタンを初めて押したときの説明が、もう一度出るようになりました。")
                     }
                 }
 

@@ -201,7 +201,9 @@ struct MonthGridView: View {
                 }
                 .font(.caption).foregroundStyle(.secondary)
             }
-            if !store.editing {
+            if store.editing {
+                EditingChip()
+            } else {
                 Text("ロック中（鉛筆で編集）").font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -222,7 +224,10 @@ struct MonthGridView: View {
             nameCell(m, book: book)
         case .hourToggle(let d):
             Button {
-                if openHourly.contains(d.id) { openHourly.remove(d.id) } else { openHourly.insert(d.id) }
+                if openHourly.contains(d.id) { openHourly.remove(d.id) } else {
+                    openHourly.insert(d.id)
+                    CoachCenter.shared.show(.hourly("hourly-\(d.id)"), after: 0.3)
+                }
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: openHourly.contains(d.id) ? "chevron.down" : "chevron.right").font(.caption2)
@@ -235,6 +240,7 @@ struct MonthGridView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .coachTarget("hourly-\(d.id)")
             .overlay(alignment: .bottom) { Divider() }
         case .hour(_, _, let h):
             let night = h <= 8
@@ -335,6 +341,7 @@ struct MonthGridView: View {
                                     var x = m
                                     x.activePatternID = p.id
                                     try? store.save(x)
+                                    CoachCenter.shared.show(.pattern("pattern-\(m.id)"), after: 0.5)
                                 } label: {
                                     if p.id == m.activePatternID { Label(patternTitle(p), systemImage: "checkmark") }
                                     else { Text(patternTitle(p)) }
@@ -347,6 +354,7 @@ struct MonthGridView: View {
                                 .foregroundStyle(PaletteColor.fg(active?.colorIndex ?? 8))
                                 .background(PaletteColor.bg(active?.colorIndex ?? 8), in: RoundedRectangle(cornerRadius: 4))
                         }
+                        .coachTarget("pattern-\(m.id)")
                     }
                 }
                 if !m.timeBlocks.isEmpty && !compact {
