@@ -2,46 +2,49 @@ import SwiftUI
 
 // MARK: - サイドバー（iPad）・タブ（iPhone）
 
-enum AppTab: String, Hashable {
+enum AppTab: String, Hashable, Identifiable {
+    var id: String { rawValue }
     case home, schedule, staff, summary, settings
 }
 
+extension AppTab {
+    var title: String {
+        switch self {
+        case .home: "ホーム"
+        case .schedule: "シフト表"
+        case .staff: "スタッフ"
+        case .summary: "集計"
+        case .settings: "設定"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .home: "house"
+        case .schedule: "calendar"
+        case .staff: "person.2"
+        case .summary: "chart.bar.doc.horizontal"
+        case .settings: "gearshape"
+        }
+    }
+}
+
+/// iPad（横幅が広いとき）は左にサイドバー、iPhone は下にタブ。
+/// iPad で上部のタブバーにすると、シフト表の月の移動ボタンがツールバーからあふれて「…」に隠れるため、サイドバーにする
 @available(iOS 18.0, *)
 struct MainTabsView: View {
     @Binding var anchor: DayKey
 
     @Environment(ShiftStore.self) private var store
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @AppStorage("appTab") private var savedTab: AppTab = .home
     @State private var tab: AppTab = .home
     @AppStorage("viewMode") private var mode: GridMode = .month
 
     var body: some View {
-        TabView(selection: $tab) {
-            Tab("ホーム", systemImage: "house", value: AppTab.home) {
-                NavigationStack {
-                    HomeView(openDay: openDay, openTab: { tab = $0 })
-                }
-            }
-            Tab("シフト表", systemImage: "calendar", value: AppTab.schedule) {
-                ShiftBoardView(anchor: $anchor, inTabs: true)
-            }
-            Tab("スタッフ", systemImage: "person.2", value: AppTab.staff) {
-                NavigationStack {
-                    StaffListView()
-                        .toolbar { ToolbarItem(placement: .topBarLeading) { StoreSwitcher() } }
-                }
-            }
-            Tab("集計", systemImage: "chart.bar.doc.horizontal", value: AppTab.summary) {
-                NavigationStack {
-                    SummaryView(month: MonthKey(anchor))
-                        .toolbar { ToolbarItem(placement: .topBarLeading) { StoreSwitcher() } }
-                }
-            }
-            Tab("設定", systemImage: "gearshape", value: AppTab.settings) {
-                SettingsView(inTab: true)
-            }
+        Group {
+            if sizeClass == .regular { split } else { tabs }
         }
-        .tabViewStyle(.sidebarAdaptable)
         .onAppear {
             if DemoMode.enabled {
                 tab = DemoMode.flag("-demoHome") ? .home : .schedule
@@ -50,6 +53,65 @@ struct MainTabsView: View {
             }
         }
         .onChange(of: tab) { if !DemoMode.enabled { savedTab = tab } }
+    }
+
+    // MARK: iPad：サイドバー
+
+    private var split: some View {
+        NavigationSplitView {
+            List(selection: Binding<AppTab?>(get: { tab }, set: { if let t = $0 { tab = t } })) {
+                Section {
+                    StoreSwitcher()
+                }
+                Section {
+                    ForEach([AppTab.home, .schedule, .staff, .summary]) { t in
+                        Label(t.title, systemImage: t.systemImage).tag(t)
+                    }
+                }
+                Section {
+                    Label(AppTab.settings.title, systemImage: AppTab.settings.systemImage).tag(AppTab.settings)
+                }
+            }
+            .navigationTitle("シフト表")
+            .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 280)
+        } detail: {
+            content(tab, storeInToolbar: false)
+                .id(tab)
+        }
+    }
+
+    // MARK: iPhone：タブ
+
+    private var tabs: some View {
+        TabView(selection: $tab) {
+            ForEach([AppTab.home, .schedule, .staff, .summary, .settings]) { t in
+                Tab(t.title, systemImage: t.systemImage, value: t) { content(t, storeInToolbar: true) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func content(_ t: AppTab, storeInToolbar: Bool) -> some View {
+        switch t {
+        case .home:
+            NavigationStack {
+                HomeView(openDay: openDay, openTab: { tab = $0 }, storeInToolbar: storeInToolbar)
+            }
+        case .schedule:
+            ShiftBoardView(anchor: $anchor, inTabs: true, storeInToolbar: storeInToolbar)
+        case .staff:
+            NavigationStack {
+                StaffListView()
+                    .toolbar { if storeInToolbar { ToolbarItem(placement: .topBarLeading) { StoreSwitcher() } } }
+            }
+        case .summary:
+            NavigationStack {
+                SummaryView(month: MonthKey(anchor))
+                    .toolbar { if storeInToolbar { ToolbarItem(placement: .topBarLeading) { StoreSwitcher() } } }
+            }
+        case .settings:
+            SettingsView(inTab: true)
+        }
     }
 
     /// ホームから：その日のタイムラインを開く
@@ -65,6 +127,8 @@ struct MainTabsView: View {
 struct HomeView: View {
     var openDay: (DayKey) -> Void
     var openTab: (AppTab) -> Void
+    /// 店舗の切替をツールバーに出す（iPad はサイドバーにあるので出さない）
+    var storeInToolbar = true
 
     @Environment(ShiftStore.self) private var store
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -103,7 +167,7 @@ struct HomeView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle("ホーム")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .topBarLeading) { StoreSwitcher() } }
+        .toolbar { if storeInToolbar { ToolbarItem(placement: .topBarLeading) { StoreSwitcher() } } }
         .sheet(isPresented: $showPrint) { PrintSheet(anchor: today) }
         .sheet(isPresented: $showStores) { NavigationStack { StoreListView(inSheet: true) } }
         .sheet(item: $adding) { s in StaffEditView(member: s, isNew: true) }
@@ -114,7 +178,7 @@ struct HomeView: View {
     private func header(_ today: DayKey) -> some View {
         let wd = ["日", "月", "火", "水", "木", "金", "土"][today.weekday]
         return VStack(alignment: .leading, spacing: 4) {
-            Text("\(today.year)年\(today.month)月\(today.day)日（\(wd)）\(JapaneseHolidays.name(today).map { " \($0)" } ?? "")")
+            Text(verbatim: "\(today.year)年\(today.month)月\(today.day)日（\(wd)）\(JapaneseHolidays.name(today).map { " \($0)" } ?? "")")
                 .font(.subheadline).foregroundStyle(.secondary)
             Text(store.currentStore.name).font(.title.weight(.bold))
         }
@@ -130,13 +194,13 @@ struct HomeView: View {
                 openDay(store.today)
             }
             if store.book.staffing.isEmpty {
-                HomeCard(title: "人手が足りない日", systemImage: "exclamationmark.triangle", tint: .secondary,
+                HomeCard(title: "人手不足の日", systemImage: "exclamationmark.triangle", tint: .secondary,
                          value: "—", unit: "", note: "適正人員が未設定です") {
                     summaryTab = 1
                     openTab(.summary)
                 }
             } else {
-                HomeCard(title: "人手が足りない日", systemImage: "exclamationmark.triangle.fill",
+                HomeCard(title: "人手不足の日", systemImage: "exclamationmark.triangle.fill",
                          tint: info.shortDays.isEmpty ? StaffingStyle.ok : StaffingStyle.short,
                          value: "\(info.shortDays.count)", unit: "日",
                          note: info.shortDays.first.map { "次は \($0.day.month)/\($0.day.day)・2週間以内" } ?? "2週間以内はそろっています") {
@@ -328,6 +392,7 @@ struct HomeCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                        .lineLimit(1).minimumScaleFactor(0.8)
                     Spacer()
                     Image(systemName: systemImage)
                         .font(.subheadline)

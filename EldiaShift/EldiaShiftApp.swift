@@ -79,6 +79,8 @@ struct ShiftBoardView: View {
     @Binding var anchor: DayKey
     /// サイドバー・タブの中で使うとき（設定は別のタブにあるので、歯車を出さない）
     var inTabs = false
+    /// 店舗の切替をツールバーに出す（iPad のサイドバーにあるときは出さない）
+    var storeInToolbar = true
 
     @AppStorage("viewMode") private var mode: GridMode = .month
     @State private var showSettings = false
@@ -128,7 +130,7 @@ struct ShiftBoardView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarLeading) {
-                    if !store.book.isEmpty { StoreSwitcher() }
+                    if !store.book.isEmpty && storeInToolbar { StoreSwitcher() }
                     Button { anchor = mode.step(anchor, by: -1) } label: { Image(systemName: "chevron.left") }
                         .accessibilityLabel(mode.previousLabel)
                     Button(mode.todayLabel) { anchor = .today }
