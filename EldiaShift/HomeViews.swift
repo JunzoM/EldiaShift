@@ -40,6 +40,8 @@ struct MainTabsView: View {
     @AppStorage("appTab") private var savedTab: AppTab = .home
     @State private var tab: AppTab = .home
     @AppStorage("viewMode") private var mode: GridMode = .month
+    /// iPad を縦にしてもサイドバー（ホームなどの切替）を隠さない
+    @State private var columns: NavigationSplitViewVisibility = .all
 
     var body: some View {
         Group {
@@ -58,7 +60,7 @@ struct MainTabsView: View {
     // MARK: iPad：サイドバー
 
     private var split: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columns) {
             List(selection: Binding<AppTab?>(get: { tab }, set: { if let t = $0 { tab = t } })) {
                 Section {
                     StoreSwitcher()
@@ -78,6 +80,8 @@ struct MainTabsView: View {
             content(tab, storeInToolbar: false)
                 .id(tab)
         }
+        // 縦向きでもサイドバーを重ねずに横に並べる（隠れるとホームへ戻れない）
+        .navigationSplitViewStyle(.balanced)
     }
 
     // MARK: iPhone：タブ
