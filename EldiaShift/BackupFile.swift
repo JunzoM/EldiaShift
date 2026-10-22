@@ -95,6 +95,11 @@ enum BackupFile {
            let rules = try? JSONDecoder().decode(BreakRules.self, from: data) {
             book.breakRules = rules
         }
+        if let settings = root["settings"] as? [String: Any], let st = settings["staffing"],
+           let data = try? JSONSerialization.data(withJSONObject: st),
+           let plan = try? JSONDecoder().decode(StaffingPlan.self, from: data) {
+            book.staffing = plan
+        }
 
         let days = book.cells.keys.map(\.day)
         let summary = Summary(staff: book.staff.count, templates: templates.count, cells: book.cells.count,
@@ -135,8 +140,9 @@ enum BackupFile {
                                     "isOff": c.isOff, "auto": false] as [String: Any]
         }
         let rulesJSON = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(book.breakRules))) ?? [:]
+        let staffingJSON = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(book.staffing))) ?? [:]
         let root: [String: Any] = [
-            "settings": ["breakRules": rulesJSON],
+            "settings": ["breakRules": rulesJSON, "staffing": staffingJSON],
             "staff": staff,
             "globalTemplates": book.templates.map(json),
             "cellData": cells,

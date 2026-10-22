@@ -163,6 +163,9 @@ struct SettingsView: View {
                     NavigationLink { BreakRulesView() } label: {
                         LabeledContent("休憩の決まり", value: store.book.breakRules.summary)
                     }
+                    NavigationLink { StaffingSettingsView() } label: {
+                        LabeledContent("適正人員", value: store.book.staffing.isEmpty ? "未設定" : "\(store.book.staffing.bands.count)件の時間帯")
+                    }
                 }
 
                 Section {

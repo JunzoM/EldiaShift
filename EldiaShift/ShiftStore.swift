@@ -90,6 +90,14 @@ final class ShiftStore {
         book.breakRules = rules
     }
 
+    func setStaffing(_ plan: StaffingPlan) throws {
+        var b = book
+        b.staffing = plan
+        for team in try ShiftRecords.allTeams(db.viewContext) { try ShiftRecords.saveSettings(b, team: team) }
+        try db.save()
+        book.staffing = plan
+    }
+
     func exportData() throws -> Data {
         try BackupFile.write(book)
     }
@@ -117,6 +125,7 @@ enum ShiftRecords {
         if let data = teams.first(where: { $0.value(forKey: "settings") != nil })?.value(forKey: "settings") as? Data,
            let settings = try? JSONDecoder().decode(TeamSettings.self, from: data) {
             book.breakRules = settings.breakRules
+            book.staffing = settings.staffing ?? StaffingPlan()
         }
 
         book.departments = try newestByKey(fetch(ShiftModel.Entity.department, ctx), key: "key", ctx: ctx).map { r in
@@ -233,7 +242,7 @@ enum ShiftRecords {
 
     /// チーム全体の設定を保存
     static func saveSettings(_ book: ShiftBook, team: NSManagedObject) throws {
-        team.setValue(try JSONEncoder().encode(TeamSettings(breakRules: book.breakRules)), forKey: "settings")
+        team.setValue(try JSONEncoder().encode(TeamSettings(breakRules: book.breakRules, staffing: book.staffing)), forKey: "settings")
     }
 
     static func allTeams(_ ctx: NSManagedObjectContext) throws -> [NSManagedObject] {
@@ -314,4 +323,6 @@ private extension NSManagedObject {
 /// チーム全体の設定（保存用）
 struct TeamSettings: Codable {
     var breakRules: BreakRules
+    /// 前の版で保存した設定には無い
+    var staffing: StaffingPlan?
 }

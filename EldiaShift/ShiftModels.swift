@@ -103,6 +103,8 @@ struct ShiftBook: Sendable, Equatable {
     var cells: [CellKey: CellEntry] = [:]
     /// 休憩の決まり（実働の計算に使う。会社ごとに設定で変えられる）
     var breakRules: BreakRules = .pcDefault
+    /// 適正人員（部門ごと・時間帯ごとの必要人数）
+    var staffing = StaffingPlan()
 
     /// まだ何も作っていない（スタッフ・部門・ひな形・シフトのどれも無い）
     var isEmpty: Bool { staff.isEmpty && cells.isEmpty && departments.isEmpty && templates.isEmpty }

@@ -29,21 +29,21 @@ struct MonthGridView: View {
     private enum Row: Identifiable {
         case section(Department, Int)
         case staff(StaffMember)
-        case hourToggle(Department)
+        case hourToggle(Department, [StaffMember])
         case hour(Department, [StaffMember], Int)
 
         var id: String {
             switch self {
             case .section(let d, _): "s-\(d.id)"
             case .staff(let m): "m-\(m.id)"
-            case .hourToggle(let d): "t-\(d.id)"
+            case .hourToggle(let d, _): "t-\(d.id)"
             case .hour(let d, _, let h): "h-\(d.id)-\(h)"
             }
         }
     }
 
     @AppStorage("showInactive") private var showInactive = false
-    @State private var openHourly: Set<String> = []
+    @State private var openHourly: Set<String> = DemoMode.hourly ? ["hall", "kitchen"] : []
     @State private var staffSheet: StaffSheet?
     @State private var saveError: String?
 
@@ -71,7 +71,7 @@ struct MonthGridView: View {
         for g in book.staffByDepartment(visibleIn: MonthKey(days[0]), includeInactive: showInactive) {
             out.append(.section(g.department, g.members.count))
             out += g.members.map(Row.staff)
-            out.append(.hourToggle(g.department))
+            out.append(.hourToggle(g.department, g.members))
             if openHourly.contains(g.department.id) {
                 out += hours.map { Row.hour(g.department, g.members, $0) }
             }
@@ -94,6 +94,13 @@ struct MonthGridView: View {
         // 表に出す全員×全日の勤務を、ここで一度だけ決める
         let table = ScheduleTable(book: book, members: rows.compactMap { if case .staff(let m) = $0 { m } else { nil } }, days: days)
         let today = store.today
+        // 必要人数に足りない日（日付の上に赤い点）
+        let shortDays: Set<DayKey> = book.staffing.isEmpty ? [] : Set(days.filter { d in
+            rows.contains { r in
+                guard case .hourToggle(let dept, let members) = r, book.staffing.hasPlan(for: dept.id) else { return false }
+                return StaffingCheck.gap(book.staffing, department: dept.id, members: members, on: d) { table.working($0, on: $1, hour: $2) }.short > 0
+            }
+        })
 
         // 上：日付の行（縦には動かない。横は下の表と同じだけずらす）
         // 下：縦に動く。左に名前の列、右に横に動く表
@@ -113,7 +120,7 @@ struct MonthGridView: View {
                 FollowingHeader(tracker: scroll) {
                     HStack(spacing: 0) {
                         ForEach(days, id: \.self) { d in
-                            dayHeader(d, today: today)
+                            dayHeader(d, today: today, short: shortDays.contains(d))
                                 .contentShape(Rectangle())
                                 .onTapGesture { onOpenDay(d) }
                                 .accessibilityAddTraits(.isButton)
@@ -226,7 +233,7 @@ struct MonthGridView: View {
             sectionLabel(d, count: n)
         case .staff(let m):
             nameCell(m, book: book)
-        case .hourToggle(let d):
+        case .hourToggle(let d, _):
             Button {
                 if openHourly.contains(d.id) { openHourly.remove(d.id) } else {
                     openHourly.insert(d.id)
@@ -278,15 +285,54 @@ struct MonthGridView: View {
                 summaryCell(table.summary(m, days: days))
             }
             .overlay(alignment: .bottom) { Divider() }
-        case .hourToggle:
-            Color(.systemBackground)
-                .frame(width: cellWidth * CGFloat(days.count) + summaryWidth)
+        case .hourToggle(let dept, let members):
+            let plan = book.staffing
+            if plan.hasPlan(for: dept.id) {
+                // 必要人数を決めている部門は、閉じていても日ごとの不足が見える
+                HStack(spacing: 0) {
+                    ForEach(days, id: \.self) { d in
+                        let g = StaffingCheck.gap(plan, department: dept.id, members: members, on: d) { table.working($0, on: $1, hour: $2) }
+                        Group {
+                            if g.short > 0 {
+                                Text("−\(g.short)").font(.system(size: 10, weight: .heavy)).monospacedDigit()
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 3)
+                                    .background(StaffingStyle.short, in: RoundedRectangle(cornerRadius: 3))
+                                    .accessibilityLabel("\(d.day)日 \(dept.name) 不足 \(g.short)人時")
+                            } else {
+                                Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(StaffingStyle.ok.opacity(0.7))
+                            }
+                        }
+                        .frame(width: cellWidth, height: toggleHeight)
+                    }
+                    Text("不足").font(.system(size: 9)).foregroundStyle(.secondary).frame(width: summaryWidth)
+                }
+                .background(Color(.systemBackground))
                 .overlay(alignment: .bottom) { Divider() }
-        case .hour(_, let members, let h):
+            } else {
+                Color(.systemBackground)
+                    .frame(width: cellWidth * CGFloat(days.count) + summaryWidth)
+                    .overlay(alignment: .bottom) { Divider() }
+            }
+        case .hour(let dept, let members, let h):
             let night = h <= 8
             HStack(spacing: 0) {
                 ForEach(days, id: \.self) { d in
                     let n = table.working(members, on: d, hour: h)
+                    let need = book.staffing.need(dept.id, on: d, hour: h)
+                    if let need, let c = StaffingStyle.color(n, need: need) {
+                        // 必要人数がある時間：実際/必要 を色で（足りない＝赤、多い＝オレンジ）
+                        HStack(spacing: 0) {
+                            Text("\(n)").font(.system(size: 12, weight: .heavy))
+                            Text("/\(need)").font(.system(size: 8)).foregroundStyle(.secondary)
+                        }
+                        .monospacedDigit()
+                        .foregroundStyle(n < need ? Color.white : c)
+                        .frame(width: cellWidth, height: hourHeight)
+                        .background(n < need ? c.opacity(0.85) : c.opacity(0.15))
+                        .overlay(alignment: .trailing) { Rectangle().fill(Color(.separator)).frame(width: 0.5) }
+                        .accessibilityLabel("\(h)時 \(n)人（必要\(need)人）")
+                    } else {
                     Text(n == 0 ? "0" : "\(n)")
                         .font(.system(size: n > 2 ? 13 : 11, weight: n > 2 ? .heavy : n > 0 ? .bold : .regular))
                         .monospacedDigit()
@@ -294,6 +340,7 @@ struct MonthGridView: View {
                         .frame(width: cellWidth, height: hourHeight)
                         .background(n > 0 ? (night ? Color.blue.opacity(0.15) : Color.green.opacity(0.15)) : Color.clear)
                         .overlay(alignment: .trailing) { Rectangle().fill(Color(.separator)).frame(width: 0.5) }
+                    }
                 }
                 Color.clear.frame(width: summaryWidth, height: hourHeight)
             }
@@ -382,7 +429,7 @@ struct MonthGridView: View {
         (p.label.isEmpty ? "パターン" : p.label) + (p.activeFrom.map { "（\($0)〜）" } ?? "（標準）")
     }
 
-    private func dayHeader(_ d: DayKey, today: DayKey) -> some View {
+    private func dayHeader(_ d: DayKey, today: DayKey, short: Bool) -> some View {
         let holiday = JapaneseHolidays.name(d)
         let color: Color = (d.weekday == 0 || holiday != nil) ? .red : d.weekday == 6 ? .blue : .primary
         let wd = ["日", "月", "火", "水", "木", "金", "土"][d.weekday]
@@ -398,8 +445,36 @@ struct MonthGridView: View {
         .foregroundStyle(color)
         .frame(width: cellWidth, height: headerHeight)
         .background(d == today ? Color.accentColor.opacity(0.15) : .clear)
+        .overlay(alignment: .topTrailing) {
+            if short { Circle().fill(StaffingStyle.short).frame(width: 6, height: 6).padding(3) }
+        }
+        .overlay(alignment: .topLeading) {
+            let t = store.book.staffing.type(of: d)
+            if !store.book.staffing.isEmpty, t == .busy || t == .quiet {
+                Text(t.short).font(.system(size: 8, weight: .heavy)).foregroundStyle(.white)
+                    .padding(.horizontal, 2)
+                    .background(t == .busy ? Color.red : Color.brown, in: RoundedRectangle(cornerRadius: 2))
+                    .padding(2)
+            }
+        }
+        .contextMenu {
+            if !store.book.staffing.isEmpty {
+                let cur = store.book.staffing.type(of: d)
+                Section("この日の型（適正人員）") {
+                    ForEach(DayType.allCases) { x in
+                        Button {
+                            var p = store.book.staffing
+                            p.setType(x, for: d)
+                            do { try store.setStaffing(p) } catch { saveError = error.localizedDescription }
+                        } label: {
+                            if x == cur { Label(x.title, systemImage: "checkmark") } else { Text(x.title) }
+                        }
+                    }
+                }
+            }
+        }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(d.month)月\(d.day)日\(holiday.map { "、\($0)" } ?? "")")
+        .accessibilityLabel("\(d.month)月\(d.day)日\(holiday.map { "、\($0)" } ?? "")\(short ? "、人が足りない時間あり" : "")")
     }
 
     private var summaryHeader: some View {

@@ -65,12 +65,20 @@ struct DayTimelineView: View {
                     hourHeader(trackWidth: trackWidth, perMinute: perMinute)
                     headcountRow(resolved: resolved, perMinute: perMinute)
                     ForEach(groups) { g in
-                        HStack(spacing: 6) {
-                            Circle().fill(PaletteColor.fg(g.department.colorIndex)).frame(width: 8, height: 8)
-                            Text(g.department.name).font(.caption.bold()).foregroundStyle(.secondary)
-                            Spacer()
+                        HStack(spacing: 0) {
+                            HStack(spacing: 6) {
+                                Circle().fill(PaletteColor.fg(g.department.colorIndex)).frame(width: 8, height: 8)
+                                Text(g.department.name).font(.caption.bold()).foregroundStyle(.secondary).lineLimit(1)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.leading, 10)
+                            .frame(width: nameWidth)
+                            if book.staffing.hasPlan(for: g.department.id) {
+                                needRow(g, resolved: resolved, book: book, perMinute: perMinute)
+                            }
+                            Spacer(minLength: 0)
                         }
-                        .padding(.horizontal, 10).frame(height: 26)
+                        .frame(height: 26)
                         .background(Color(.secondarySystemBackground))
                         ForEach(g.members) { m in
                             row(m, resolved: resolved[m.id] ?? nil, book: book, trackWidth: trackWidth, perMinute: perMinute, firstBarID: firstBarID)
@@ -220,6 +228,29 @@ struct DayTimelineView: View {
                 }
             }
             .frame(width: trackWidth, height: 20, alignment: .topLeading)
+        }
+    }
+
+    /// 部門の、時間ごとの 実際/必要（必要人数を決めている時間だけ。足りない＝赤）
+    private func needRow(_ g: DepartmentGroup, resolved: [String: ResolvedShift?], book: ShiftBook, perMinute: CGFloat) -> some View {
+        let spans = g.members.compactMap { TimelineMath.span(of: resolved[$0.id] ?? nil) }
+        return HStack(spacing: 0) {
+            ForEach(hours, id: \.self) { h in
+                let n = TimelineMath.headcount(spans, hour: h)
+                let need = book.staffing.need(g.department.id, on: day, hour: h % 24)
+                Group {
+                    if let need, let c = StaffingStyle.color(n, need: need) {
+                        Text("\(n)/\(need)").font(.system(size: 9, weight: .bold)).monospacedDigit()
+                            .foregroundStyle(n < need ? .white : c)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(n < need ? c.opacity(0.85) : c.opacity(0.15))
+                            .accessibilityLabel("\(h % 24)時 \(n)人（必要\(need)人）")
+                    } else {
+                        Color.clear
+                    }
+                }
+                .frame(width: 60 * perMinute, height: 20)
+            }
         }
     }
 

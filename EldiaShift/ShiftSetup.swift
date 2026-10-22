@@ -260,6 +260,7 @@ extension ShiftStore {
         var kept = ShiftBook()
         kept.departments = book.departments
         kept.breakRules = book.breakRules
+        kept.staffing = book.staffing
         kept.templates = book.templates.filter(\.isOff)
         if kept.templates.isEmpty { kept.templates = BackupFile.defaultOffBlocks }
         try replaceAll(with: kept)

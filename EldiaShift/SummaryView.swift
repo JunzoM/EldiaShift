@@ -6,8 +6,40 @@ struct SummaryView: View {
 
     @Environment(ShiftStore.self) private var store
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @AppStorage("summaryTab") private var tab = 0
 
     var body: some View {
+        Group {
+            if tab == 1 { StaffingAnalysisView(month: month) } else { hoursList }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            Picker("見るもの", selection: $tab) {
+                Text("勤務時間・有休").tag(0)
+                Text("適正人員").tag(1)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 16).padding(.vertical, 8)
+            .background(.bar)
+        }
+        .onAppear { CoachCenter.shared.show(.summary(), after: 0.6) }
+        .navigationTitle("集計 \(month.description)")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if tab == 1 {
+                    NavigationLink { StaffingSettingsView() } label: { Image(systemName: "slider.horizontal.3") }
+                        .accessibilityLabel("適正人員を決める")
+                }
+                Button { month = month.adding(months: -1) } label: { Image(systemName: "chevron.left") }
+                    .accessibilityLabel("前の月")
+                Button { month = month.adding(months: 1) } label: { Image(systemName: "chevron.right") }
+                    .accessibilityLabel("次の月")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var hoursList: some View {
         let book = store.book
         let groups = book.staffByDepartment(visibleIn: month)
         // 1人ずつの集計は一度だけ（見出しの合計と行で使い回す）
@@ -33,17 +65,6 @@ struct SummaryView: View {
             Section {
                 Text("時間は休憩を引いた実働です（休憩の決まり：\(store.book.breakRules.summary)。設定で変えられます）。有休は入社日と週間パターンから付与日数を出し、今期の付与日から表示している月の末日までに「有休」を入れた日数を引いています。")
                     .font(.footnote).foregroundStyle(.secondary)
-            }
-        }
-        .onAppear { CoachCenter.shared.show(.summary(), after: 0.6) }
-        .navigationTitle("集計 \(month.description)")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button { month = month.adding(months: -1) } label: { Image(systemName: "chevron.left") }
-                    .accessibilityLabel("前の月")
-                Button { month = month.adding(months: 1) } label: { Image(systemName: "chevron.right") }
-                    .accessibilityLabel("次の月")
             }
         }
     }
