@@ -72,8 +72,8 @@ struct MainTabsView: View {
     /// 中身の画面がサイドバーの後ろへ回り込むなど、画面の切り替わりが崩れることがあったため）
     private var split: some View {
         HStack(spacing: 0) {
+            // 幅はサイドバー自身が決める（たたむとアイコンだけの細い帯）
             AppSidebar(tab: $tab)
-                .frame(width: 240)
             content(tab, storeInToolbar: false)
                 .id(tab)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

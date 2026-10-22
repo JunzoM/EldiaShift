@@ -33,6 +33,9 @@ struct StoreTag: View {
 // MARK: - 店舗の切替（ツールバー）
 
 struct StoreSwitcher: View {
+    /// サイドバーをたたんだとき：店舗の略称だけ
+    var iconOnly = false
+
     @Environment(ShiftStore.self) private var store
     @State private var managing = false
 
@@ -51,12 +54,21 @@ struct StoreSwitcher: View {
             }
             Button { managing = true } label: { Label("店舗を管理", systemImage: "building.2") }
         } label: {
-            HStack(spacing: 5) {
-                Circle().fill(PaletteColor.fg(current.colorIndex)).frame(width: 7, height: 7)
-                Text(current.name).lineLimit(1)
-                Image(systemName: "chevron.down").font(.caption2.weight(.bold))
+            if iconOnly {
+                VStack(spacing: 2) {
+                    Circle().fill(PaletteColor.fg(current.colorIndex)).frame(width: 7, height: 7)
+                    Text(store.book.shortName(of: current)).lineLimit(1).minimumScaleFactor(0.6)
+                }
+                .font(.caption.weight(.bold))
+                .frame(width: 48)
+            } else {
+                HStack(spacing: 5) {
+                    Circle().fill(PaletteColor.fg(current.colorIndex)).frame(width: 7, height: 7)
+                    Text(current.name).lineLimit(1)
+                    Image(systemName: "chevron.down").font(.caption2.weight(.bold))
+                }
+                .font(.subheadline.weight(.semibold))
             }
-            .font(.subheadline.weight(.semibold))
         }
         .accessibilityLabel("店舗：\(current.name)。押すと切り替え")
         .sheet(isPresented: $managing) { NavigationStack { StoreListView(inSheet: true) } }
