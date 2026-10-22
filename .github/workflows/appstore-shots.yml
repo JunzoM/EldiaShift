@@ -57,7 +57,11 @@ jobs:
             xcrun simctl terminate "$dev" $bid >/dev/null 2>&1 || true
             xcrun simctl launch "$dev" $bid -demoLayout -demoAppStore -AppleLanguages "(ja)" -AppleLocale ja_JP "$@"
             sleep 9
-            xcrun simctl io "$dev" screenshot "shots/$name.png"
+            xcrun simctl io "$dev" screenshot "shots/$name.tmp.png"
+            # App Store Connect は透明（アルファ）付きの画像を受け付けないため、JPEG を経由して取り除く
+            sips -s format jpeg "shots/$name.tmp.png" --out "shots/$name.tmp.jpg" >/dev/null
+            sips -s format png "shots/$name.tmp.jpg" --out "shots/$name.png" >/dev/null
+            rm -f "shots/$name.tmp.png" "shots/$name.tmp.jpg"
           }
           for dev in "$PHONE" "$PAD"; do
             xcrun simctl boot "$dev" || true
@@ -81,8 +85,10 @@ jobs:
           import struct, glob
           for f in sorted(glob.glob("shots/*/*.png")):
               with open(f, "rb") as h:
-                  h.read(16); w, ht = struct.unpack(">II", h.read(8))
+                  h.read(16); w, ht = struct.unpack(">II", h.read(8)); h.read(1); ctype = h.read(1)[0]
               print(f"::notice title=Size::{f} {w}x{ht}")
+              if ctype in (4, 6):
+                  print(f"::error title=Alpha::{f} に透明の情報が残っています"); raise SystemExit(1)
           PY
       - name: Push to appstore-screenshots branch
         run: |
