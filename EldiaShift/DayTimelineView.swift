@@ -1,3 +1,4 @@
+import TipKit
 import SwiftUI
 
 /// 日ごとのタイムライン（朝5:00〜翌10:00）。編集中はバーをドラッグして移動、両端で長さを変える（30分刻み）
@@ -49,11 +50,9 @@ struct DayTimelineView: View {
             .background(Color.yellow.opacity(0.12))
             .overlay(alignment: .bottom) { Divider() }
         } else {
-            Text("バーをドラッグで移動、両端で長さを変更（30分刻み）。空いているところを押すと8時間のシフトを作ります。")
-                .font(.caption).foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12).padding(.vertical, 6)
-                .overlay(alignment: .bottom) { Divider() }
+            // 初めて編集中にタイムラインを開いたときだけ、操作のヒントを出す
+            TipView(TimelineTip())
+                .padding(.horizontal, 12).padding(.top, 6)
         }
         GeometryReader { geo in
             let trackWidth = max(240, geo.size.width - nameWidth - 16)
@@ -191,6 +190,7 @@ struct DayTimelineView: View {
     }
 
     private func save(_ m: StaffMember, _ s: (inM: Int, outM: Int)) {
+        TimelineTip().invalidate(reason: .actionPerformed)
         do {
             try store.setCell(CellKey(staffID: m.id, day: day), to: TimelineMath.entry(inM: s.inM, outM: s.outM))
         } catch {
@@ -253,9 +253,15 @@ struct EditToggle: View {
     var body: some View {
         Button {
             store.editing.toggle()
+            if store.editing {
+                CoachTips.tapped(EditModeTip.tapped)
+            } else {
+                EditModeTip().invalidate(reason: .actionPerformed)
+            }
         } label: {
             Label(store.editing ? "編集を終える" : "編集する", systemImage: store.editing ? "checkmark.circle.fill" : "pencil")
         }
+        .popoverTip(EditModeTip(), arrowEdge: .top)
         .accessibilityHint(store.editing ? "見るだけに戻します" : "マスを押して変えられるようにします")
     }
 }

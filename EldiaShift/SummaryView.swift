@@ -1,3 +1,4 @@
+import TipKit
 import SwiftUI
 
 /// 月の集計（PC版の「集計」と同じ：部門ごとに 出勤日数・実働時間・有休の残り・個人の時間）
@@ -11,6 +12,9 @@ struct SummaryView: View {
         let book = store.book
         let groups = book.staffByDepartment(visibleIn: month)
         List {
+            TipView(SummaryTip())
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
             ForEach(groups) { g in
                 Section {
                     if sizeClass != .compact { header }

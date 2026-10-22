@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import TipKit
 
 // MARK: - 印刷・PDF（PC版の「印刷 / PDF」と同じ4つの形式。白黒で印刷しても見分けられる）
 
@@ -296,6 +297,9 @@ struct PrintSheet: View {
 
         NavigationStack {
             Form {
+                TipView(PrintTip())
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
                 Section("形式") {
                     Picker("形式", selection: $format) {
                         ForEach(PrintFormat.allCases) { Text($0.title).tag($0) }
@@ -363,6 +367,7 @@ struct PrintSheet: View {
 
     /// LINE・メール・AirDrop・ファイルに保存 など（iPad の共有）
     private func share(_ pages: [PrintPageSpec], book: ShiftBook) {
+        PrintTip().invalidate(reason: .actionPerformed)
         busy = true
         defer { busy = false }
         if let url = try? pdfURL(pages, book: book) { shareFile = ExportFile(url: url) }

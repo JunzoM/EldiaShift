@@ -63,6 +63,8 @@ jobs:
           shoot "$PAD" ipad-day -demoDay
           shoot "$PAD" ipad-day-edit -demoDay -demoEdit
           shoot "$PAD" ipad-print -demoPrint
+          shoot "$PAD" tips-day-edit -demoDay -demoEdit -demoTips
+          shoot "$PAD" tips-print -demoPrint -demoTips
           shoot "$PAD" print-page -demoPrintPage
           shoot "$PAD" print-page-landscape -demoPrintPage -demoLandscapePage
           shoot "$PHONE" iphone-month

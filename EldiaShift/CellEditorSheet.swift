@@ -1,3 +1,4 @@
+import TipKit
 import SwiftUI
 
 /// 1人×1日を変える画面（ひな形を押すとすぐ決まる。時刻を指定することもできる）
@@ -26,6 +27,10 @@ struct CellEditorSheet: View {
 
         NavigationStack {
             Form {
+                // 初めて開いたときだけ
+                TipView(CellPickerTip())
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
                 if !personal.isEmpty {
                     Section("\(member.name)の個人の時間") { blockGrid(personal, selectedID) }
                 }
@@ -114,6 +119,7 @@ struct CellEditorSheet: View {
     }
 
     private func apply(_ entry: CellEntry?) {
+        CellPickerTip().invalidate(reason: .actionPerformed)
         do {
             try store.setCell(key, to: entry)
             dismiss()

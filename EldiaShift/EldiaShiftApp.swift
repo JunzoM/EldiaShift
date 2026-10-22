@@ -6,6 +6,7 @@ struct EldiaShiftApp: App {
     @State private var store: ShiftStore
 
     init() {
+        CoachTips.configure()
         // 画面確認用（CI のスクリーンショット）は、保存しないデータベースに見本を入れて表示する
         let d = ShiftDatabase(inMemory: DemoMode.enabled)
         let s = ShiftStore(db: d)
