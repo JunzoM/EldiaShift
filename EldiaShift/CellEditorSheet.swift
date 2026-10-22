@@ -1,4 +1,3 @@
-import TipKit
 import SwiftUI
 
 /// 1人×1日を変える画面（ひな形を押すとすぐ決まる。時刻を指定することもできる）
@@ -24,21 +23,18 @@ struct CellEditorSheet: View {
         let common = book.templates.filter { !$0.isOff && match($0) }
         let off = book.templates.filter(\.isOff)
         let selectedID = current?.isAuto == false ? current?.blockID : nil
+        let firstID = personal.first?.id ?? common.first?.id ?? off.first?.id
 
         NavigationStack {
             Form {
-                // 初めて開いたときだけ
-                TipView(CellPickerTip())
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
                 if !personal.isEmpty {
-                    Section("\(member.name)の個人の時間") { blockGrid(personal, selectedID) }
+                    Section("\(member.name)の個人の時間") { blockGrid(personal, selectedID, firstID: firstID) }
                 }
                 if !common.isEmpty {
-                    Section("共通の時間") { blockGrid(common, selectedID) }
+                    Section("共通の時間") { blockGrid(common, selectedID, firstID: firstID) }
                 }
                 if q.isEmpty {
-                    Section("休日") { blockGrid(off, selectedID) }
+                    Section("休日") { blockGrid(off, selectedID, firstID: firstID) }
                 } else if personal.isEmpty && common.isEmpty {
                     Text("「\(q)」に合う時間がありません").foregroundStyle(.secondary)
                 }
@@ -72,6 +68,8 @@ struct CellEditorSheet: View {
                     Text("この日だけ入れた内容を消して、週間パターン・期間限定パターンで決まる内容に戻します。")
                 }
             }
+            .coachOverlay(.sheet)
+            .onAppear { CoachCenter.shared.show(.cellPicker("cellFirst"), after: 0.6) }
             .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "時間を検索")
             .navigationTitle("\(day.month)月\(day.day)日（\(["日", "月", "火", "水", "木", "金", "土"][day.weekday])）\(member.name)")
             .navigationBarTitleDisplayMode(.inline)
@@ -90,9 +88,13 @@ struct CellEditorSheet: View {
         }
     }
 
-    private func blockGrid(_ blocks: [TimeBlock], _ selectedID: String?) -> some View {
+    /// firstID：説明（コーチマーク）で明るく残す、いちばん上のひな形
+    private func blockGrid(_ blocks: [TimeBlock], _ selectedID: String?, firstID: String?) -> some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 8)], spacing: 8) {
-            ForEach(blocks) { b in blockButton(b, selected: selectedID == b.id) }
+            ForEach(blocks) { b in
+                blockButton(b, selected: selectedID == b.id)
+                    .modifier(OptionalCoachTarget(id: b.id == firstID ? "cellFirst" : nil))
+            }
         }
         .padding(.vertical, 4)
     }
@@ -119,7 +121,6 @@ struct CellEditorSheet: View {
     }
 
     private func apply(_ entry: CellEntry?) {
-        CellPickerTip().invalidate(reason: .actionPerformed)
         do {
             try store.setCell(key, to: entry)
             dismiss()

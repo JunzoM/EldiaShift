@@ -1,4 +1,3 @@
-import TipKit
 import SwiftUI
 
 /// 日ごとのタイムライン（朝5:00〜翌10:00）。編集中はバーをドラッグして移動、両端で長さを変える（30分刻み）
@@ -36,6 +35,7 @@ struct DayTimelineView: View {
             .filter { !$0.members.isEmpty }
         let resolved = Dictionary(groups.flatMap(\.members).map { ($0.id, Schedule.resolve($0, on: day, in: book)) },
                                   uniquingKeysWith: { a, _ in a })
+        let firstBarID = groups.flatMap(\.members).first { TimelineMath.span(of: resolved[$0.id] ?? nil) != nil }?.id
 
         VStack(spacing: 0) {
         if !store.editing {
@@ -49,10 +49,6 @@ struct DayTimelineView: View {
             .padding(.horizontal, 12).padding(.vertical, 8)
             .background(Color.yellow.opacity(0.12))
             .overlay(alignment: .bottom) { Divider() }
-        } else {
-            // 初めて編集中にタイムラインを開いたときだけ、操作のヒントを出す
-            TipView(TimelineTip())
-                .padding(.horizontal, 12).padding(.top, 6)
         }
         GeometryReader { geo in
             let trackWidth = max(240, geo.size.width - nameWidth - 16)
@@ -70,7 +66,7 @@ struct DayTimelineView: View {
                         .padding(.horizontal, 10).frame(height: 26)
                         .background(Color(.secondarySystemBackground))
                         ForEach(g.members) { m in
-                            row(m, resolved: resolved[m.id] ?? nil, book: book, trackWidth: trackWidth, perMinute: perMinute)
+                            row(m, resolved: resolved[m.id] ?? nil, book: book, trackWidth: trackWidth, perMinute: perMinute, firstBarID: firstBarID)
                         }
                     }
                 }
@@ -78,6 +74,8 @@ struct DayTimelineView: View {
             }
         }
         }
+        .onAppear { if store.editing { CoachCenter.shared.show(.timeline("timelineBar")) } }
+        .onChange(of: store.editing) { if store.editing { CoachCenter.shared.show(.timeline("timelineBar"), after: 0.6) } }
         .sheet(item: $editing) { e in
             CellEditorSheet(member: e.member, day: day).presentationDetents([.medium, .large])
         }
@@ -89,7 +87,8 @@ struct DayTimelineView: View {
 
     // MARK: 行
 
-    private func row(_ m: StaffMember, resolved r: ResolvedShift?, book: ShiftBook, trackWidth: CGFloat, perMinute: CGFloat) -> some View {
+    private func row(_ m: StaffMember, resolved r: ResolvedShift?, book: ShiftBook, trackWidth: CGFloat, perMinute: CGFloat,
+                     firstBarID: String?) -> some View {
         let live = drag?.staffID == m.id ? drag.map { (inM: $0.inM, outM: $0.outM) } : TimelineMath.span(of: r)
         let block = book.block(r?.blockID, for: m)
         return HStack(spacing: 0) {
@@ -118,7 +117,7 @@ struct DayTimelineView: View {
                         .padding(.leading, 8)
                         .onTapGesture { if store.editing { editing = Edit(member: m) } }
                 } else if let s = live {
-                    bar(m, span: s, resolved: r, block: block, perMinute: perMinute)
+                    bar(m, span: s, resolved: r, block: block, perMinute: perMinute, firstBarID: firstBarID)
                 }
             }
             .frame(width: trackWidth, height: rowHeight)
@@ -129,7 +128,8 @@ struct DayTimelineView: View {
         .accessibilityElement(children: .contain)
     }
 
-    private func bar(_ m: StaffMember, span s: (inM: Int, outM: Int), resolved r: ResolvedShift?, block: TimeBlock?, perMinute: CGFloat) -> some View {
+    private func bar(_ m: StaffMember, span s: (inM: Int, outM: Int), resolved r: ResolvedShift?, block: TimeBlock?, perMinute: CGFloat,
+                     firstBarID: String?) -> some View {
         let x = CGFloat(s.inM - TimelineMath.start) * perMinute
         let w = max(CGFloat(s.outM - s.inM) * perMinute, 16)
         let color = block.map { PaletteColor.fg($0.colorIndex) } ?? Color.accentColor
@@ -150,6 +150,7 @@ struct DayTimelineView: View {
             }
         }
         .frame(width: w, height: rowHeight - 14)
+        .modifier(OptionalCoachTarget(id: m.id == firstBarID ? "timelineBar" : nil))
         .offset(x: x)
         .gesture(dragGesture(m, .move, s, perMinute: perMinute), including: store.editing ? .all : .subviews)
         .onTapGesture { if store.editing { editing = Edit(member: m) } }
@@ -190,7 +191,6 @@ struct DayTimelineView: View {
     }
 
     private func save(_ m: StaffMember, _ s: (inM: Int, outM: Int)) {
-        TimelineTip().invalidate(reason: .actionPerformed)
         do {
             try store.setCell(CellKey(staffID: m.id, day: day), to: TimelineMath.entry(inM: s.inM, outM: s.outM))
         } catch {
@@ -253,15 +253,11 @@ struct EditToggle: View {
     var body: some View {
         Button {
             store.editing.toggle()
-            if store.editing {
-                CoachTips.tapped(EditModeTip.tapped)
-            } else {
-                EditModeTip().invalidate(reason: .actionPerformed)
-            }
+            if store.editing { CoachCenter.shared.show(.edit(), after: 0.2) }
         } label: {
             Label(store.editing ? "編集を終える" : "編集する", systemImage: store.editing ? "checkmark.circle.fill" : "pencil")
         }
-        .popoverTip(EditModeTip(), arrowEdge: .top)
+        .coachTarget("edit")
         .accessibilityHint(store.editing ? "見るだけに戻します" : "マスを押して変えられるようにします")
     }
 }

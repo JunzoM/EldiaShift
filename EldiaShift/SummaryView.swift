@@ -1,4 +1,3 @@
-import TipKit
 import SwiftUI
 
 /// 月の集計（PC版の「集計」と同じ：部門ごとに 出勤日数・実働時間・有休の残り・個人の時間）
@@ -12,13 +11,13 @@ struct SummaryView: View {
         let book = store.book
         let groups = book.staffByDepartment(visibleIn: month)
         List {
-            TipView(SummaryTip())
-                .listRowInsets(EdgeInsets())
-                .listRowBackground(Color.clear)
             ForEach(groups) { g in
                 Section {
                     if sizeClass != .compact { header }
-                    ForEach(g.members) { m in row(m, book: book) }
+                    ForEach(g.members) { m in
+                        row(m, book: book)
+                            .modifier(OptionalCoachTarget(id: m.id == groups.first?.members.first?.id ? "summaryLeave" : nil))
+                    }
                 } header: {
                     HStack {
                         Text(g.department.name).foregroundStyle(PaletteColor.fg(g.department.colorIndex))
@@ -33,6 +32,7 @@ struct SummaryView: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
+        .onAppear { CoachCenter.shared.show(.summary(), after: 0.6) }
         .navigationTitle("集計 \(month.description)")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
