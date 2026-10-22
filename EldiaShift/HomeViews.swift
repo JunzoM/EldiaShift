@@ -62,8 +62,12 @@ struct MainTabsView: View {
             } else {
                 tab = savedTab
             }
+            fitTabToLayout()
         }
         .onChange(of: tab) { if !DemoMode.enabled { savedTab = tab } }
+        // 折りたたみの iPhone（Duo）を閉じた・iPad を分割表示にしたなどで下のタブに変わったとき、
+        // タブに無い項目（スタッフ・印刷・店舗）を開いていたら、近い項目へ移す（何も出ない画面にしない）
+        .onChange(of: sizeClass) { fitTabToLayout() }
     }
 
     // MARK: iPad：サイドバー
@@ -82,11 +86,22 @@ struct MainTabsView: View {
 
     // MARK: iPhone：タブ
 
+    /// 下のタブに出す項目（5つまで）
+    static let compactTabs: [AppTab] = [.home, .schedule, .requests, .summary, .settings]
+
+    private func fitTabToLayout() {
+        guard sizeClass != .regular, !Self.compactTabs.contains(tab) else { return }
+        switch tab {
+        case .print: tab = .schedule
+        default: tab = .settings
+        }
+    }
+
     @ViewBuilder
     private var tabs: some View {
         // 5つまで（6つ以上だと「その他」の中に入り、設定の中を開くと画面が崩れるため）。
         // スタッフ・店舗は設定から、印刷はシフト表の上のボタンから開く
-        let all: [AppTab] = [.home, .schedule, .requests, .summary, .settings]
+        let all = Self.compactTabs
         if #available(iOS 18.0, *) {
             TabView(selection: $tab) {
                 ForEach(all) { t in

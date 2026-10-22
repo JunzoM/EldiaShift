@@ -65,6 +65,20 @@ GitHub Actions の「App Store Screenshots」で作成し、`appstore-screenshot
 - ipad-13/：iPad 13インチ用
 - iphone-6.9/：iPhone 6.9インチ用
 
+### iPhone Duo（折りたたみ）
+GitHub の環境にはまだ Duo のシミュレーターが無いので、Xcode 27 の入った Mac で撮る（任意。2027年4月からは iOS 27.1 SDK 以降で作ったアプリに必須になる予定）。
+
+```
+cd ~/Downloads/EldiaShift
+bash scripts/duo-screenshots.sh
+```
+
+開いた画面（横向き 2853 × 2007）・閉じた画面（縦向き 1398 × 2034）それぞれ4枚（ホーム・月の表・日のタイムライン・印刷）が `shots/duo/` にできる。途中で、シミュレーターを「開いた状態の横向き」→「閉じた状態の縦向き」にするよう案内が出る。
+
+### Duo での見え方
+- 開いた画面：iPad と同じく左のサイドバー＋表。閉じた画面：iPhone と同じく下のタブ。開け閉めで自動で切り替わる
+- 閉じたときにタブに無い項目（スタッフ・印刷・店舗）を開いていたら、設定・シフト表へ移る
+
 ## 提出前のチェック
 1. CloudKit Console で、開発環境のスキーマを本番へ反映（Deploy Schema Changes）
 2. Xcode：Product → Archive → Distribute App → App Store Connect → Upload
