@@ -84,13 +84,36 @@ final class CoachCenter {
         init(_ v: UIView) { view = v }
     }
 
+    /// ツールバーのボタンは UIKit のボタンに置き換わって SwiftUI の位置が取れないため、読み上げ用の名前で画面から探す
+    private let toolbarLabels: [String: [String]] = [
+        "edit": ["編集を終える", "編集する"],
+        "printShare": ["PDFを共有"]
+    ]
+
     /// 部品の今の位置（画面全体の座標）
     func frame(of id: String) -> CGRect? {
+        if let labels = toolbarLabels[id] {
+            return Self.findView(labeled: labels).flatMap { v in v.window.map { v.convert(v.bounds, to: $0) } }
+        }
         if let v = views[id]?.view, let w = v.window {
             let f = v.convert(v.bounds, to: w)
-            if f.width > 1, f.height > 1 { return f }
+            if f.width > 1, f.height > 1, f.minX > 0 || f.minY > 0 { return f }
         }
         return frames[id]
+    }
+
+    /// 前面の画面から、読み上げ用の名前が一致するいちばん手前の部品を探す
+    private static func findView(labeled labels: [String]) -> UIView? {
+        let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows).filter { $0.isKeyWindow }
+        var found: UIView?
+        func walk(_ v: UIView) {
+            if v.isHidden || v.alpha < 0.01 { return }
+            if let l = v.accessibilityLabel, labels.contains(l), v.bounds.width > 1, v.bounds.width < 200 { found = v }
+            v.subviews.forEach(walk)
+        }
+        windows.forEach(walk)
+        return found
     }
 
     func register(_ id: String, view: UIView) {
