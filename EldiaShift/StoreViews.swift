@@ -382,9 +382,11 @@ struct StoreEditView: View {
                 Section {
                     HStack(spacing: 16) {
                         StorePhoto(store: storeInfo, label: book.shortName(of: storeInfo), size: CGSize(width: 120, height: 84), corner: 12)
+                        // PhotosPicker の見出しは別スレッドから呼ばれることがあるので、先に文字を決めておく
+                        let pickTitle = storeInfo.photo == nil ? "写真を選ぶ" : "写真を変える"
                         VStack(alignment: .leading, spacing: 10) {
                             PhotosPicker(selection: $pickedPhoto, matching: .images) {
-                                Label(storeInfo.photo == nil ? "写真を選ぶ" : "写真を変える", systemImage: "photo")
+                                Label(pickTitle, systemImage: "photo")
                             }
                             if storeInfo.photo != nil {
                                 Button("写真を外す", role: .destructive) { storeInfo.photo = nil }

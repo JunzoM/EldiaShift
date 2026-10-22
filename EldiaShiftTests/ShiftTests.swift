@@ -1147,6 +1147,9 @@ struct BrandPrefixTests {
         #expect(old.brandPrefix == "" && old.displayPrefix == "HOTEL")
         let back = try JSONDecoder().decode(Store.self, from: JSONEncoder().encode(a))
         #expect(back.brandPrefix == "  ELDIA ")
+    }
+}
+
 @Suite("速さの改良（計算の結果が変わらないこと）")
 @MainActor
 struct SpeedCorrectnessTests {
