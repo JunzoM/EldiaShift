@@ -131,6 +131,9 @@ private struct BackupImporter: ViewModifier {
 // MARK: - 設定
 
 struct SettingsView: View {
+    /// サイドバー・タブの中で開いたとき（「閉じる」を出さない）
+    var inTab = false
+
     @Environment(ShiftDatabase.self) private var db
     @Environment(ShiftStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -211,9 +214,11 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("設定")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(inTab ? .large : .inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dismiss() } }
+                if !inTab {
+                    ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dismiss() } }
+                }
             }
             .backupImporter(isPresented: $importing)
             .confirmationDialog("すべて消去しますか？", isPresented: $confirmReset, titleVisibility: .visible) {
