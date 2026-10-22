@@ -711,3 +711,72 @@ struct PerfAndFixTests {
         #expect(!data.isEmpty)
     }
 }
+
+@Suite("適正人員")
+@MainActor
+struct StaffingTests {
+    private func band(_ s: Int, _ e: Int, _ wd: Int, _ sa: Int, _ ho: Int) -> StaffingBand {
+        StaffingBand(departmentID: "d", startHour: s, endHour: e, weekday: wd, saturday: sa, holiday: ho)
+    }
+
+    @Test("日の型：カレンダーどおり（日曜・祝日は日祝）と、日ごとの切り替え")
+    func dayTypes() {
+        var p = StaffingPlan()
+        #expect(p.type(of: DayKey(2026, 10, 5)) == .weekday)
+        #expect(p.type(of: DayKey(2026, 10, 10)) == .saturday)
+        #expect(p.type(of: DayKey(2026, 10, 11)) == .holiday)
+        #expect(p.type(of: DayKey(2026, 10, 12)) == .holiday)   // スポーツの日
+        p.setType(.busy, for: DayKey(2026, 10, 5))
+        #expect(p.type(of: DayKey(2026, 10, 5)) == .busy)
+        p.setType(.weekday, for: DayKey(2026, 10, 5))           // カレンダーどおりに戻すと記録は消える
+        #expect(p.dayTypes.isEmpty)
+    }
+
+    @Test("時間帯：日をまたぐ・重なりは多いほう・繁忙と閑散の自動")
+    func needs() {
+        var p = StaffingPlan()
+        p.bands = [band(9, 18, 2, 3, 4), band(12, 14, 3, 3, 3), band(22, 6, 1, 1, 1)]
+        let mon = DayKey(2026, 10, 5)
+        #expect(p.need("d", on: mon, hour: 8) == nil)
+        #expect(p.need("d", on: mon, hour: 9) == 2)
+        #expect(p.need("d", on: mon, hour: 12) == 3)
+        #expect(p.need("d", on: mon, hour: 18) == nil)
+        #expect(p.need("d", on: mon, hour: 23) == 1)
+        #expect(p.need("d", on: mon, hour: 5) == 1)
+        #expect(p.need("d", on: DayKey(2026, 10, 10), hour: 10) == 3)
+        #expect(p.bands[0].need(.busy) == 5)
+        #expect(p.bands[0].need(.quiet) == 1)
+        #expect(p.need("other", on: mon, hour: 10) == nil)
+    }
+
+    @Test("不足と過剰を人×時間で数える")
+    func gap() {
+        var p = StaffingPlan()
+        p.bands = [band(9, 12, 2, 2, 2)]
+        // 9時台1人・10時台2人・11時台3人
+        let g = StaffingCheck.gap(p, department: "d", members: [], on: DayKey(2026, 10, 5)) { _, _, h in h - 8 }
+        #expect(g == StaffingGap(short: 1, over: 1, shortHours: 1))
+    }
+
+    @Test("実績から提案：同じ人数が続く時間をまとめる")
+    func suggest() {
+        var wd = Array(repeating: 0, count: 24)
+        for h in 9..<12 { wd[h] = 2 }
+        for h in 12..<15 { wd[h] = 3 }
+        let bands = StaffingCheck.suggestBands(department: "d", averages: [.weekday: wd])
+        #expect(bands.map { [$0.startHour, $0.endHour, $0.weekday, $0.saturday] } == [[9, 12, 2, 2], [12, 15, 3, 3]])
+    }
+
+    @Test("保存して読み直す・バックアップに入る")
+    func persist() throws {
+        let store = ShiftStore(db: ShiftDatabase(inMemory: true))
+        try store.startNew()
+        var p = StaffingPlan()
+        p.bands = [band(9, 18, 2, 3, 4)]
+        p.setType(.busy, for: DayKey(2026, 10, 5))
+        try store.setStaffing(p)
+        #expect(try ShiftRecords.load(store.db.viewContext).staffing == p)
+        let (book, _) = try BackupFile.read(try store.exportData())
+        #expect(book.staffing == p)
+    }
+}

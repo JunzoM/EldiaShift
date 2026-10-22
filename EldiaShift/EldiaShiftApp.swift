@@ -45,7 +45,9 @@ struct RootView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if DemoMode.printPage, let spec = PrintPlanner.pages(format: DemoMode.printLandscape ? .monthLandscape : .monthCombined,
+                if DemoMode.staffing {
+                    StaffingAnalysisView(month: MonthKey(anchor))
+                } else if DemoMode.printPage, let spec = PrintPlanner.pages(format: DemoMode.printLandscape ? .monthLandscape : .monthCombined,
                                                                     half: .first, departments: store.book.departments,
                                                                     anchor: .today).first {
                     // 画面確認用：印刷する1枚をそのまま表示
@@ -223,6 +225,8 @@ struct GlassCapsule: ViewModifier {
 enum DemoMode {
     static var enabled: Bool { ProcessInfo.processInfo.arguments.contains("-demoLayout") }
     static var printPage: Bool { enabled && ProcessInfo.processInfo.arguments.contains("-demoPrintPage") }
+    static var staffing: Bool { enabled && ProcessInfo.processInfo.arguments.contains("-demoStaffing") }
+    static var hourly: Bool { enabled && ProcessInfo.processInfo.arguments.contains("-demoHourly") }
     static var printLandscape: Bool { ProcessInfo.processInfo.arguments.contains("-demoLandscapePage") }
 
     static func book() -> ShiftBook {
@@ -249,7 +253,13 @@ enum DemoMode {
                         patterns: [WeekPattern(id: "p\(i)", label: "通常", colorIndex: 0, days: weeks[i % weeks.count], activeFrom: nil)],
                         activePatternID: "p\(i)", periodPatterns: [])
         }
+        b.staffing.bands = [
+            StaffingBand(departmentID: "hall", startHour: 9, endHour: 18, weekday: 2, saturday: 3, holiday: 3),
+            StaffingBand(departmentID: "hall", startHour: 18, endHour: 23, weekday: 2, saturday: 2, holiday: 2),
+            StaffingBand(departmentID: "kitchen", startHour: 10, endHour: 21, weekday: 1, saturday: 2, holiday: 2)
+        ]
         let today = DayKey.today
+        b.staffing.setType(.busy, for: today.adding(days: 2))
         b.cells[CellKey(staffID: "1", day: today)] = CellEntry(inTime: "10:00", outTime: "19:30", blockID: nil, isOff: false)
         b.cells[CellKey(staffID: "2", day: today.adding(days: 1))] = CellEntry(inTime: "", outTime: "", blockID: "off2", isOff: true)
         return b
