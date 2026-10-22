@@ -5,8 +5,16 @@ import Observation
 @MainActor
 @Observable
 final class ShiftStore {
-    private(set) var book = ShiftBook()
+    var book = ShiftBook()
     private(set) var lastError: String?
+    /// 今日（日付が変わったら更新する。開いたまま日をまたいでも「今日」の印が古くならないように）
+    private(set) var today = DayKey.today
+
+    func refreshToday() {
+        let t = DayKey.today
+        if t != today { today = t }
+    }
+
     /// 編集できる状態か（初期値：見るだけ。うっかり変えないように）
     var editing = false
     /// 直前の変更（「元に戻す」に使う）
@@ -76,7 +84,8 @@ final class ShiftStore {
     func setBreakRules(_ rules: BreakRules) throws {
         var b = book
         b.breakRules = rules
-        try ShiftRecords.saveSettings(b, team: try ShiftRecords.currentTeam(db.viewContext))
+        // 2台で同期を始めたときにチームが2つできていても、どちらにも書く
+        for team in try ShiftRecords.allTeams(db.viewContext) { try ShiftRecords.saveSettings(b, team: team) }
         try db.save()
         book.breakRules = rules
     }
@@ -104,7 +113,8 @@ enum ShiftRecords {
             r.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: true)]
             return r
         }())
-        if let data = teams.first?.value(forKey: "settings") as? Data,
+        if teams.count > 1 { try mergeTeams(ctx) }
+        if let data = teams.first(where: { $0.value(forKey: "settings") != nil })?.value(forKey: "settings") as? Data,
            let settings = try? JSONDecoder().decode(TeamSettings.self, from: data) {
             book.breakRules = settings.breakRules
         }
@@ -224,6 +234,29 @@ enum ShiftRecords {
     /// チーム全体の設定を保存
     static func saveSettings(_ book: ShiftBook, team: NSManagedObject) throws {
         team.setValue(try JSONEncoder().encode(TeamSettings(breakRules: book.breakRules)), forKey: "settings")
+    }
+
+    static func allTeams(_ ctx: NSManagedObjectContext) throws -> [NSManagedObject] {
+        let req = NSFetchRequest<NSManagedObject>(entityName: ShiftModel.Entity.team)
+        req.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: true)]
+        let teams = try ctx.fetch(req)
+        return teams.isEmpty ? [try currentTeam(ctx)] : teams
+    }
+
+    /// 2台で同期を始めると、それぞれが作った「チーム」が2つになることがある。
+    /// いちばん古いチームに記録を寄せ、設定の無いほうを片付ける（記録を先に移すので、チームを消しても記録は消えない）
+    static func mergeTeams(_ ctx: NSManagedObjectContext) throws {
+        let req = NSFetchRequest<NSManagedObject>(entityName: ShiftModel.Entity.team)
+        req.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: true)]
+        let teams = try ctx.fetch(req)
+        guard teams.count > 1, let keep = teams.first else { return }
+        for extra in teams.dropFirst() {
+            if keep.value(forKey: "settings") == nil, let s = extra.value(forKey: "settings") { keep.setValue(s, forKey: "settings") }
+            for rel in ["departments", "templates", "staff", "cells"] {
+                for child in (extra.value(forKey: rel) as? Set<NSManagedObject>) ?? [] { child.setValue(keep, forKey: "team") }
+            }
+            ctx.delete(extra)
+        }
     }
 
     /// このアプリのチーム（無ければ作る。複数あれば一番古いもの）

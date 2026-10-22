@@ -10,19 +10,22 @@ struct SummaryView: View {
     var body: some View {
         let book = store.book
         let groups = book.staffByDepartment(visibleIn: month)
+        // 1人ずつの集計は一度だけ（見出しの合計と行で使い回す）
+        let sums = Dictionary(groups.flatMap(\.members).map { ($0.id, MonthSummary.of($0, month: month, in: book)) },
+                              uniquingKeysWith: { a, _ in a })
         List {
             ForEach(groups) { g in
                 Section {
                     if sizeClass != .compact { header }
                     ForEach(g.members) { m in
-                        row(m, book: book)
+                        row(m, book: book, s: sums[m.id] ?? MonthSummary())
                             .modifier(OptionalCoachTarget(id: m.id == groups.first?.members.first?.id ? "summaryLeave" : nil))
                     }
                 } header: {
                     HStack {
                         Text(g.department.name).foregroundStyle(PaletteColor.fg(g.department.colorIndex))
                         Spacer()
-                        let total = g.members.reduce(0.0) { $0 + MonthSummary.of($1, month: month, in: book).hours }
+                        let total = g.members.reduce(0.0) { $0 + (sums[$1.id]?.hours ?? 0) }
                         Text("\(g.members.count)人・合計 \(String(format: "%.1f", total))時間").monospacedDigit()
                     }
                 }
@@ -57,8 +60,7 @@ struct SummaryView: View {
     }
 
     @ViewBuilder
-    private func row(_ m: StaffMember, book: ShiftBook) -> some View {
-        let s = MonthSummary.of(m, month: month, in: book)
+    private func row(_ m: StaffMember, book: ShiftBook, s: MonthSummary) -> some View {
         let leave = PaidLeave.balance(of: m, month: month, in: book)
         if sizeClass == .compact {
             VStack(alignment: .leading, spacing: 6) {

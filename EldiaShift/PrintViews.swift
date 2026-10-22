@@ -251,6 +251,36 @@ private struct PrintTable: View {
 // MARK: - PDF にする
 
 enum PDFMaker {
+    /// 1枚ずつ作り、合間に画面を動かす（枚数が多くても固まって見えないように）
+    @MainActor
+    static func makeAsync(pages: [PrintPageSpec], book: ShiftBook, title: String,
+                          progress: (Int) -> Void = { _ in }) async -> Data {
+        let data = NSMutableData()
+        guard let consumer = CGDataConsumer(data: data as CFMutableData) else { return Data() }
+        var box = CGRect(origin: .zero, size: PrintPageView.a4)
+        guard let ctx = CGContext(consumer: consumer, mediaBox: &box, nil) else { return Data() }
+        for (i, spec) in pages.enumerated() {
+            progress(i + 1)
+            await Task.yield()
+            render(spec, book: book, title: title, into: ctx)
+        }
+        ctx.closePDF()
+        return data as Data
+    }
+
+    @MainActor
+    private static func render(_ spec: PrintPageSpec, book: ShiftBook, title: String, into ctx: CGContext) {
+        let view = PrintPageView(spec: spec, book: book, title: title)
+        var media = CGRect(origin: .zero, size: view.size)
+        let renderer = ImageRenderer(content: view)
+        renderer.proposedSize = ProposedViewSize(view.size)
+        renderer.render { _, draw in
+            ctx.beginPage(mediaBox: &media)
+            draw(ctx)
+            ctx.endPage()
+        }
+    }
+
     @MainActor
     static func make(pages: [PrintPageSpec], book: ShiftBook, title: String) -> Data {
         let data = NSMutableData()
@@ -286,6 +316,8 @@ struct PrintSheet: View {
     @State private var selected: Set<String> = []
     @State private var shareFile: ExportFile?
     @State private var busy = false
+    @State private var progress = 0
+    @State private var failure: String?
 
     var body: some View {
         let book = store.book
@@ -358,9 +390,21 @@ struct PrintSheet: View {
                 .disabled(pages.isEmpty || busy)
                 .padding(.horizontal, 16).padding(.vertical, 10)
                 .background(.bar)
+                .overlay {
+                    if busy {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                            Text("PDFを作成中… \(progress)/\(pages.count)枚").font(.subheadline).monospacedDigit()
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(.bar)
+                    }
+                }
             }
             .coachOverlay(.sheet)
             .sheet(item: $shareFile) { f in ShareSheet(items: [f.url]) }
+            .errorAlert($failure)
+            .interactiveDismissDisabled(busy)
             .presentationDetents([.large])
             .onAppear {
                 if selected.isEmpty { selected = Set(depts.map(\.id)) }
@@ -369,8 +413,9 @@ struct PrintSheet: View {
         }
     }
 
-    private func pdfURL(_ pages: [PrintPageSpec], book: ShiftBook) throws -> URL {
-        let data = PDFMaker.make(pages: pages, book: book, title: title)
+    private func pdfURL(_ pages: [PrintPageSpec], book: ShiftBook) async throws -> URL {
+        let data = await PDFMaker.makeAsync(pages: pages, book: book, title: title) { progress = $0 }
+        if data.isEmpty { throw CocoaError(.fileWriteUnknown) }
         let m = MonthKey(anchor)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("シフト表_\(m.year)年\(m.month)月.pdf")
         try data.write(to: url, options: .atomic)
@@ -379,15 +424,26 @@ struct PrintSheet: View {
 
     /// LINE・メール・AirDrop・ファイルに保存 など（iPad の共有）
     private func share(_ pages: [PrintPageSpec], book: ShiftBook) {
-        busy = true
-        defer { busy = false }
-        if let url = try? pdfURL(pages, book: book) { shareFile = ExportFile(url: url) }
+        guard !busy else { return }
+        busy = true; progress = 0
+        Task {
+            defer { busy = false }
+            do { shareFile = ExportFile(url: try await pdfURL(pages, book: book)) }
+            catch { failure = "PDFを作れませんでした（\(error.localizedDescription)）" }
+        }
     }
 
     private func printNow(_ pages: [PrintPageSpec], book: ShiftBook) {
-        busy = true
-        defer { busy = false }
-        guard let url = try? pdfURL(pages, book: book) else { return }
+        guard !busy else { return }
+        busy = true; progress = 0
+        Task {
+            defer { busy = false }
+            do { presentPrint(try await pdfURL(pages, book: book)) }
+            catch { failure = "印刷用のPDFを作れませんでした（\(error.localizedDescription)）" }
+        }
+    }
+
+    private func presentPrint(_ url: URL) {
         let info = UIPrintInfo(dictionary: nil)
         info.outputType = .grayscale
         info.jobName = url.deletingPathExtension().lastPathComponent
