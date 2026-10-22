@@ -142,17 +142,21 @@ struct StaffListView: View {
         return HStack(spacing: 12) {
             InitialAvatar(name: m.name, colorIndex: dept?.colorIndex ?? 8, size: 36)
             VStack(alignment: .leading, spacing: 2) {
-                Text(m.name).font(.body.weight(.semibold))
+                Text(m.name).font(.body.weight(.semibold)).lineLimit(1)
                 Text(wide ? "No.\(m.number)" : [dept?.name, p.map { $0.label }].compactMap { $0 }.joined(separator: "・"))
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
+            // 名前を縦に折り返さない（ほかの列より先に幅を取る）
+            .frame(minWidth: 96, alignment: .leading)
+            .layoutPriority(1)
             Spacer(minLength: 8)
             if wide {
-                Text(dept?.name ?? "—").font(.subheadline).frame(width: 96, alignment: .leading)
-                Text(p?.label ?? "—").font(.subheadline).foregroundStyle(.secondary).frame(width: 96, alignment: .leading)
-                Text(Self.usualHours(m, book: book)).font(.subheadline).monospacedDigit().frame(width: 120, alignment: .leading)
+                Text(dept?.name ?? "—").font(.subheadline).lineLimit(1).frame(width: 84, alignment: .leading)
+                Text(p?.label ?? "—").font(.subheadline).foregroundStyle(.secondary).lineLimit(1).frame(width: 72, alignment: .leading)
+                Text(Self.usualHours(m, book: book)).font(.subheadline).monospacedDigit().lineLimit(1)
+                    .minimumScaleFactor(0.8).frame(width: 112, alignment: .leading)
             }
-            status(m)
+            status(m).fixedSize()
         }
         .padding(.vertical, 2)
     }
