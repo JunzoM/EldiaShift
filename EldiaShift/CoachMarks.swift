@@ -75,7 +75,27 @@ final class CoachCenter {
 
     private(set) var active: CoachStep?
     /// 部品の位置（画面全体の座標）
-    @ObservationIgnored private(set) var frames: [String: CGRect] = [:]
+    @ObservationIgnored private var frames: [String: CGRect] = [:]
+    /// 部品の UIKit の部品（ツールバーのボタンは SwiftUI の座標が取れないことがあるので、画面上の位置はこちらから測る）
+    @ObservationIgnored private var views: [String: WeakView] = [:]
+
+    private final class WeakView {
+        weak var view: UIView?
+        init(_ v: UIView) { view = v }
+    }
+
+    /// 部品の今の位置（画面全体の座標）
+    func frame(of id: String) -> CGRect? {
+        if let v = views[id]?.view, let w = v.window {
+            let f = v.convert(v.bounds, to: w)
+            if f.width > 1, f.height > 1 { return f }
+        }
+        return frames[id]
+    }
+
+    func register(_ id: String, view: UIView) {
+        views[id] = WeakView(view)
+    }
     /// 位置が変わったら描き直すため
     private(set) var frameVersion = 0
 
@@ -107,7 +127,7 @@ final class CoachCenter {
         pending?.cancel()
         pending = Task { @MainActor in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            guard !Task.isCancelled, self.active == nil, self.frames[step.target] != nil else { return }
+            guard !Task.isCancelled, self.active == nil, self.frame(of: step.target) != nil else { return }
             self.active = step
             self.seen.insert(step.key)
         }
@@ -131,6 +151,7 @@ final class CoachCenter {
 
     func remove(_ id: String) {
         frames.removeValue(forKey: id)
+        views.removeValue(forKey: id)
         if active?.target == id { active = nil }
     }
 }
@@ -146,6 +167,7 @@ extension View {
                     .onChange(of: f) { CoachCenter.shared.report(id, frame: f) }
                     .onDisappear { CoachCenter.shared.remove(id) }
             }
+            CoachViewMarker(id: id).allowsHitTesting(false)
         }
     }
 
@@ -158,18 +180,20 @@ extension View {
 private struct CoachOverlayHost: View {
     let scope: CoachScope
     @State private var center = CoachCenter.shared
+    /// この幕の左上（画面全体の座標。UIKit で測る）
+    @State private var hostOrigin: CGPoint = .zero
 
     var body: some View {
         GeometryReader { g in
-            let origin = g.frame(in: .global).origin
-            if let step = center.active, step.scope == scope, let f = center.frames[step.target] {
+            if let step = center.active, step.scope == scope, let f = center.frame(of: step.target) {
                 let _ = center.frameVersion
-                CoachOverlay(step: step, hole: f.offsetBy(dx: -origin.x, dy: -origin.y), size: g.size) {
+                CoachOverlay(step: step, hole: f.offsetBy(dx: -hostOrigin.x, dy: -hostOrigin.y), size: g.size) {
                     withAnimation(.easeOut(duration: 0.2)) { center.dismiss() }
                 }
                 .transition(.opacity)
             }
         }
+        .background(WindowOriginReader(origin: $hostOrigin).allowsHitTesting(false))
         .ignoresSafeArea()
         .animation(.easeOut(duration: 0.25), value: center.active)
         .allowsHitTesting(center.active?.scope == scope)
@@ -286,6 +310,59 @@ private struct BubbleShape: Shape {
             ?? 0
         pts.insert(contentsOf: tail, at: i)
         return Sketch.path(through: Sketch.jitter(pts, seed: seed, amount: 1.6), closed: true)
+    }
+}
+
+/// 部品の場所に置く見えない UIView（画面上の位置を UIKit で測るため）
+private struct CoachViewMarker: UIViewRepresentable {
+    let id: String
+
+    func makeUIView(context: Context) -> UIView {
+        let v = UIView()
+        v.isUserInteractionEnabled = false
+        v.backgroundColor = .clear
+        CoachCenter.shared.register(id, view: v)
+        return v
+    }
+
+    func updateUIView(_ v: UIView, context: Context) {
+        CoachCenter.shared.register(id, view: v)
+    }
+}
+
+/// 幕の左上の位置（画面全体の座標）
+private struct WindowOriginReader: UIViewRepresentable {
+    @Binding var origin: CGPoint
+
+    func makeUIView(context: Context) -> ReaderView {
+        let v = ReaderView()
+        v.isUserInteractionEnabled = false
+        v.onMove = { p in if origin != p { origin = p } }
+        return v
+    }
+
+    func updateUIView(_ v: ReaderView, context: Context) {
+        v.onMove = { p in if origin != p { origin = p } }
+    }
+
+    final class ReaderView: UIView {
+        var onMove: ((CGPoint) -> Void)?
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            report()
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            report()
+        }
+
+        private func report() {
+            guard let w = window else { return }
+            let p = convert(CGPoint.zero, to: w)
+            DispatchQueue.main.async { [weak self] in self?.onMove?(p) }
+        }
     }
 }
 
