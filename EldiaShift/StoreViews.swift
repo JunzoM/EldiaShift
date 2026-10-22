@@ -125,35 +125,38 @@ struct StoreListView: View {
         Group {
             if sizeClass == .regular && !inSheet {
                 let shown = stores.first { $0.id == (shownID ?? store.currentStoreID) } ?? stores[0]
-                HStack(alignment: .top, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            Text("店舗一覧").font(.headline)
-                            Spacer()
-                            Button { editing = store.newStore() } label: { Label("新規登録", systemImage: "plus") }
-                                .buttonStyle(.borderedProminent).controlSize(.small)
+                GeometryReader { geo in
+                    if geo.size.width >= 760 {
+                        // 横に広いとき：左に一覧、右に店舗の情報
+                        HStack(alignment: .top, spacing: 16) {
+                            listPanel(stores, book: book, shown: shown)
+                                .frame(width: min(360, geo.size.width * 0.4))
+                            detailPanel(shown)
                         }
-                        ScrollView {
-                            VStack(spacing: 8) {
-                                ForEach(stores) { st in
-                                    Button { shownID = st.id } label: { card(st, book: book, highlighted: st.id == shown.id) }
-                                        .buttonStyle(.plain)
+                        .padding(16)
+                    } else {
+                        // iPad 縦向きなど幅が足りないとき：上に一覧（横に並べる）、下に店舗の情報
+                        VStack(spacing: 16) {
+                            VStack(alignment: .leading, spacing: 10) {
+                                listHeader
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 8) {
+                                        ForEach(stores) { st in
+                                            Button { shownID = st.id } label: {
+                                                card(st, book: book, highlighted: st.id == shown.id).frame(width: 300)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
                                 }
                             }
+                            .padding(16)
+                            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            detailPanel(shown)
                         }
+                        .padding(16)
                     }
-                    .padding(16)
-                    .frame(width: 360)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-
-                    ScrollView {
-                        StoreDetailPanel(storeInfo: shown, onEdit: { editing = shown })
-                    }
-                    .frame(maxWidth: .infinity)
-                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
-                .padding(16)
                 .background(Color(.systemGroupedBackground))
             } else {
                 List {
@@ -195,6 +198,40 @@ struct StoreListView: View {
         }
         .sheet(item: $editing) { st in StoreEditView(storeInfo: st) }
         .errorAlert($error)
+    }
+
+    private var listHeader: some View {
+        HStack {
+            Text("店舗一覧").font(.headline)
+            Spacer()
+            Button { editing = store.newStore() } label: { Label("新規登録", systemImage: "plus") }
+                .buttonStyle(.borderedProminent).controlSize(.small)
+        }
+    }
+
+    private func listPanel(_ stores: [Store], book: ShiftBook, shown: Store) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            listHeader
+            ScrollView {
+                VStack(spacing: 8) {
+                    ForEach(stores) { st in
+                        Button { shownID = st.id } label: { card(st, book: book, highlighted: st.id == shown.id) }
+                            .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private func detailPanel(_ shown: Store) -> some View {
+        ScrollView {
+            StoreDetailPanel(storeInfo: shown, onEdit: { editing = shown })
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     /// 一覧の1店舗（写真・名前・住所・表示中の印）
@@ -240,7 +277,8 @@ struct StoreDetailPanel: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
                 Text(st.name.isEmpty ? "（名前なし）" : st.name).font(.title2.weight(.bold))
-                Spacer()
+                    .lineLimit(2).minimumScaleFactor(0.7)
+                Spacer(minLength: 8)
                 Button("編集", action: onEdit).buttonStyle(.bordered)
             }
             GeometryReader { g in
@@ -283,7 +321,8 @@ struct StoreDetailPanel: View {
     private func info(_ label: String, _ value: String) -> some View {
         VStack(spacing: 0) {
             HStack(alignment: .top) {
-                Text(label).font(.subheadline).foregroundStyle(.secondary).frame(width: 96, alignment: .leading)
+                Text(label).font(.subheadline).foregroundStyle(.secondary).lineLimit(1).fixedSize()
+                    .frame(minWidth: 80, alignment: .leading)
                 Text(value.isEmpty ? "—" : value).font(.subheadline).frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
             }
@@ -389,7 +428,7 @@ struct StoreEditView: View {
             }
             .onChange(of: pickedPhoto) {
                 guard let item = pickedPhoto else { return }
-                Task {
+                Task { @MainActor in
                     if let data = try? await item.loadTransferable(type: Data.self), let small = StorePhoto.shrink(data) {
                         storeInfo.photo = small
                     } else {
