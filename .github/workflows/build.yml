@@ -52,6 +52,8 @@ jobs:
           # Swift Testing（集計のテスト）の件数も残し、1件も動いていなければ失敗にする
           summary=$({ grep -E "Test run with [0-9]+ tests?" test.log || true; } | tail -1)
           echo "::notice title=Swift Testing::${summary:-実行結果が見つかりません}"
+          # 速さの計測（PerfBench）を注記に出す
+          { grep -oE "BENCH [^ ]+ [0-9.]+ms" test.log || true; } | sort -u | while IFS= read -r line; do echo "::notice title=Bench::$line"; done
           # 失敗したテストの内容を注記に出す（ログを開かなくても原因が分かるように）
           { grep -E "recorded an issue|Expectation failed|failed after|Test Case .* failed|error:|Fatal error|crashed" test.log || true; } \
             | sed -E 's/^.*(EldiaShiftTests\/[A-Za-z]+\.swift:[0-9]+)/\1/' | sort -u | head -30 \
