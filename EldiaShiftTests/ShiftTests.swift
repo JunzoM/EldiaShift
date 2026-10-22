@@ -1134,3 +1134,103 @@ struct MultiStoreTests {
         #expect(BrandColor.contrastWithWhite(0xFDE68A) < 3)
     }
 }
+
+@Suite("速さの改良（計算の結果が変わらないこと）")
+@MainActor
+struct SpeedCorrectnessTests {
+    @Test("曜日・日のずらし・月の日数を整数で計算しても Calendar と同じ")
+    func dateArithmetic() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        var d = DayKey(1999, 12, 25)
+        var date = cal.date(from: DateComponents(year: 1999, month: 12, day: 25))!
+        for _ in 0..<(366 * 40) {
+            #expect(d.weekday == cal.component(.weekday, from: date) - 1)
+            let c = cal.dateComponents([.year, .month, .day], from: date)
+            #expect((d.year, d.month, d.day) == (c.year!, c.month!, c.day!))
+            d = d.adding(days: 1)
+            date = cal.date(byAdding: .day, value: 1, to: date)!
+        }
+        #expect(DayKey(2026, 3, 1).adding(days: -1) == DayKey(2026, 2, 28))
+        #expect(DayKey(2028, 3, 1).adding(days: -1) == DayKey(2028, 2, 29))
+        #expect(DayKey(2100, 3, 1).adding(days: -1) == DayKey(2100, 2, 28))
+        #expect(MonthKey(2028, 2).days.count == 29)
+        #expect(MonthKey(2026, 12).days.last == DayKey(2026, 12, 31))
+        #expect(DayKey(2026, 1, 5).description == "2026-01-05")
+        #expect(DayKey(2026, 11, 23).description == "2026-11-23")
+    }
+
+    @Test("時刻の読み取り（速い書き方でも同じ）")
+    func clockParse() {
+        #expect(ClockTime.parse("9:00") == 540)
+        #expect(ClockTime.parse("09:30") == 570)
+        #expect(ClockTime.parse("24:00") == 1440)
+        #expect(ClockTime.parse("0:00") == 0)
+        for bad in ["", "9", "24:30", "25:00", "9:60", "a:00", "9:00:00", ":30", "9:"] {
+            #expect(ClockTime.parse(bad) == nil, "\(bad)")
+        }
+    }
+
+    @Test("まとめて数えた時間帯別の人数・不足は、1時間ずつ数えたときと同じ")
+    func countsMatch() {
+        let book = PerfBench.bigBook()
+        let days = MonthKey(2026, 11).days
+        let calc = GridMemo.make(book, days: days, showInactive: false)
+        for g in calc.groups {
+            for d in days.prefix(10) {
+                let c = calc.table.counts(g.members, on: d)
+                for h in 0..<24 {
+                    let slow = Headcount.working(g.members, on: d, hour: h, in: book)
+                    #expect(c[h] == slow)
+                    #expect(calc.hourly.count(g.department.id, on: d, hour: h) == slow)
+                    #expect(calc.table.working(g.members, on: d, hour: h) == slow)
+                }
+                if book.staffing.hasPlan(for: g.department.id) {
+                    let slowGap = StaffingCheck.gap(book.staffing, department: g.department.id, members: g.members, on: d) {
+                        Headcount.working($0, on: $1, hour: $2, in: book)
+                    }
+                    #expect(calc.gaps[g.department.id]?[d] == slowGap)
+                    for h in 0..<24 { #expect(calc.needs[g.department.id]?[d]?[h] == book.staffing.need(g.department.id, on: d, hour: h)) }
+                }
+            }
+        }
+    }
+
+    @Test("部門・ひな形・店舗の引きは、変えるとすぐ作り直される")
+    func indexFollowsChanges() {
+        var b = PerfBench.bigBook()
+        #expect(b.storeID(ofDepartment: "b-make") == "b")
+        b.departments[3].storeID = "a"
+        #expect(b.storeID(ofDepartment: "b-make") == "a")
+        b.stores.removeAll { $0.id == "a" }
+        #expect(b.storeID(ofDepartment: "make") == "b")
+        b.templates[0].label = "朝"
+        #expect(b.block("t1", for: b.staff[0])?.label == "朝")
+        #expect(b.storeID(ofDepartment: "なし") == b.allStores[0].id)
+    }
+
+    @Test("まとめて書き換えても、1マスずつと同じ内容が保存される（重複も片付く）")
+    func batchUpsert() throws {
+        let store = ShiftStore(db: ShiftDatabase(inMemory: true))
+        try store.replaceAll(with: PerfBench.bigBook())
+        let ctx = store.db.viewContext
+        // 同じ人・同じ日の記録をわざと2つ作る
+        let dupKey = CellKey(staffID: "s1", day: DayKey(2026, 11, 20))
+        try ShiftRecords.upsertCell(dupKey, CellEntry(inTime: "08:00", outTime: "12:00", blockID: nil, isOff: false), in: ctx)
+        let extra = NSEntityDescription.insertNewObject(forEntityName: ShiftModel.Entity.cell, into: ctx)
+        extra.setValue("s1", forKey: "staffKey")
+        extra.setValue(dupKey.day.description, forKey: "day")
+        try ctx.save()
+        var items: [(CellKey, CellEntry?)] = [(dupKey, CellEntry(inTime: "09:00", outTime: "18:00", blockID: "t1", isOff: false))]
+        items.append((CellKey(staffID: "s0", day: DayKey(2026, 11, 1)), nil))
+        items.append((CellKey(staffID: "s2", day: DayKey(2026, 11, 21)), CellEntry(inTime: "", outTime: "", blockID: "off1", isOff: true)))
+        try store.setCells(items, title: "t")
+        let req = NSFetchRequest<NSManagedObject>(entityName: ShiftModel.Entity.cell)
+        req.predicate = NSPredicate(format: "staffKey == %@ AND day == %@", "s1", dupKey.day.description)
+        #expect(try ctx.fetch(req).count == 1)
+        let loaded = try ShiftRecords.load(ctx)
+        #expect(loaded.cells[dupKey]?.blockID == "t1")
+        #expect(loaded.cells[CellKey(staffID: "s0", day: DayKey(2026, 11, 1))] == nil)
+        #expect(loaded.cells[CellKey(staffID: "s2", day: DayKey(2026, 11, 21))]?.isOff == true)
+    }
+}

@@ -5,7 +5,9 @@ import Observation
 @MainActor
 @Observable
 final class ShiftStore {
-    var book = ShiftBook()
+    var book = ShiftBook() { didSet { revision &+= 1 } }
+    /// book が変わるたびに増える番号（重い計算を、中身が変わったときだけやり直すための目印）
+    @ObservationIgnored private(set) var revision = 0
     private(set) var lastError: String?
     /// 今日（日付が変わったら更新する。開いたまま日をまたいでも「今日」の印が古くならないように）
     private(set) var today = DayKey.today
@@ -145,7 +147,8 @@ final class ShiftStore {
     }
 
     private func write(_ items: [(CellKey, CellEntry?)]) throws {
-        for (k, e) in items { try ShiftRecords.upsertCell(k, e, in: db.viewContext) }
+        // 1マスずつ探さず、関係する日の記録を1回でまとめて読んでから書き換える
+        try ShiftRecords.upsertCells(items, in: db.viewContext)
         try db.save()
         for (k, e) in items {
             if let e { book.cells[k] = e } else { book.cells.removeValue(forKey: k) }
@@ -431,6 +434,44 @@ enum ShiftRecords {
         r.setValue(entry.isOff, forKey: "isOff")
         r.setValue(entry.storeID ?? "", forKey: "storeKey")
         r.setValue(Date(), forKey: "updatedAt")
+    }
+
+    /// 何マスかをまとめて書き換える（関係する日の記録を1回の読み込みで集め、同じ人・同じ日の重複も片付ける）
+    static func upsertCells(_ items: [(CellKey, CellEntry?)], in ctx: NSManagedObjectContext) throws {
+        guard !items.isEmpty else { return }
+        if items.count == 1 { return try upsertCell(items[0].0, items[0].1, in: ctx) }
+        let days = Array(Set(items.map { $0.0.day.description }))
+        let req = NSFetchRequest<NSManagedObject>(entityName: ShiftModel.Entity.cell)
+        req.predicate = NSPredicate(format: "day IN %@", days)
+        var existing: [String: [NSManagedObject]] = [:]
+        for r in try ctx.fetch(req) { existing["\(r.str("staffKey"))|\(r.str("day"))", default: []].append(r) }
+        var team: NSManagedObject?
+        let now = Date()
+        for (key, entry) in items {
+            let rows = existing[key.description] ?? []
+            guard let entry else {
+                rows.forEach(ctx.delete)
+                existing[key.description] = []
+                continue
+            }
+            let r: NSManagedObject
+            if let first = rows.first {
+                r = first
+                rows.dropFirst().forEach(ctx.delete)
+            } else {
+                if team == nil { team = try currentTeam(ctx) }
+                r = insert(ShiftModel.Entity.cell, ctx, team: team!, now: now)
+                r.setValue(key.staffID, forKey: "staffKey")
+                r.setValue(key.day.description, forKey: "day")
+            }
+            existing[key.description] = [r]
+            r.setValue(entry.inTime, forKey: "inTime")
+            r.setValue(entry.outTime, forKey: "outTime")
+            r.setValue(entry.blockID ?? "", forKey: "blockKey")
+            r.setValue(entry.isOff, forKey: "isOff")
+            r.setValue(entry.storeID ?? "", forKey: "storeKey")
+            r.setValue(now, forKey: "updatedAt")
+        }
     }
 
     /// チーム全体の設定を保存

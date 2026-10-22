@@ -95,6 +95,13 @@ struct StaffingPlan: Codable, Equatable, Sendable {
     }
 
     func hasPlan(for departmentID: String) -> Bool { bands.contains { $0.departmentID == departmentID } }
+
+    /// その日の 0〜23時台それぞれの必要人数（決めていない時間は nil）。日の型を1回だけ調べる
+    func needs(_ departmentID: String, on d: DayKey) -> [Int?] {
+        let t = type(of: d)
+        let mine = bands.filter { $0.departmentID == departmentID }
+        return (0..<24).map { h in mine.filter { $0.covers(hour: h) }.map { $0.need(t) }.max() }
+    }
 }
 
 // MARK: - 実際の人数とくらべる
@@ -117,9 +124,22 @@ enum StaffingCheck {
     static func gap(_ plan: StaffingPlan, department: String, members: [StaffMember], on d: DayKey,
                     working: (_ members: [StaffMember], _ day: DayKey, _ hour: Int) -> Int) -> StaffingGap {
         var g = StaffingGap()
+        let needs = plan.needs(department, on: d)
         for h in 0..<24 {
-            guard let need = plan.need(department, on: d, hour: h) else { continue }
+            guard let need = needs[h] else { continue }
             let n = working(members, d, h)
+            if n < need { g.short += need - n; g.shortHours += 1 } else if n > need { g.over += n - need }
+        }
+        return g
+    }
+
+    /// 数えておいた24時間分の人数で、1日・1部門の不足／過剰を出す
+    static func gap(_ plan: StaffingPlan, department: String, on d: DayKey, counts: [Int]) -> StaffingGap {
+        var g = StaffingGap()
+        let needs = plan.needs(department, on: d)
+        for h in 0..<24 {
+            guard let need = needs[h] else { continue }
+            let n = h < counts.count ? counts[h] : 0
             if n < need { g.short += need - n; g.shortHours += 1 } else if n > need { g.over += n - need }
         }
         return g
