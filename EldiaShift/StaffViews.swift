@@ -238,6 +238,8 @@ struct StaffEditView: View {
     @State private var initial: StaffMember?
     @State private var askDiscard = false
     @State private var pickedPhoto: PhotosPickerItem?
+    /// 保存すると表が変わる日（確認してから保存する）
+    @State private var pendingPreview: PatternChecks.Preview?
 
     private var dirty: Bool { initial.map { $0 != member } ?? false }
 
@@ -397,6 +399,14 @@ struct StaffEditView: View {
             }
             .navigationBarBackButtonHidden(dirty && !isNew && !inSheet)
             .discardGuard(dirty: dirty, asking: $askDiscard) { dismiss() }
+            .confirmationDialog("表が変わります。保存しますか？",
+                                isPresented: Binding(get: { pendingPreview != nil }, set: { if !$0 { pendingPreview = nil } }),
+                                titleVisibility: .visible) {
+                Button("保存する") { save(confirmed: true) }
+                Button("戻って直す", role: .cancel) {}
+            } message: {
+                Text(pendingPreview?.message ?? "")
+            }
             .onAppear { if initial == nil { initial = member } }
             .onChange(of: pickedPhoto) {
                 guard let item = pickedPhoto else { return }
@@ -420,7 +430,7 @@ struct StaffEditView: View {
                 if let impact, impact.enteredDays > 0, member.leaveDate.isEmpty {
                     Button("削除せずに今日で退職にする") {
                         member.leaveDate = store.today.description
-                        save()
+                        save(confirmed: true)
                     }
                 }
                 Button("削除する", role: .destructive) {
@@ -480,11 +490,19 @@ struct StaffEditView: View {
         return [book.allStores.count > 1 ? st?.name : nil, dept?.name ?? "部門なし"].compactMap { $0 }.joined(separator: "・")
     }
 
-    private func save() {
+    /// confirmed：表が変わる日の確認を済ませた（または不要）
+    private func save(confirmed: Bool = false) {
         member.name = member.name.trimmingCharacters(in: .whitespaces)
         if let leave = DayKey(member.leaveDate), leave < DayKey.today { member.active = false }
         if member.activePatternID == nil || !member.patterns.contains(where: { $0.id == member.activePatternID }) {
             member.activePatternID = member.patterns.first?.id
+        }
+        if !confirmed, !isNew, let initial {
+            let preview = PatternChecks.preview(old: initial, new: member, book: store.book, today: store.today)
+            if !preview.isEmpty {
+                pendingPreview = preview
+                return
+            }
         }
         do {
             try store.save(member)
@@ -649,6 +667,10 @@ struct PeriodPatternEditView: View {
                     if days.isEmpty {
                         Text("終了日は開始日以降にしてください").font(.footnote).foregroundStyle(.red)
                     }
+                    ForEach(PatternChecks.overlapping(pattern, in: periods)) { o in
+                        Text("「\(o.label)」（\(o.startDate ?? "")〜\(o.endDate ?? "")）と期間が重なっています。重なった日はどちらか一方しか使われないので、期間をずらしてください。")
+                            .font(.footnote).foregroundStyle(.red)
+                    }
                 }
                 Section("色") { ColorChoice(index: $pattern.colorIndex) }
 
@@ -714,7 +736,7 @@ struct PeriodPatternEditView: View {
                         else { periods.append(pattern) }
                         dismiss()
                     }
-                    .disabled(days.isEmpty)
+                    .disabled(days.isEmpty || !PatternChecks.overlapping(pattern, in: periods).isEmpty)
                 }
             }
             .confirmationDialog("「\(pattern.label)」を削除しますか？", isPresented: $confirmDelete, titleVisibility: .visible) {
