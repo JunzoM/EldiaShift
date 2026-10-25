@@ -3,18 +3,66 @@ import SwiftUI
 // MARK: - 見本デザインに寄せた共通の部品
 
 /// 名前の頭文字の丸（顔写真の代わり）
+/// 顔写真があれば写真を丸く出す
 struct InitialAvatar: View {
     let name: String
     let colorIndex: Int
     var size: CGFloat = 30
+    var photo: Data? = nil
 
     var body: some View {
-        Text(String(name.trimmingCharacters(in: .whitespaces).prefix(1)))
-            .font(.system(size: size * 0.45, weight: .bold))
-            .foregroundStyle(PaletteColor.fg(colorIndex))
-            .frame(width: size, height: size)
-            .background(PaletteColor.bg(colorIndex), in: Circle())
-            .accessibilityHidden(true)
+        Group {
+            if let photo, let img = StaffPhoto.image(photo) {
+                Image(uiImage: img).resizable().scaledToFill()
+                    .frame(width: size, height: size)
+                    .clipShape(Circle())
+            } else {
+                Text(String(name.trimmingCharacters(in: .whitespaces).prefix(1)))
+                    .font(.system(size: size * 0.45, weight: .bold))
+                    .foregroundStyle(PaletteColor.fg(colorIndex))
+                    .frame(width: size, height: size)
+                    .background(PaletteColor.bg(colorIndex), in: Circle())
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// スタッフの顔写真（縮める・表示用に読み込んだ画像を使い回す）
+@MainActor
+enum StaffPhoto {
+    /// 一覧・表で何度も描くので、読み込んだ画像を覚えておく（同じ写真を毎回読み込まない）
+    private static let cache: NSCache<NSString, UIImage> = {
+        let c = NSCache<NSString, UIImage>()
+        c.countLimit = 300
+        return c
+    }()
+
+    static func image(_ data: Data) -> UIImage? {
+        // 写真の中身で見分ける（大きさ＋末尾。JPEG の先頭はどれも似ているので末尾を使う）
+        var h = Hasher()
+        h.combine(data.count)
+        data.suffix(512).withUnsafeBytes { h.combine(bytes: $0) }
+        let key = String(h.finalize()) as NSString
+        if let hit = cache.object(forKey: key) { return hit }
+        guard let img = UIImage(data: data) else { return nil }
+        cache.setObject(img, forKey: key)
+        return img
+    }
+
+    /// 選んだ写真を真ん中で正方形に切り抜き、240px の JPEG に縮める（十数KB）
+    nonisolated static func shrink(_ data: Data) -> Data? {
+        guard let img = UIImage(data: data), img.size.width > 0, img.size.height > 0 else { return nil }
+        let side: CGFloat = 240
+        let k = side / min(img.size.width, img.size.height)
+        let drawn = CGSize(width: img.size.width * k, height: img.size.height * k)
+        let origin = CGPoint(x: (side - drawn.width) / 2, y: (side - drawn.height) / 2)
+        let fmt = UIGraphicsImageRendererFormat()
+        fmt.scale = 1
+        let out = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: fmt).image { _ in
+            img.draw(in: CGRect(origin: origin, size: drawn))
+        }
+        return out.jpegData(compressionQuality: 0.7)
     }
 }
 
@@ -226,7 +274,7 @@ struct OffRequestListView: View {
                 }
                 ForEach(shown) { r in
                     HStack(spacing: 12) {
-                        InitialAvatar(name: r.member.name, colorIndex: r.department?.colorIndex ?? 8, size: 34)
+                        InitialAvatar(name: r.member.name, colorIndex: r.department?.colorIndex ?? 8, size: 34, photo: r.member.photo)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(r.member.name).font(.body.weight(.semibold))
                             Text(r.department?.name ?? "").font(.caption).foregroundStyle(.secondary)
@@ -437,5 +485,32 @@ struct BackupView: View {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+}
+
+// MARK: - 保存していない変更の確認（HOTEL SHIFT から移植）
+
+/// 変更があるとき：下へのスワイプで閉じない・「やめる」で破棄してよいか確かめる
+struct DiscardGuard: ViewModifier {
+    let dirty: Bool
+    @Binding var asking: Bool
+    let discard: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .interactiveDismissDisabled(dirty)
+            .confirmationDialog("変更を破棄しますか？", isPresented: $asking, titleVisibility: .visible) {
+                Button("変更を破棄", role: .destructive) { discard() }
+                Button("編集を続ける", role: .cancel) {}
+            } message: {
+                Text("保存していない変更があります。")
+            }
+    }
+}
+
+extension View {
+    /// 保存していない変更があるときの確認を付ける（「やめる」は dirty なら asking を true にする）
+    func discardGuard(dirty: Bool, asking: Binding<Bool>, discard: @escaping () -> Void) -> some View {
+        modifier(DiscardGuard(dirty: dirty, asking: asking, discard: discard))
     }
 }

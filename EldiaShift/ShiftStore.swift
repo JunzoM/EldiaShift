@@ -296,6 +296,20 @@ enum ShiftRecords {
         var offRequests: [String]? = nil
         /// 掛け持ち先の店舗。前の版の記録には無い
         var extraStoreIDs: [String]? = nil
+        /// 雇用形態・顔写真。前の版の記録には無い
+        var employment: String? = nil
+        var photo: Data? = nil
+
+        init(_ s: StaffMember) {
+            timeBlocks = s.timeBlocks
+            patterns = s.patterns
+            activePatternID = s.activePatternID
+            periodPatterns = s.periodPatterns
+            offRequests = s.offRequests
+            extraStoreIDs = s.extraStoreIDs
+            employment = s.employment.isEmpty ? nil : s.employment
+            photo = s.photo
+        }
     }
 
     static func load(_ ctx: NSManagedObjectContext) throws -> ShiftBook {
@@ -340,7 +354,8 @@ enum ShiftRecords {
                                joinDate: r.str("joinDate"), leaveDate: r.str("leaveDate"),
                                timeBlocks: detail?.timeBlocks ?? [], patterns: detail?.patterns ?? [],
                                activePatternID: detail?.activePatternID, periodPatterns: detail?.periodPatterns ?? [],
-                               offRequests: detail?.offRequests ?? [], extraStoreIDs: detail?.extraStoreIDs ?? [])
+                               offRequests: detail?.offRequests ?? [], extraStoreIDs: detail?.extraStoreIDs ?? [],
+                               employment: detail?.employment ?? "", photo: detail?.photo)
         }
 
         for r in try newestByKey(fetch(ShiftModel.Entity.cell, ctx), keyOf: { "\($0.str("staffKey"))|\($0.str("day"))" }, ctx: ctx) {
@@ -393,10 +408,7 @@ enum ShiftRecords {
             r.setValue(s.active, forKey: "active")
             r.setValue(s.joinDate, forKey: "joinDate")
             r.setValue(s.leaveDate, forKey: "leaveDate")
-            let detail = StaffDetail(timeBlocks: s.timeBlocks, patterns: s.patterns,
-                                     activePatternID: s.activePatternID, periodPatterns: s.periodPatterns,
-                                     offRequests: s.offRequests, extraStoreIDs: s.extraStoreIDs)
-            r.setValue(try encoder.encode(detail), forKey: "detail")
+            r.setValue(try encoder.encode(StaffDetail(s)), forKey: "detail")
         }
         for (k, c) in book.cells {
             let r = insert(ShiftModel.Entity.cell, ctx, team: team, now: now)
