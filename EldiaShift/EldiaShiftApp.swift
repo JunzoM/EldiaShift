@@ -61,6 +61,8 @@ struct RootView: View {
                 store.refreshIfNeeded()
                 store.refreshToday()
             }
+            // アプリを離れたら、人件費はまた隠す
+            if phase == .background { LaborCostLock.shared.lock() }
         }
         // 開いたまま日付が変わったとき
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: RunLoop.main)) { _ in

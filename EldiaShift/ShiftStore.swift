@@ -216,6 +216,7 @@ final class ShiftStore {
         book.breakRules = b.breakRules
         book.staffing = b.staffing
         book.labor = b.labor
+        book.pay = b.pay
         book.published = b.published
         book.stores = b.stores
         book.brandColor = b.brandColor
@@ -260,6 +261,8 @@ final class ShiftStore {
 
     func setLaborRules(_ rules: LaborRules) throws { try updateSettings { $0.labor = rules } }
 
+    func setPayRules(_ rules: PayRules) throws { try updateSettings { $0.pay = rules } }
+
     /// その月をスタッフに公開した（今の内容を「公開した内容」として残す。新しい3か月分だけ持つ）
     func markPublished(_ month: MonthKey) throws {
         let snap = PublishedMonth.snapshot(of: book, month: month)
@@ -299,6 +302,8 @@ enum ShiftRecords {
         /// 雇用形態・顔写真。前の版の記録には無い
         var employment: String? = nil
         var photo: Data? = nil
+        /// 給与の決まり。前の版の記録には無い
+        var wages: [WageEntry]? = nil
 
         init(_ s: StaffMember) {
             timeBlocks = s.timeBlocks
@@ -309,6 +314,7 @@ enum ShiftRecords {
             extraStoreIDs = s.extraStoreIDs
             employment = s.employment.isEmpty ? nil : s.employment
             photo = s.photo
+            wages = s.wages.isEmpty ? nil : s.wages
         }
     }
 
@@ -326,6 +332,7 @@ enum ShiftRecords {
             book.breakRules = settings.breakRules
             book.staffing = settings.staffing ?? StaffingPlan()
             book.labor = settings.labor ?? LaborRules()
+            book.pay = settings.pay ?? PayRules()
             book.published = settings.published ?? []
             book.stores = settings.stores ?? []
             book.brandColor = settings.brandColor
@@ -355,7 +362,7 @@ enum ShiftRecords {
                                timeBlocks: detail?.timeBlocks ?? [], patterns: detail?.patterns ?? [],
                                activePatternID: detail?.activePatternID, periodPatterns: detail?.periodPatterns ?? [],
                                offRequests: detail?.offRequests ?? [], extraStoreIDs: detail?.extraStoreIDs ?? [],
-                               employment: detail?.employment ?? "", photo: detail?.photo)
+                               employment: detail?.employment ?? "", photo: detail?.photo, wages: detail?.wages ?? [])
         }
 
         for r in try newestByKey(fetch(ShiftModel.Entity.cell, ctx), keyOf: { "\($0.str("staffKey"))|\($0.str("day"))" }, ctx: ctx) {
@@ -489,7 +496,7 @@ enum ShiftRecords {
     /// チーム全体の設定を保存
     static func saveSettings(_ book: ShiftBook, team: NSManagedObject) throws {
         team.setValue(try JSONEncoder().encode(TeamSettings(breakRules: book.breakRules, staffing: book.staffing,
-                                                                    labor: book.labor, published: book.published,
+                                                                    labor: book.labor, pay: book.pay, published: book.published,
                                                                     stores: book.stores, brandColor: book.brandColor)), forKey: "settings")
     }
 
@@ -574,6 +581,7 @@ struct TeamSettings: Codable {
     /// 前の版で保存した設定には無い
     var staffing: StaffingPlan?
     var labor: LaborRules?
+    var pay: PayRules? = nil
     var published: [PublishedMonth]?
     var stores: [Store]? = nil
     var brandColor: UInt32? = nil

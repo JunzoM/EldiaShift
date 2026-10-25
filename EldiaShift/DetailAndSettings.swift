@@ -193,6 +193,7 @@ struct SettingsView: View {
                         LabeledContent("休憩の決まり", value: store.book.breakRules.summary)
                     }
                     NavigationLink { LaborRulesView() } label: { Text("労務の注意（連勤・勤務の間隔・有休5日）") }
+                    NavigationLink { PayRulesView() } label: { Text("人件費（割増・隠す設定）") }
                     NavigationLink { StaffingSettingsView() } label: {
                         LabeledContent("適正人員", value: store.book.staffing.isEmpty ? "未設定" : "\(store.book.staffing.bands.count)件の時間帯")
                     }
@@ -255,7 +256,19 @@ struct SettingsView: View {
         }
     }
 
+    /// 人件費を隠している端末では、給与も入るバックアップを書き出す前に本人の確認をする
     private func export() {
+        Task { @MainActor in
+            let lock = LaborCostLock.shared
+            if !lock.canView {
+                await lock.unlock()
+                guard lock.canView else { return }
+            }
+            writeBackup()
+        }
+    }
+
+    private func writeBackup() {
         do {
             let data = try store.exportData()
             let f = DateFormatter()

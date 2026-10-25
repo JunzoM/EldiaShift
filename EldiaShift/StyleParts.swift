@@ -473,7 +473,19 @@ struct BackupView: View {
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
+    /// 人件費を隠している端末では、給与も入るバックアップを書き出す前に本人の確認をする
     private func export() {
+        Task { @MainActor in
+            let lock = LaborCostLock.shared
+            if !lock.canView {
+                await lock.unlock()
+                guard lock.canView else { return }
+            }
+            writeBackup()
+        }
+    }
+
+    private func writeBackup() {
         do {
             let data = try store.exportData()
             let f = DateFormatter()

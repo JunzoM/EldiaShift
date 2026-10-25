@@ -102,6 +102,11 @@ enum BackupFile {
            let rules = try? JSONDecoder().decode(LaborRules.self, from: data) {
             book.labor = rules
         }
+        if let settings = root["settings"] as? [String: Any], let py = settings["pay"],
+           let data = try? JSONSerialization.data(withJSONObject: py),
+           let rules = try? JSONDecoder().decode(PayRules.self, from: data) {
+            book.pay = rules
+        }
         if let settings = root["settings"] as? [String: Any], let st = settings["staffing"],
            let data = try? JSONSerialization.data(withJSONObject: st),
            let plan = try? JSONDecoder().decode(StaffingPlan.self, from: data) {
@@ -154,6 +159,7 @@ enum BackupFile {
             ]
             if !s.employment.isEmpty { o["employment"] = s.employment }
             if let p = s.photo { o["photo"] = p.base64EncodedString() }
+            if !s.wages.isEmpty, let w = try? JSONSerialization.jsonObject(with: JSONEncoder().encode(s.wages)) { o["wages"] = w }
             return o
         }
         var cells: [String: Any] = [:]
@@ -168,7 +174,8 @@ enum BackupFile {
         let laborJSON = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(book.labor))) ?? [:]
         let staffingJSON = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(book.staffing))) ?? [:]
         let storesJSON = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(book.stores))) ?? []
-        var settings: [String: Any] = ["breakRules": rulesJSON, "staffing": staffingJSON, "labor": laborJSON]
+        let payJSON = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(book.pay))) ?? [:]
+        var settings: [String: Any] = ["breakRules": rulesJSON, "staffing": staffingJSON, "labor": laborJSON, "pay": payJSON]
         if let c = book.brandColor { settings["brandColor"] = Int(c) }
         let root: [String: Any] = [
             "settings": settings,
@@ -241,7 +248,9 @@ enum BackupFile {
             offRequests: (s["offRequests"] as? [Any] ?? []).compactMap { string($0).flatMap { DayKey($0)?.description } }.sorted(),
             extraStoreIDs: (s["extraStoreIds"] as? [Any] ?? []).compactMap { string($0) }.filter { !$0.isEmpty },
             employment: string(s["employment"])?.trimmingCharacters(in: .whitespaces) ?? "",
-            photo: (s["photo"] as? String).flatMap { Data(base64Encoded: $0) }
+            photo: (s["photo"] as? String).flatMap { Data(base64Encoded: $0) },
+            wages: (s["wages"] as? [Any]).flatMap { try? JSONSerialization.data(withJSONObject: $0) }
+                .flatMap { try? JSONDecoder().decode([WageEntry].self, from: $0) } ?? []
         )
     }
 
