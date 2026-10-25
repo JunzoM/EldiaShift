@@ -154,6 +154,24 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                // よく使うもの（iPhone は下のタブにスタッフ・店舗が無いので、いちばん上に置く）
+                Section {
+                    NavigationLink { StaffListView() } label: {
+                        LabeledContent {
+                            Text("\(store.book.staffByDepartment(visibleIn: MonthKey(store.today)).flatMap(\.members).count)人")
+                        } label: {
+                            Label("スタッフ（登録・修正）", systemImage: "person.2")
+                        }
+                    }
+                    NavigationLink { StoreListView() } label: {
+                        LabeledContent {
+                            Text("\(store.book.allStores.count)店舗")
+                        } label: {
+                            Label("店舗", systemImage: "building.2")
+                        }
+                    }
+                }
+
                 Section {
                     Toggle("iCloud で同期する", isOn: Binding(get: { db.iCloudEnabled }, set: { db.setICloud($0) }))
                 } footer: {
@@ -172,10 +190,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("会社・店舗") {
-                    NavigationLink { StoreListView() } label: {
-                        LabeledContent("店舗管理", value: "\(store.book.allStores.count)店舗")
-                    }
+                Section("会社") {
                     NavigationLink { BrandColorView() } label: {
                         HStack {
                             Text("会社の色")
@@ -186,7 +201,6 @@ struct SettingsView: View {
                 }
 
                 Section("シフト表の中身（\(store.currentStore.name)）") {
-                    NavigationLink("スタッフ") { StaffListView() }
                     NavigationLink("部門") { DepartmentListView() }
                     NavigationLink("時間のひな形") { TemplateListView() }
                     NavigationLink { BreakRulesView() } label: {

@@ -176,6 +176,7 @@ struct HomeView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var showPrint = false
     @State private var showStores = false
+    @State private var showStaff = false
     @State private var adding: StaffMember?
     @AppStorage("summaryTab") private var summaryTab = 0
     /// ホームの数字（シフトの中身か日付が変わったときだけ数え直す）
@@ -214,6 +215,13 @@ struct HomeView: View {
         .toolbar { if storeInToolbar { ToolbarItem(placement: .topBarLeading) { StoreSwitcher() } } }
         .sheet(isPresented: $showPrint) { PrintSheet(anchor: today) }
         .sheet(isPresented: $showStores) { NavigationStack { StoreListView(inSheet: true) } }
+        // iPhone（下のタブにスタッフが無い）では、ホームからスタッフの一覧を開く
+        .sheet(isPresented: $showStaff) {
+            NavigationStack {
+                StaffListView()
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { showStaff = false } } }
+            }
+        }
         .sheet(item: $adding) { s in StaffEditView(member: s, isNew: true) }
     }
 
@@ -335,6 +343,9 @@ struct HomeView: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
                 QuickButton(title: "シフト表", systemImage: "calendar") { openTab(.schedule) }
                 QuickButton(title: "印刷・共有", systemImage: "printer") { showPrint = true }
+                QuickButton(title: "スタッフ", systemImage: "person.2") {
+                    if sizeClass == .regular { openTab(.staff) } else { showStaff = true }
+                }
                 QuickButton(title: "スタッフを追加", systemImage: "person.badge.plus") {
                     adding = store.newStaff(in: store.book.scopedDepartments.first?.id ?? store.book.departments.first?.id ?? "")
                 }
