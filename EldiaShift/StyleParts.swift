@@ -233,6 +233,10 @@ struct OffRequestListView: View {
     @State private var month = MonthKey.current
     @State private var filter = 0
     @State private var adding = false
+    @State private var receiving = false
+    @State private var showingQR = false
+    @State private var reply: LeaveReply?
+    @State private var requestError: String?
 
     private enum State3 { case done, conflict, open }
 
@@ -257,6 +261,7 @@ struct OffRequestListView: View {
         let shown = rows.filter { filter == 0 || (filter == 1 ? $0.state == .conflict : $0.state != .conflict) }
 
         List {
+            LeaveRequestSections(month: month, reply: $reply, error: $requestError)
             Section {
                 Picker("表示", selection: $filter) {
                     Text("すべて \(rows.count)").tag(0)
@@ -304,12 +309,20 @@ struct OffRequestListView: View {
                 Button { month = month.adding(months: 1) } label: { Image(systemName: "chevron.right") }
                     .accessibilityLabel("次の月")
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { showingQR = true } label: { Label("申請用QRコード", systemImage: "qrcode") }
+                    .accessibilityLabel("壁に貼る申請用のQRコード")
+                Button { receiving = true } label: { Label("申請を受け取る", systemImage: "tray.and.arrow.down") }
+                    .accessibilityLabel("LINE などで届いた申請を受け取る")
                 Button { adding = true } label: { Label("希望休を入れる", systemImage: "plus") }
                     .buttonStyle(.borderedProminent)
             }
         }
         .sheet(isPresented: $adding) { OffRequestSheet(month: month) }
+        .sheet(isPresented: $receiving) { LeaveRequestImportSheet(month: month) }
+        .sheet(isPresented: $showingQR) { RequestQRSheet() }
+        .sheet(item: $reply) { LeaveReplySheet(reply: $0) }
+        .errorAlert($requestError)
     }
 
     private static func state(_ m: StaffMember, _ d: DayKey, _ book: ShiftBook) -> State3 {

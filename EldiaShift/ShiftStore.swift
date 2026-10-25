@@ -304,6 +304,8 @@ enum ShiftRecords {
         var photo: Data? = nil
         /// 給与の決まり。前の版の記録には無い
         var wages: [WageEntry]? = nil
+        /// 希望休の申請。前の版の記録には無い
+        var leaveRequests: [LeaveRequest]? = nil
 
         init(_ s: StaffMember) {
             timeBlocks = s.timeBlocks
@@ -315,6 +317,7 @@ enum ShiftRecords {
             employment = s.employment.isEmpty ? nil : s.employment
             photo = s.photo
             wages = s.wages.isEmpty ? nil : s.wages
+            leaveRequests = s.leaveRequests.isEmpty ? nil : s.leaveRequests
         }
     }
 
@@ -362,7 +365,8 @@ enum ShiftRecords {
                                timeBlocks: detail?.timeBlocks ?? [], patterns: detail?.patterns ?? [],
                                activePatternID: detail?.activePatternID, periodPatterns: detail?.periodPatterns ?? [],
                                offRequests: detail?.offRequests ?? [], extraStoreIDs: detail?.extraStoreIDs ?? [],
-                               employment: detail?.employment ?? "", photo: detail?.photo, wages: detail?.wages ?? [])
+                               employment: detail?.employment ?? "", photo: detail?.photo, wages: detail?.wages ?? [],
+                               leaveRequests: detail?.leaveRequests ?? [])
         }
 
         for r in try newestByKey(fetch(ShiftModel.Entity.cell, ctx), keyOf: { "\($0.str("staffKey"))|\($0.str("day"))" }, ctx: ctx) {
