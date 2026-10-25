@@ -39,6 +39,8 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var anchor = DayKey.today
+    /// 申請フォームの取り込み用リンクから開いたとき
+    @State private var incomingRequest: LeaveRequestLink?
 
     /// 見本の画面確認・はじめて開いたとき・読み込めないときは、今までどおりシフト表の画面だけ
     private var boardOnly: Bool {
@@ -56,6 +58,12 @@ struct RootView: View {
             }
         }
         .onChange(of: db.changeToken) { store.refreshIfNeeded() }
+        .onOpenURL { url in
+            if let link = LeaveRequestLink.decode(url) { incomingRequest = link }
+        }
+        .sheet(item: $incomingRequest) { link in
+            LeaveRequestImportSheet(month: link.month, initialText: link.formText)
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 store.refreshIfNeeded()
