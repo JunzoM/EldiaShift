@@ -107,6 +107,11 @@ enum BackupFile {
            let rules = try? JSONDecoder().decode(PayRules.self, from: data) {
             book.pay = rules
         }
+        if let settings = root["settings"] as? [String: Any], let co = settings["company"],
+           let data = try? JSONSerialization.data(withJSONObject: co),
+           let company = try? JSONDecoder().decode(CompanyInfo.self, from: data) {
+            book.company = company
+        }
         if let settings = root["settings"] as? [String: Any], let st = settings["staffing"],
            let data = try? JSONSerialization.data(withJSONObject: st),
            let plan = try? JSONDecoder().decode(StaffingPlan.self, from: data) {
@@ -178,7 +183,9 @@ enum BackupFile {
         let staffingJSON = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(book.staffing))) ?? [:]
         let storesJSON = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(book.stores))) ?? []
         let payJSON = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(book.pay))) ?? [:]
-        var settings: [String: Any] = ["breakRules": rulesJSON, "staffing": staffingJSON, "labor": laborJSON, "pay": payJSON]
+        let companyJSON = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(book.company))) ?? [:]
+        var settings: [String: Any] = ["breakRules": rulesJSON, "staffing": staffingJSON, "labor": laborJSON, "pay": payJSON,
+                                       "company": companyJSON]
         if let c = book.brandColor { settings["brandColor"] = Int(c) }
         let root: [String: Any] = [
             "settings": settings,

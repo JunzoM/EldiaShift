@@ -217,6 +217,7 @@ final class ShiftStore {
         book.staffing = b.staffing
         book.labor = b.labor
         book.pay = b.pay
+        book.company = b.company
         book.published = b.published
         book.stores = b.stores
         book.brandColor = b.brandColor
@@ -262,6 +263,8 @@ final class ShiftStore {
     func setLaborRules(_ rules: LaborRules) throws { try updateSettings { $0.labor = rules } }
 
     func setPayRules(_ rules: PayRules) throws { try updateSettings { $0.pay = rules } }
+
+    func setCompany(_ c: CompanyInfo) throws { try updateSettings { $0.company = c } }
 
     /// その月をスタッフに公開した（今の内容を「公開した内容」として残す。新しい3か月分だけ持つ）
     func markPublished(_ month: MonthKey) throws {
@@ -336,6 +339,7 @@ enum ShiftRecords {
             book.staffing = settings.staffing ?? StaffingPlan()
             book.labor = settings.labor ?? LaborRules()
             book.pay = settings.pay ?? PayRules()
+            book.company = settings.company ?? CompanyInfo()
             book.published = settings.published ?? []
             book.stores = settings.stores ?? []
             book.brandColor = settings.brandColor
@@ -501,7 +505,8 @@ enum ShiftRecords {
     static func saveSettings(_ book: ShiftBook, team: NSManagedObject) throws {
         team.setValue(try JSONEncoder().encode(TeamSettings(breakRules: book.breakRules, staffing: book.staffing,
                                                                     labor: book.labor, pay: book.pay, published: book.published,
-                                                                    stores: book.stores, brandColor: book.brandColor)), forKey: "settings")
+                                                                    stores: book.stores, brandColor: book.brandColor,
+                                                                    company: book.company)), forKey: "settings")
     }
 
     static func allTeams(_ ctx: NSManagedObjectContext) throws -> [NSManagedObject] {
@@ -589,6 +594,7 @@ struct TeamSettings: Codable {
     var published: [PublishedMonth]?
     var stores: [Store]? = nil
     var brandColor: UInt32? = nil
+    var company: CompanyInfo? = nil
 }
 
 enum StoreError: LocalizedError {
