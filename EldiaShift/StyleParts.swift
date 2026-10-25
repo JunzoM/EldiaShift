@@ -261,6 +261,7 @@ struct OffRequestListView: View {
         let shown = rows.filter { filter == 0 || (filter == 1 ? $0.state == .conflict : $0.state != .conflict) }
 
         List {
+            LeaveRequestGuide(showQR: { showingQR = true }, receive: { receiving = true })
             LeaveRequestSections(month: month, reply: $reply, error: $requestError)
             Section {
                 Picker("表示", selection: $filter) {

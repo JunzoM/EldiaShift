@@ -278,3 +278,64 @@ struct LeaveRequestImportSheet: View {
         }
     }
 }
+
+/// 希望休の画面のいちばん上に出す「申請の受け取り方」（たためる。iCloud 同期がオフなら注意）
+struct LeaveRequestGuide: View {
+    @Environment(ShiftDatabase.self) private var db
+    @AppStorage("leaveGuideOpen") private var open = true
+    var showQR: () -> Void
+    var receive: () -> Void
+
+    private var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+
+    var body: some View {
+        Section {
+            DisclosureGroup(isExpanded: $open) {
+                VStack(alignment: .leading, spacing: 10) {
+                    step(1, "スタッフが、壁の QR コードから休みたい日を入れて LINE で送ります。")
+                    step(2, "LINE に届いた「取り込み用リンク」を押すと SHIFT が開きます。「承認待ちにする」を押します。")
+                    step(3, "この画面の「承認待ちの申請」で、承認・却下します。")
+                }
+                .padding(.vertical, 4)
+
+                Label {
+                    Text(isPad
+                         ? "この iPad に LINE が無いときは、LINE が入っている iPhone にも SHIFT を入れて、iPhone でリンクを押してください。同じ Apple ID で iCloud 同期をオンにすると、iPhone で受け取った申請がこの iPad にも出ます。"
+                         : "iPad で承認するときは、iPad とこの iPhone を同じ Apple ID にして iCloud 同期をオンにしてください。この iPhone で受け取った申請が iPad にも出ます。")
+                        .font(.footnote)
+                } icon: {
+                    Image(systemName: isPad ? "iphone" : "ipad").foregroundStyle(.secondary)
+                }
+
+                if db.iCloudEnabled {
+                    Label("iCloud 同期：オン（ほかの端末で受け取った申請もここに出ます）", systemImage: "checkmark.icloud")
+                        .font(.footnote).foregroundStyle(.green)
+                } else {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("iCloud 同期がオフです。ほかの端末で受け取った申請は、この端末に出ません。", systemImage: "exclamationmark.icloud")
+                            .font(.footnote).foregroundStyle(.orange)
+                        Toggle("iCloud で同期する", isOn: Binding(get: { db.iCloudEnabled }, set: { db.setICloud($0) }))
+                            .font(.subheadline)
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    Button(action: showQR) { Label("申請用QRコード", systemImage: "qrcode") }
+                    Button(action: receive) { Label("貼り付けで受け取る", systemImage: "doc.on.clipboard") }
+                }
+                .buttonStyle(.bordered)
+                .font(.subheadline)
+            } label: {
+                Label("申請の受け取り方", systemImage: "questionmark.circle").font(.subheadline.weight(.semibold))
+            }
+        }
+    }
+
+    private func step(_ n: Int, _ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text("\(n)").font(.caption.weight(.bold)).foregroundStyle(.white)
+                .frame(width: 20, height: 20).background(Color.accentColor, in: Circle())
+            Text(text).font(.subheadline)
+        }
+    }
+}
