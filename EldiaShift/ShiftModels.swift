@@ -138,6 +138,8 @@ struct StaffMember: Identifiable, Hashable, Codable, Sendable {
     var photo: Data? = nil
     /// 給与の決まり（「この日から時給〇円／月給〇円」の履歴）
     var wages: [WageEntry] = []
+    /// 希望休の申請（承認待ち・承認・却下の記録）
+    var leaveRequests: [LeaveRequest] = []
 
     /// 雇用形態の選択肢（ほかの値もそのまま残せる）
     static let employmentChoices = ["正社員", "契約社員", "パート", "アルバイト", "派遣"]

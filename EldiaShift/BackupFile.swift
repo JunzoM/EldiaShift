@@ -160,6 +160,9 @@ enum BackupFile {
             if !s.employment.isEmpty { o["employment"] = s.employment }
             if let p = s.photo { o["photo"] = p.base64EncodedString() }
             if !s.wages.isEmpty, let w = try? JSONSerialization.jsonObject(with: JSONEncoder().encode(s.wages)) { o["wages"] = w }
+            if !s.leaveRequests.isEmpty, let r = try? JSONSerialization.jsonObject(with: JSONEncoder().encode(s.leaveRequests)) {
+                o["leaveRequests"] = r
+            }
             return o
         }
         var cells: [String: Any] = [:]
@@ -250,7 +253,9 @@ enum BackupFile {
             employment: string(s["employment"])?.trimmingCharacters(in: .whitespaces) ?? "",
             photo: (s["photo"] as? String).flatMap { Data(base64Encoded: $0) },
             wages: (s["wages"] as? [Any]).flatMap { try? JSONSerialization.data(withJSONObject: $0) }
-                .flatMap { try? JSONDecoder().decode([WageEntry].self, from: $0) } ?? []
+                .flatMap { try? JSONDecoder().decode([WageEntry].self, from: $0) } ?? [],
+            leaveRequests: (s["leaveRequests"] as? [Any]).flatMap { try? JSONSerialization.data(withJSONObject: $0) }
+                .flatMap { try? JSONDecoder().decode([LeaveRequest].self, from: $0) } ?? []
         )
     }
 
