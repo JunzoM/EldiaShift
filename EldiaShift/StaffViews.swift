@@ -324,6 +324,8 @@ struct StaffEditView: View {
                 }
             }
 
+            WageSection(member: $member)
+
             Section {
                 ForEach(member.timeBlocks) { b in
                     Button { editingBlock = b } label: { BlockRow(block: b) }

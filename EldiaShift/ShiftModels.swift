@@ -136,6 +136,8 @@ struct StaffMember: Identifiable, Hashable, Codable, Sendable {
     var employment: String = ""
     /// 顔写真（正方形に切り抜いて小さく縮めた JPEG。iCloud 同期・バックアップに入るので十数KBにする）
     var photo: Data? = nil
+    /// 給与の決まり（「この日から時給〇円／月給〇円」の履歴）
+    var wages: [WageEntry] = []
 
     /// 雇用形態の選択肢（ほかの値もそのまま残せる）
     static let employmentChoices = ["正社員", "契約社員", "パート", "アルバイト", "派遣"]
@@ -186,6 +188,8 @@ struct ShiftBook: Sendable, Equatable {
     var staffing = StaffingPlan()
     /// 労務の注意（連勤・勤務間隔・週の時間・有休5日）
     var labor = LaborRules()
+    /// 人件費の割増の決まり
+    var pay = PayRules()
     /// スタッフに公開した内容（変更点を出すため。月ごと・店舗ごと）
     var published: [PublishedMonth] = []
     /// 店舗（空なら「本店」1つとして扱う）
