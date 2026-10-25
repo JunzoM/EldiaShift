@@ -331,6 +331,8 @@ enum DemoMode {
         b.cells[CellKey(staffID: "7", day: today.adding(days: 1))] = CellEntry(inTime: "10:00", outTime: "19:00", blockID: nil,
                                                                               isOff: false, storeID: "annex")
         b.brandColor = 0x1E3A8A
+        b.company.name = "見本ホテル株式会社"
+        b.company.tagline = "スタッフの笑顔が、お客様の特別な時間をつくります。"
         if DemoMode.flag("-demoAppStore") {
             // App Store の画面写真用：人数が足りる日が多い、落ち着いた見本
             b.staffing.bands = [
