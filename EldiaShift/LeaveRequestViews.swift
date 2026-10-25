@@ -173,7 +173,9 @@ struct LeaveRequestImportSheet: View {
     var body: some View {
         let book = store.book
         let members = book.staffByDepartment(visibleIn: month).flatMap(\.members)
-        let parsed = OffRequestParser.parse(text, month: month)
+        // 申請フォームの文章なら「休みたい日」の行だけから日付を読む（理由の数字を日付と間違えない）
+        let form = LeaveRequestInbox.formFields(text)
+        let parsed = OffRequestParser.parse(form?.dates ?? text, month: month)
         let chosen = parsed.filter { !excluded.contains($0) }
         let member = members.first { $0.id == staffID }
 
@@ -244,7 +246,8 @@ struct LeaveRequestImportSheet: View {
             }
             .onChange(of: text) {
                 excluded = []
-                if !staffPicked, let m = LeaveRequestInbox.detectStaff(in: text, among: members) { staffID = m.id }
+                let source = LeaveRequestInbox.formFields(text)?.name ?? text
+                if !staffPicked, let m = LeaveRequestInbox.detectStaff(in: source, among: members) { staffID = m.id }
             }
             .alert("受け取りました", isPresented: Binding(get: { result != nil }, set: { if !$0 { result = nil; dismiss() } })) {
                 Button("OK") { result = nil; dismiss() }
@@ -257,7 +260,8 @@ struct LeaveRequestImportSheet: View {
 
     private func save(_ member: StaffMember?, _ days: [DayKey]) {
         guard let member else { return }
-        let note = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200))
+        let form = LeaveRequestInbox.formFields(text)
+        let note = form.map { $0.reason } ?? String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200))
         do {
             let added = try store.receiveLeaveRequests(days, note: note, for: member.id)
             let skipped = days.count - added

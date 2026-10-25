@@ -30,6 +30,30 @@ enum LeaveRequestInbox {
     /// 日時は秒まで（バックアップの読み書きで値がずれないように）
     static func stamp(_ d: Date) -> Date { Date(timeIntervalSinceReferenceDate: d.timeIntervalSinceReferenceDate.rounded()) }
 
+    /// 申請フォーム（壁の QR コードから開くページ）で作った文章の項目
+    struct FormText: Equatable, Sendable {
+        var name: String
+        var dates: String
+        var reason: String
+    }
+
+    /// 決まった形（「名前：」「休みたい日：」の行がある）なら、その項目。ほかの文章なら nil
+    static func formFields(_ text: String) -> FormText? {
+        var name: String?, dates: String?, reason = ""
+        for raw in text.components(separatedBy: .newlines) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            func value(_ key: String) -> String? {
+                for sep in ["：", ":"] where line.hasPrefix(key + sep) {
+                    return String(line.dropFirst(key.count + sep.count)).trimmingCharacters(in: .whitespaces)
+                }
+                return nil
+            }
+            if let v = value("名前") { name = v } else if let v = value("休みたい日") { dates = v } else if let v = value("理由") { reason = v }
+        }
+        guard let name, !name.isEmpty, let dates, !dates.isEmpty else { return nil }
+        return FormText(name: name, dates: dates, reason: reason)
+    }
+
     /// 名前の比べ方（空白を取る）
     static func normalize(_ s: String) -> String {
         (s.applyingTransform(.fullwidthToHalfwidth, reverse: false) ?? s)

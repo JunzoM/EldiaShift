@@ -73,4 +73,36 @@ struct LeaveRequestTests {
         try store.decideLeaveRequests([id], as: .approved, for: "1", offBlockID: nil)
         #expect(store.book.staff.first?.offRequests == ["2026-11-03"])
     }
+
+    @Test("申請フォームの文章は、名前・休みたい日・理由の行から読む（理由の数字を日付にしない）")
+    func formText() {
+        let text = """
+        【希望休の申請】
+        名前：山田花子
+        店舗：LUXURY神戸
+        休みたい日：11/3(火)、11/10(火)
+        理由：通院 2回目
+        （SHIFT 申請フォームから）
+        """
+        let f = LeaveRequestInbox.formFields(text)
+        #expect(f?.name == "山田花子")
+        #expect(f?.reason == "通院 2回目")
+        let days = OffRequestParser.parse(f?.dates ?? "", month: MonthKey(2026, 11))
+        #expect(days == [DayKey(2026, 11, 3), DayKey(2026, 11, 10)])
+        let staff = [member("1", "山田 花子"), member("2", "佐藤 一郎")]
+        #expect(LeaveRequestInbox.detectStaff(in: f?.name ?? "", among: staff)?.id == "1")
+        // 決まった形でない文章は nil（ふつうの読み取りに回す）
+        #expect(LeaveRequestInbox.formFields("山田です。11/3 休み希望") == nil)
+    }
+
+    @Test("申請フォームの URL に店舗名と表示名が入る")
+    func formURL() {
+        let u = RequestForm.url(storeName: "LUXURY神戸", prefix: "ELDIA")
+        let items = URLComponents(url: u, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        #expect(u.absoluteString.hasPrefix(RequestForm.page))
+        #expect(items.first { $0.name == "s" }?.value == "LUXURY神戸")
+        #expect(items.first { $0.name == "b" }?.value == "ELDIA")
+        #expect(RequestForm.url(storeName: "", prefix: "HOTEL").absoluteString == RequestForm.page)
+        #expect(RequestForm.qrImage(u.absoluteString, size: 200) != nil)
+    }
 }

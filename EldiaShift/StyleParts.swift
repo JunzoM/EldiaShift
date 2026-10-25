@@ -234,6 +234,7 @@ struct OffRequestListView: View {
     @State private var filter = 0
     @State private var adding = false
     @State private var receiving = false
+    @State private var showingQR = false
     @State private var reply: LeaveReply?
     @State private var requestError: String?
 
@@ -309,6 +310,8 @@ struct OffRequestListView: View {
                     .accessibilityLabel("次の月")
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { showingQR = true } label: { Label("申請用QRコード", systemImage: "qrcode") }
+                    .accessibilityLabel("壁に貼る申請用のQRコード")
                 Button { receiving = true } label: { Label("申請を受け取る", systemImage: "tray.and.arrow.down") }
                     .accessibilityLabel("LINE などで届いた申請を受け取る")
                 Button { adding = true } label: { Label("希望休を入れる", systemImage: "plus") }
@@ -317,6 +320,7 @@ struct OffRequestListView: View {
         }
         .sheet(isPresented: $adding) { OffRequestSheet(month: month) }
         .sheet(isPresented: $receiving) { LeaveRequestImportSheet(month: month) }
+        .sheet(isPresented: $showingQR) { RequestQRSheet() }
         .sheet(item: $reply) { LeaveReplySheet(reply: $0) }
         .errorAlert($requestError)
     }
