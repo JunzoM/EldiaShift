@@ -105,4 +105,37 @@ struct LeaveRequestTests {
         #expect(RequestForm.url(storeName: "", prefix: "HOTEL").absoluteString == RequestForm.page)
         #expect(RequestForm.qrImage(u.absoluteString, size: 200) != nil)
     }
+
+    private func linkURL(_ json: String, base: String = "https://facility-manager-phi.vercel.app/hotel-shift/r?openExternalBrowser=1#") -> URL {
+        let b64 = Data(json.utf8).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        return URL(string: base + b64)!
+    }
+
+    @Test("取り込み用リンクから、名前・店舗・日付・理由を読む")
+    func requestLink() throws {
+        let json = #"{"v":1,"n":"山田 花子","s":"LUXURY神戸","d":["2026-11-10","2026-11-03","2026-11-03","bad"],"r":"通院"}"#
+        let link = try #require(LeaveRequestLink.decode(linkURL(json)))
+        #expect(link.name == "山田 花子")
+        #expect(link.store == "LUXURY神戸")
+        #expect(link.days == [DayKey(2026, 11, 3), DayKey(2026, 11, 10)])
+        #expect(link.month == MonthKey(2026, 11))
+        // 受け取り画面の文章は、申請フォームと同じ形で読み戻せる
+        let f = try #require(LeaveRequestInbox.formFields(link.formText))
+        #expect(OffRequestParser.parse(f.dates, month: link.month) == link.days)
+        #expect(f.reason == "通院")
+        // アプリのスキームでも読める
+        #expect(LeaveRequestLink.decode(linkURL(json, base: "eldiashift://request#"))?.name == "山田 花子")
+    }
+
+    @Test("ほかのリンク・壊れた中身は読まない")
+    func requestLinkRejects() {
+        let ok = #"{"v":1,"n":"山田","d":["2026-11-03"]}"#
+        #expect(LeaveRequestLink.decode(linkURL(ok, base: "https://example.com/hotel-shift/r#")) == nil)
+        #expect(LeaveRequestLink.decode(linkURL(#"{"v":2,"n":"山田","d":["2026-11-03"]}"#)) == nil)
+        #expect(LeaveRequestLink.decode(linkURL(#"{"v":1,"n":"","d":["2026-11-03"]}"#)) == nil)
+        #expect(LeaveRequestLink.decode(linkURL(#"{"v":1,"n":"山田","d":[]}"#)) == nil)
+        #expect(LeaveRequestLink.decode(URL(string: "https://facility-manager-phi.vercel.app/hotel-shift/r#not-base64!")!) == nil)
+        #expect(LeaveRequestLink.decode(linkURL(ok)) != nil)
+    }
 }

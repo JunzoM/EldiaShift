@@ -160,6 +160,8 @@ struct LeaveReplySheet: View {
 /// LINE・AirDrop などで届いた申請の文章を貼り付けて、承認待ちにする
 struct LeaveRequestImportSheet: View {
     @State var month: MonthKey
+    /// 取り込み用リンクから開いたときの文章
+    var initialText: String = ""
     @Environment(ShiftStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
@@ -172,7 +174,10 @@ struct LeaveRequestImportSheet: View {
 
     var body: some View {
         let book = store.book
-        let members = book.staffByDepartment(visibleIn: month).flatMap(\.members)
+        // どの店舗の人の申請でも受け取れるよう、いま見ている店舗に限らず全員から選ぶ（店舗名・名前の順）
+        let order = Dictionary(book.allStores.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let members = book.staff.filter { $0.isVisible(in: month) }
+            .sorted { (order[book.homeStoreID(of: $0)] ?? 0, $0.name) < (order[book.homeStoreID(of: $1)] ?? 0, $1.name) }
         // 申請フォームの文章なら「休みたい日」の行だけから日付を読む（理由の数字を日付と間違えない）
         let form = LeaveRequestInbox.formFields(text)
         let parsed = OffRequestParser.parse(form?.dates ?? text, month: month)
@@ -244,6 +249,7 @@ struct LeaveRequestImportSheet: View {
                         .disabled(member == nil || chosen.isEmpty)
                 }
             }
+            .onAppear { if text.isEmpty, !initialText.isEmpty { text = initialText } }
             .onChange(of: text) {
                 excluded = []
                 let source = LeaveRequestInbox.formFields(text)?.name ?? text
