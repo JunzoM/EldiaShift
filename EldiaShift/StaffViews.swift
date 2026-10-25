@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 // MARK: - スタッフの一覧（PC版の 設定 → スタッフ）
 
@@ -140,7 +141,7 @@ struct StaffListView: View {
         let p = m.patterns.first { $0.id == m.activePatternID } ?? m.patterns.first
         let wide = sizeClass != .compact
         return HStack(spacing: 12) {
-            InitialAvatar(name: m.name, colorIndex: dept?.colorIndex ?? 8, size: 36)
+            InitialAvatar(name: m.name, colorIndex: dept?.colorIndex ?? 8, size: 36, photo: m.photo)
             VStack(alignment: .leading, spacing: 2) {
                 Text(m.name).font(.body.weight(.semibold)).lineLimit(1)
                 Text(wide ? "No.\(m.number)" : [dept?.name, p.map { $0.label }].compactMap { $0 }.joined(separator: "・"))
@@ -233,13 +234,40 @@ struct StaffEditView: View {
     @State private var editingBlock: TimeBlock?
     @State private var editingPattern: WeekPattern?
     @State private var editingPeriod: PeriodPattern?
+    /// 開いたときの内容（保存していない変更があるかを見る）
+    @State private var initial: StaffMember?
+    @State private var askDiscard = false
+    @State private var pickedPhoto: PhotosPickerItem?
+
+    private var dirty: Bool { initial.map { $0 != member } ?? false }
 
     var body: some View {
         let book = store.book
+        let deptColor = book.departments.first { $0.id == member.departmentID }?.colorIndex ?? 8
         let form = Form {
             Section("基本") {
+                HStack(spacing: 16) {
+                    InitialAvatar(name: member.name.isEmpty ? "？" : member.name, colorIndex: deptColor, size: 64, photo: member.photo)
+                    // PhotosPicker の見出しは別スレッドから呼ばれることがあるので、先に文字を決めておく
+                    let pickTitle = member.photo == nil ? "顔写真を選ぶ" : "写真を変える"
+                    VStack(alignment: .leading, spacing: 8) {
+                        PhotosPicker(selection: $pickedPhoto, matching: .images) {
+                            Label(pickTitle, systemImage: "person.crop.circle.badge.plus")
+                        }
+                        if member.photo != nil {
+                            Button("写真を外す", role: .destructive) { member.photo = nil }
+                        }
+                    }
+                    // 1行に2つのボタンがあるので、行全体ではなくボタンだけが反応するように
+                    .buttonStyle(.borderless)
+                }
+                .padding(.vertical, 2)
                 TextField("名前", text: $member.name)
                     .textContentType(.name)
+                if let other = duplicateName(book) {
+                    Text("同じ名前の人がいます（\(other)）。表で見分けやすい名前にすると迷いません。")
+                        .font(.footnote).foregroundStyle(.orange)
+                }
                 Picker("部署", selection: Binding(get: { member.departmentID }, set: { id in
                     member.departmentID = id
                     // 自分の店舗は掛け持ち先に入れない
@@ -261,8 +289,19 @@ struct StaffEditView: View {
                     Text("退職").tag(false)
                 }
                 .pickerStyle(.segmented)
+                Picker("雇用形態", selection: $member.employment) {
+                    Text("未設定").tag("")
+                    ForEach(StaffMember.employmentChoices, id: \.self) { Text($0).tag($0) }
+                    // 取り込んだデータなどで選択肢に無い値も、そのまま残す
+                    if !member.employment.isEmpty, !StaffMember.employmentChoices.contains(member.employment) {
+                        Text(member.employment).tag(member.employment)
+                    }
+                }
                 OptionalDateRow(title: "入社日", text: $member.joinDate)
                 OptionalDateRow(title: "退職日", text: $member.leaveDate)
+                if let issue = dateIssue {
+                    Text(issue).font(.footnote).foregroundStyle(.red)
+                }
             }
 
             if book.allStores.count > 1 {
@@ -334,6 +373,7 @@ struct StaffEditView: View {
                 }
             }
         }
+        let impact = confirmDelete ? StaffDeletionImpact(member: member, book: book, today: store.today) : nil
 
         let content = form
             .navigationTitle(isNew ? "スタッフを追加" : (member.name.isEmpty ? "スタッフ" : member.name))
@@ -341,10 +381,32 @@ struct StaffEditView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") { save() }
-                        .disabled(member.name.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(member.name.trimmingCharacters(in: .whitespaces).isEmpty || dateIssue != nil)
                 }
                 if isNew || inSheet {
-                    ToolbarItem(placement: .cancellationAction) { Button(isNew ? "やめる" : "閉じる") { dismiss() } }
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(isNew ? "やめる" : "閉じる") { if dirty { askDiscard = true } else { dismiss() } }
+                    }
+                } else if dirty {
+                    // 一覧から開いたとき：変更があれば「戻る」で確かめる
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { askDiscard = true } label: { Label("戻る", systemImage: "chevron.backward") }
+                            .labelStyle(.titleAndIcon)
+                    }
+                }
+            }
+            .navigationBarBackButtonHidden(dirty && !isNew && !inSheet)
+            .discardGuard(dirty: dirty, asking: $askDiscard) { dismiss() }
+            .onAppear { if initial == nil { initial = member } }
+            .onChange(of: pickedPhoto) {
+                guard let item = pickedPhoto else { return }
+                Task { @MainActor in
+                    if let data = try? await item.loadTransferable(type: Data.self), let small = StaffPhoto.shrink(data) {
+                        member.photo = small
+                    } else {
+                        error = "写真を読み込めませんでした"
+                    }
+                    pickedPhoto = nil
                 }
             }
             .sheet(item: $editingBlock) { b in TemplateEditView(template: b, personal: $member.timeBlocks) }
@@ -355,11 +417,17 @@ struct StaffEditView: View {
                 PeriodPatternEditView(pattern: p, member: member, periods: $member.periodPatterns)
             }
             .confirmationDialog("\(member.name)さんを削除しますか？", isPresented: $confirmDelete, titleVisibility: .visible) {
+                if let impact, impact.enteredDays > 0, member.leaveDate.isEmpty {
+                    Button("削除せずに今日で退職にする") {
+                        member.leaveDate = store.today.description
+                        save()
+                    }
+                }
                 Button("削除する", role: .destructive) {
                     do { try store.deleteStaff(member); dismiss() } catch { self.error = error.localizedDescription }
                 }
             } message: {
-                Text("この人のシフトもすべて消え、同じ部署の番号が繰り上がります。元には戻せません。")
+                Text(impact?.message ?? "元には戻せません。")
             }
             .errorAlert($error)
 
@@ -395,6 +463,23 @@ struct StaffEditView: View {
         }
     }
 
+    /// 入社日・退職日の食い違い
+    private var dateIssue: String? {
+        guard let join = DayKey(member.joinDate), let leave = DayKey(member.leaveDate), leave < join else { return nil }
+        return "退職日が入社日より前になっています。"
+    }
+
+    /// 同じ名前のほかの人（部署名。いなければ nil）
+    private func duplicateName(_ book: ShiftBook) -> String? {
+        let name = member.name.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty,
+              let other = book.staff.first(where: { $0.id != member.id && $0.name.trimmingCharacters(in: .whitespaces) == name })
+        else { return nil }
+        let dept = book.departments.first { $0.id == other.departmentID }
+        let st = dept.flatMap { book.store(book.storeID(ofDepartment: $0.id)) }
+        return [book.allStores.count > 1 ? st?.name : nil, dept?.name ?? "部門なし"].compactMap { $0 }.joined(separator: "・")
+    }
+
     private func save() {
         member.name = member.name.trimmingCharacters(in: .whitespaces)
         if let leave = DayKey(member.leaveDate), leave < DayKey.today { member.active = false }
@@ -421,6 +506,8 @@ struct PatternEditView: View {
     @Environment(ShiftStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var confirmDelete = false
+    @State private var initial: WeekPattern?
+    @State private var askDiscard = false
 
     /// 表の並び（月曜はじまり）。値は days の位置（0＝日曜）
     private let weekOrder = [1, 2, 3, 4, 5, 6, 0]
@@ -490,8 +577,12 @@ struct PatternEditView: View {
             }
             .navigationTitle(isNew ? "週間パターンを作成" : "週間パターン")
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear { if initial == nil { initial = pattern } }
+            .discardGuard(dirty: initial.map { $0 != pattern } ?? false, asking: $askDiscard) { dismiss() }
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("やめる") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("やめる") { if initial.map({ $0 != pattern }) ?? false { askDiscard = true } else { dismiss() } }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("決定") {
                         pattern.label = pattern.label.trimmingCharacters(in: .whitespaces)
@@ -532,6 +623,8 @@ struct PeriodPatternEditView: View {
     @Environment(ShiftStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var confirmDelete = false
+    @State private var initial: PeriodPattern?
+    @State private var askDiscard = false
 
     private var isNew: Bool { !periods.contains { $0.id == pattern.id } }
 
@@ -604,8 +697,12 @@ struct PeriodPatternEditView: View {
             }
             .navigationTitle(isNew ? "期間限定パターンを作成" : "期間限定パターン")
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear { if initial == nil { initial = pattern } }
+            .discardGuard(dirty: initial.map { $0 != pattern } ?? false, asking: $askDiscard) { dismiss() }
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("やめる") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("やめる") { if initial.map({ $0 != pattern }) ?? false { askDiscard = true } else { dismiss() } }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("決定") {
                         // 期間の外になった日の指定は捨てる

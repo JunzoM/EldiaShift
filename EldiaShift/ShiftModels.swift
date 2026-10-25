@@ -132,6 +132,13 @@ struct StaffMember: Identifiable, Hashable, Codable, Sendable {
     var offRequests: [String] = []
     /// 掛け持ちで入る、ほかの店舗（自分の部門の店舗は含めない）
     var extraStoreIDs: [String] = []
+    /// 雇用形態（例：正社員・パート）。空は未設定
+    var employment: String = ""
+    /// 顔写真（正方形に切り抜いて小さく縮めた JPEG。iCloud 同期・バックアップに入るので十数KBにする）
+    var photo: Data? = nil
+
+    /// 雇用形態の選択肢（ほかの値もそのまま残せる）
+    static let employmentChoices = ["正社員", "契約社員", "パート", "アルバイト", "派遣"]
 
     func requestsOff(_ d: DayKey) -> Bool { offRequests.contains(d.description) }
 }

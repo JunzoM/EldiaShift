@@ -215,6 +215,8 @@ struct TemplateListView: View {
 
 struct TemplateEditView: View {
     @State var template: TimeBlock
+    @State private var initialTemplate: TimeBlock?
+    @State private var askDiscard = false
     /// スタッフの「個人の時間」を編集するとき（保存はスタッフの設定の「保存」でまとめて行う）
     var personal: Binding<[TimeBlock]>? = nil
     @Environment(ShiftStore.self) private var store
@@ -261,8 +263,12 @@ struct TemplateEditView: View {
             }
             .navigationTitle(personal != nil ? (isNew ? "個人の時間を追加" : "個人の時間") : (isNew ? "ひな形を追加" : "ひな形"))
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear { if initialTemplate == nil { initialTemplate = template } }
+            .discardGuard(dirty: initialTemplate.map { $0 != template } ?? false, asking: $askDiscard) { dismiss() }
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("やめる") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("やめる") { if initialTemplate.map({ $0 != template }) ?? false { askDiscard = true } else { dismiss() } }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") {
                         template.label = template.label.trimmingCharacters(in: .whitespaces)

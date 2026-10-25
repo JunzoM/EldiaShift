@@ -277,7 +277,7 @@ struct HomeView: View {
             }
             ForEach(info.working) { w in
                 HStack(spacing: 10) {
-                    InitialAvatar(name: w.member.name, colorIndex: w.department?.colorIndex ?? 8, size: 32)
+                    InitialAvatar(name: w.member.name, colorIndex: w.department?.colorIndex ?? 8, size: 32, photo: w.member.photo)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(w.member.name).font(.body.weight(.semibold))
                         Text(w.department?.name ?? "").font(.caption).foregroundStyle(.secondary)

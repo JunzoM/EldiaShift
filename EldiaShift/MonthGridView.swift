@@ -530,7 +530,7 @@ struct MonthGridView: View {
         return HStack(alignment: .center, spacing: 0) {
             Text("\(m.number)").font(.caption2).foregroundStyle(.secondary).monospacedDigit().frame(width: 22)
             if !compact {
-                InitialAvatar(name: m.name, colorIndex: book.departments.first { $0.id == m.departmentID }?.colorIndex ?? 8, size: 28)
+                InitialAvatar(name: m.name, colorIndex: book.departments.first { $0.id == m.departmentID }?.colorIndex ?? 8, size: 28, photo: m.photo)
                     .padding(.trailing, 6)
             }
             VStack(alignment: .leading, spacing: 2) {

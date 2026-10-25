@@ -184,10 +184,7 @@ extension ShiftRecords {
         r.setValue(s.active, forKey: "active")
         r.setValue(s.joinDate, forKey: "joinDate")
         r.setValue(s.leaveDate, forKey: "leaveDate")
-        let detail = StaffDetail(timeBlocks: s.timeBlocks, patterns: s.patterns,
-                                 activePatternID: s.activePatternID, periodPatterns: s.periodPatterns,
-                                 offRequests: s.offRequests, extraStoreIDs: s.extraStoreIDs)
-        r.setValue(try JSONEncoder().encode(detail), forKey: "detail")
+        r.setValue(try JSONEncoder().encode(StaffDetail(s)), forKey: "detail")
         r.setValue(Date(), forKey: "updatedAt")
     }
 

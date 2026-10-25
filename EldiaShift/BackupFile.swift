@@ -128,7 +128,7 @@ enum BackupFile {
 
     static func write(_ book: ShiftBook) throws -> Data {
         let staff: [[String: Any]] = book.staff.map { s in
-            [
+            var o: [String: Any] = [
                 "id": Int(s.id).map { $0 as Any } ?? s.id,
                 "no": s.number,
                 "name": s.name,
@@ -152,6 +152,9 @@ enum BackupFile {
                 "offRequests": s.offRequests,
                 "extraStoreIds": s.extraStoreIDs
             ]
+            if !s.employment.isEmpty { o["employment"] = s.employment }
+            if let p = s.photo { o["photo"] = p.base64EncodedString() }
+            return o
         }
         var cells: [String: Any] = [:]
         for (k, c) in book.cells {
@@ -236,7 +239,9 @@ enum BackupFile {
             activePatternID: string(s["activePatternId"]).flatMap { $0.isEmpty ? nil : $0 },
             periodPatterns: periods,
             offRequests: (s["offRequests"] as? [Any] ?? []).compactMap { string($0).flatMap { DayKey($0)?.description } }.sorted(),
-            extraStoreIDs: (s["extraStoreIds"] as? [Any] ?? []).compactMap { string($0) }.filter { !$0.isEmpty }
+            extraStoreIDs: (s["extraStoreIds"] as? [Any] ?? []).compactMap { string($0) }.filter { !$0.isEmpty },
+            employment: string(s["employment"])?.trimmingCharacters(in: .whitespaces) ?? "",
+            photo: (s["photo"] as? String).flatMap { Data(base64Encoded: $0) }
         )
     }
 
