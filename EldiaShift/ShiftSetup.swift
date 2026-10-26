@@ -265,6 +265,7 @@ extension ShiftStore {
         kept.staffing = book.staffing
         kept.labor = book.labor
         kept.pay = book.pay
+        kept.company = book.company
         kept.templates = book.templates.filter(\.isOff)
         if kept.templates.isEmpty { kept.templates = BackupFile.defaultOffBlocks }
         try replaceAll(with: kept)

@@ -177,6 +177,7 @@ struct HomeView: View {
     @State private var showPrint = false
     @State private var showStores = false
     @State private var showStaff = false
+    @State private var showCompany = false
     @State private var adding: StaffMember?
     @AppStorage("summaryTab") private var summaryTab = 0
     /// ホームの数字（シフトの中身か日付が変わったときだけ数え直す）
@@ -188,6 +189,10 @@ struct HomeView: View {
 
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                // 会社 → その下に店舗 → 選んでいる店舗の今日
+                CompanyBanner(company: store.book.company, brandHex: store.book.brandColor,
+                              storeCount: store.book.allStores.count, compact: sizeClass == .compact) { showCompany = true }
+                StoreStrip(stats: StoreTodayStat.all(store.book, today: today), compact: sizeClass == .compact) { showStores = true }
                 header(today)
                 cards(info)
                 if sizeClass == .compact {
@@ -215,6 +220,7 @@ struct HomeView: View {
         .toolbar { if storeInToolbar { ToolbarItem(placement: .topBarLeading) { StoreSwitcher() } } }
         .sheet(isPresented: $showPrint) { PrintSheet(anchor: today) }
         .sheet(isPresented: $showStores) { NavigationStack { StoreListView(inSheet: true) } }
+        .sheet(isPresented: $showCompany) { NavigationStack { CompanyInfoView(inSheet: true) } }
         // iPhone（下のタブにスタッフが無い）では、ホームからスタッフの一覧を開く
         .sheet(isPresented: $showStaff) {
             NavigationStack {
@@ -229,10 +235,12 @@ struct HomeView: View {
 
     private func header(_ today: DayKey) -> some View {
         let wd = ["日", "月", "火", "水", "木", "金", "土"][today.weekday]
-        return VStack(alignment: .leading, spacing: 4) {
-            Text(verbatim: "\(today.year)年\(today.month)月\(today.day)日（\(wd)）\(JapaneseHolidays.name(today).map { " \($0)" } ?? "")")
+        let st = store.currentStore
+        return HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Circle().fill(PaletteColor.fg(st.colorIndex)).frame(width: 9, height: 9)
+            Text("\(st.name)の今日").font(.title2.weight(.bold))
+            Text(verbatim: "\(today.month)月\(today.day)日（\(wd)）\(JapaneseHolidays.name(today).map { " \($0)" } ?? "")")
                 .font(.subheadline).foregroundStyle(.secondary)
-            Text(store.currentStore.name).font(.title.weight(.bold))
         }
     }
 

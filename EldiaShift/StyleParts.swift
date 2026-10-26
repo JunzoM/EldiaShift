@@ -138,13 +138,24 @@ struct AppSidebar: View {
     var body: some View {
         VStack(alignment: compact ? .center : .leading, spacing: 0) {
             HStack(spacing: 10) {
-                Image(systemName: "building.columns.fill").font(.title2)
+                // 会社のロゴ（無ければ建物の印）
+                if let data = store.book.company.logo, let img = StaffPhoto.image(data) {
+                    Image(uiImage: img).resizable().scaledToFill()
+                        .frame(width: 34, height: 34)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                } else {
+                    Image(systemName: "building.columns.fill").font(.title2)
+                }
                 if !compact {
                     VStack(alignment: .leading, spacing: -2) {
                         // 〇〇 は店舗ごと（店舗管理の「アプリの表示名」）
                         Text(store.currentStore.displayPrefix).font(.caption.weight(.heavy))
                             .lineLimit(1).minimumScaleFactor(0.6)
                         Text("SHIFT").font(.headline.weight(.heavy))
+                        if !store.book.company.name.isEmpty {
+                            Text(store.book.company.name).font(.caption2).opacity(0.75)
+                                .lineLimit(1).minimumScaleFactor(0.7).padding(.top, 2)
+                        }
                     }
                     .transition(.opacity)
                 }

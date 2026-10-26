@@ -191,6 +191,9 @@ struct SettingsView: View {
                 }
 
                 Section("会社") {
+                    NavigationLink { CompanyInfoView() } label: {
+                        LabeledContent("会社の情報", value: store.book.company.name.isEmpty ? "未設定" : store.book.company.name)
+                    }
                     NavigationLink { BrandColorView() } label: {
                         HStack {
                             Text("会社の色")

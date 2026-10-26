@@ -192,6 +192,8 @@ struct ShiftBook: Sendable, Equatable {
     var labor = LaborRules()
     /// 人件費の割増の決まり
     var pay = PayRules()
+    /// 会社（店舗の親）
+    var company = CompanyInfo()
     /// スタッフに公開した内容（変更点を出すため。月ごと・店舗ごと）
     var published: [PublishedMonth] = []
     /// 店舗（空なら「本店」1つとして扱う）
@@ -604,5 +606,27 @@ struct BreakRules: Codable, Equatable, Sendable {
     static func == (a: BreakRules, b: BreakRules) -> Bool {
         a.inclusive == b.inclusive
             && a.tiers.map { [$0.afterMinutes, $0.breakMinutes] } == b.tiers.map { [$0.afterMinutes, $0.breakMinutes] }
+    }
+}
+
+/// 会社（店舗の上の親。ホーム画面の見出しに出す）。チームの設定に入れて iCloud で同期する
+struct CompanyInfo: Codable, Equatable, Sendable {
+    var name = ""
+    /// ひとこと（例：スタッフの笑顔が、お客様の特別な時間をつくります）
+    var tagline = ""
+    /// ロゴ（正方形 240px の JPEG）
+    var logo: Data? = nil
+    /// ホームの見出しの写真（横長 1200px の JPEG）
+    var cover: Data? = nil
+
+    init() {}
+
+    /// 項目が足りない設定（あとから足した項目）も読めるように
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        tagline = try c.decodeIfPresent(String.self, forKey: .tagline) ?? ""
+        logo = try c.decodeIfPresent(Data.self, forKey: .logo)
+        cover = try c.decodeIfPresent(Data.self, forKey: .cover)
     }
 }
