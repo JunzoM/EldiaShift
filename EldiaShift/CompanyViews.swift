@@ -109,7 +109,7 @@ struct StoreStrip: View {
             if compact {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
-                        ForEach(stores) { card($0).frame(width: 200) }
+                        ForEach(stores) { card($0).frame(width: 250) }
                     }
                     .padding(.vertical, 2)
                 }
@@ -132,9 +132,10 @@ struct StoreStrip: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 5) {
                         Circle().fill(PaletteColor.fg(st.colorIndex)).frame(width: 7, height: 7)
-                        Text(st.name.isEmpty ? "店舗" : st.name).font(.subheadline.weight(.semibold)).lineLimit(1)
+                        Text(st.name.isEmpty ? "店舗" : st.name).font(.subheadline.weight(.semibold))
+                            .lineLimit(2).minimumScaleFactor(0.85).fixedSize(horizontal: false, vertical: true)
                     }
-                    Text("今日の出勤 \(s.working)人").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                    Text("今日の出勤 \(s.working)人").font(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
                     if s.pending > 0 {
                         Text("承認待ち \(s.pending)件").font(.caption2.weight(.bold)).foregroundStyle(.orange)
                     }
