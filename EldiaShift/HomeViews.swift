@@ -45,7 +45,7 @@ extension AppTab {
 struct MainTabsView: View {
     @Binding var anchor: DayKey
 
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Environment(\.horizontalSizeClass) private var sizeClass
     @AppStorage("appTab") private var savedTab: AppTab = .home
     @State private var tab: AppTab = .home
@@ -181,7 +181,7 @@ struct HomeView: View {
     /// 店舗の切替をツールバーに出す（iPad はサイドバーにあるので出さない）
     var storeInToolbar = true
 
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var showPrint = false
     @State private var showStores = false

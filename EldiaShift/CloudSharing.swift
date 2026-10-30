@@ -106,8 +106,8 @@ enum CloudSharingPresenter {
 
 /// 設定 → シフト表の共有
 struct ShareSettingsView: View {
-    @Environment(ShiftDatabase.self) private var db
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftDatabase) private var db
+    @Environment(\.shiftStore) private var store
     @State private var teams: [ShiftDatabase.TeamInfo] = []
     @State private var working = false
     @State private var error: String?

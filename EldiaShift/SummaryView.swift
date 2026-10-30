@@ -4,7 +4,7 @@ import SwiftUI
 struct SummaryView: View {
     @State var month: MonthKey
 
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Environment(\.horizontalSizeClass) private var sizeClass
     @AppStorage("summaryTab") private var tab = 0
 

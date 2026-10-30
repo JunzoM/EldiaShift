@@ -5,7 +5,7 @@ import SwiftUI
 struct DayTimelineView: View {
     let day: DayKey
 
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @State private var drag: DragState?
     @State private var editing: Edit?
     @State private var shortage: ShortageTarget?
@@ -362,7 +362,7 @@ struct DayTimelineView: View {
 
 /// 編集中の印（押すとロックに戻る）。コーチマークで明るく残す場所でもある
 struct EditingChip: View {
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
 
     var body: some View {
         HStack(spacing: 8) {
@@ -379,7 +379,7 @@ struct EditingChip: View {
 
 /// 編集する・見るだけ の切り替え
 struct EditToggle: View {
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
 
     var body: some View {
         Button {

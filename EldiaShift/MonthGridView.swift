@@ -8,7 +8,7 @@ struct MonthGridView: View {
     /// 日付を押したとき（その日のタイムラインへ）
     var onOpenDay: (DayKey) -> Void = { _ in }
 
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var selected: Selection?
 

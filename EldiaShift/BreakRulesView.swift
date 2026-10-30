@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 休憩の決まり（実働の計算に使う）。会社ごとに違うので選べるようにする
 struct BreakRulesView: View {
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @State private var rules = BreakRules.pcDefault
     @State private var loaded = false
     @State private var error: String?

@@ -4,7 +4,7 @@ import SwiftUI
 
 struct StartView: View {
     @Binding var importing: Bool
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @State private var error: String?
 
     var body: some View {
@@ -39,7 +39,7 @@ struct StartView: View {
 
 /// スタッフがまだいないときの表の代わり
 struct NoStaffView: View {
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @State private var adding: StaffMember?
 
     var body: some View {
@@ -60,7 +60,7 @@ struct NoStaffView: View {
 // MARK: - 部門
 
 struct DepartmentListView: View {
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @State private var editing: Department?
     @State private var error: String?
 
@@ -114,7 +114,7 @@ struct DepartmentListView: View {
 
 struct DepartmentEditView: View {
     @State var department: Department
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var error: String?
 
@@ -160,7 +160,7 @@ struct DepartmentEditView: View {
 // MARK: - 時間のひな形
 
 struct TemplateListView: View {
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @State private var editing: TimeBlock?
     @State private var error: String?
 
@@ -219,7 +219,7 @@ struct TemplateEditView: View {
     @State private var askDiscard = false
     /// スタッフの「個人の時間」を編集するとき（保存はスタッフの設定の「保存」でまとめて行う）
     var personal: Binding<[TimeBlock]>? = nil
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var error: String?
     @State private var confirmDelete = false

@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 // MARK: - スタッフの一覧（PC版の 設定 → スタッフ）
 
 struct StaffListView: View {
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var adding: StaffMember?
     /// 部門で絞る（空はすべて）
@@ -241,7 +241,7 @@ struct StaffEditView: View {
     /// シートで開いたとき（表の名前から）。「閉じる」を出す
     var inSheet = false
 
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var error: String?
     @State private var confirmDelete = false
@@ -576,7 +576,7 @@ struct PatternEditView: View {
     @Binding var patterns: [WeekPattern]
     @Binding var activeID: String?
 
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var confirmDelete = false
     @State private var initial: WeekPattern?
@@ -693,7 +693,7 @@ struct PeriodPatternEditView: View {
     let member: StaffMember
     @Binding var periods: [PeriodPattern]
 
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var confirmDelete = false
     @State private var initial: PeriodPattern?

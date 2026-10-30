@@ -80,7 +80,7 @@ struct RequestQRPoster: View {
 
 /// 申請用 QR コード：店舗を選んで、ポスターを PDF・印刷に。リンクを送ることもできる
 struct RequestQRSheet: View {
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var storeID = ""
     @State private var file: ExportFile?
