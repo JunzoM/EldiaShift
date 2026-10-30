@@ -35,6 +35,13 @@ struct LeaveRequestSections: View {
     @State private var bulk: LeaveRequest.Status?
     /// 消す前の確認（申請の id）
     @State private var deleting: String?
+    /// iPad・Mac では名前・日付・理由を横に並べる
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.appZoom) private var zoom
+
+    /// 横に並べるときの列の幅（文字の倍率に合わせる）
+    private var nameWidth: CGFloat { 200 * zoom }
+    private var dayWidth: CGFloat { 120 * zoom }
 
     var body: some View {
         let book = store.book
@@ -65,16 +72,21 @@ struct LeaveRequestSections: View {
                         .modifier(deleteConfirm(r))
                 }
                 if pending.count > 1 {
+                    // まとめて承認・却下は真ん中に並べる
                     HStack(spacing: 12) {
+                        Spacer(minLength: 0)
                         Button { bulk = .approved } label: {
                             Label("\(pending.count)件をまとめて承認", systemImage: "checkmark.circle")
                         }
-                        Spacer(minLength: 8)
+                        .buttonStyle(.borderedProminent).tint(.green)
                         Button(role: .destructive) { bulk = .rejected } label: {
                             Label("まとめて却下", systemImage: "xmark.circle")
                         }
+                        .buttonStyle(.bordered).tint(.red)
+                        Spacer(minLength: 0)
                     }
-                    .buttonStyle(.borderless)
+                    .appFont(.subheadline.weight(.semibold))
+                    .padding(.vertical, 4)
                     .confirmationDialog(bulkTitle(pending.count),
                                         isPresented: Binding(get: { bulk != nil }, set: { if !$0 { bulk = nil } }),
                                         titleVisibility: .visible, presenting: bulk) { status in
@@ -95,12 +107,7 @@ struct LeaveRequestSections: View {
         if !decided.isEmpty {
             Section {
                 ForEach(decided) { r in
-                    HStack(spacing: 10) {
-                        Text(r.member.name).appFont(.subheadline.weight(.semibold))
-                        Spacer()
-                        Text(r.day.map { HomeView.dayLabel($0) } ?? r.request.day).appFont(.subheadline).monospacedDigit()
-                        StatusPill(text: r.request.status.label, color: r.request.status == .approved ? .green : .gray)
-                    }
+                    decidedRow(r)
                     .swipeActions {
                         Button { decide([r], .pending, sendReply: false) } label: { Label("承認待ちに戻す", systemImage: "arrow.uturn.backward") }
                             .tint(.orange)
@@ -124,20 +131,66 @@ struct LeaveRequestSections: View {
         }
     }
 
+    private func dayText(_ r: LeaveRequestRow) -> String { r.day.map { HomeView.dayLabel($0) } ?? r.request.day }
+
+    /// 理由（無いときは「理由なし」を薄く）
+    private func reasonText(_ r: LeaveRequestRow) -> some View {
+        Text(r.request.note.isEmpty ? "理由なし" : r.request.note)
+            .foregroundStyle(r.request.note.isEmpty ? HierarchicalShapeStyle.tertiary : HierarchicalShapeStyle.secondary)
+            .lineLimit(2)
+    }
+
+    /// 決めた申請の行：iPad・Mac は「名前｜日付｜理由｜結果」を横に並べる
+    @ViewBuilder
+    private func decidedRow(_ r: LeaveRequestRow) -> some View {
+        let pill = StatusPill(text: r.request.status.label, color: r.request.status == .approved ? .green : .gray)
+        if sizeClass == .compact {
+            HStack(spacing: 10) {
+                Text(r.member.name).appFont(.subheadline.weight(.semibold))
+                Spacer()
+                Text(dayText(r)).appFont(.subheadline).monospacedDigit()
+                pill
+            }
+        } else {
+            HStack(spacing: 16) {
+                Text(r.member.name).appFont(.subheadline.weight(.semibold))
+                    .lineLimit(1).frame(width: nameWidth, alignment: .leading)
+                Text(dayText(r)).appFont(.subheadline).monospacedDigit()
+                    .frame(width: dayWidth, alignment: .leading)
+                reasonText(r).appFont(.subheadline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                pill
+            }
+        }
+    }
+
     private func pendingRow(_ r: LeaveRequestRow, color: Int, book: ShiftBook) -> some View {
         let shift = r.day.flatMap { Schedule.resolve(r.member, on: $0, in: book) }
-        return HStack(spacing: 12) {
-            InitialAvatar(name: r.member.name, colorIndex: color, size: 34, photo: r.member.photo)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(r.member.name).appFont(.body.weight(.semibold))
-                    Text(r.day.map { HomeView.dayLabel($0) } ?? r.request.day).appFont(.subheadline.weight(.semibold)).monospacedDigit()
+        return HStack(spacing: sizeClass == .compact ? 12 : 16) {
+            if sizeClass == .compact {
+                InitialAvatar(name: r.member.name, colorIndex: color, size: 34, photo: r.member.photo)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(r.member.name).appFont(.body.weight(.semibold))
+                        Text(dayText(r)).appFont(.subheadline.weight(.semibold)).monospacedDigit()
+                    }
+                    if !r.request.note.isEmpty {
+                        Text(r.request.note).appFont(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    }
                 }
-                if !r.request.note.isEmpty {
-                    Text(r.request.note).appFont(.caption).foregroundStyle(.secondary).lineLimit(2)
+                Spacer()
+            } else {
+                // 名前｜日付｜理由 を列にそろえて横に並べる
+                HStack(spacing: 10) {
+                    InitialAvatar(name: r.member.name, colorIndex: color, size: 34, photo: r.member.photo)
+                    Text(r.member.name).appFont(.body.weight(.semibold)).lineLimit(1)
                 }
+                .frame(width: nameWidth, alignment: .leading)
+                Text(dayText(r)).appFont(.subheadline.weight(.semibold)).monospacedDigit()
+                    .frame(width: dayWidth, alignment: .leading)
+                reasonText(r).appFont(.subheadline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Spacer()
             if let shift, !shift.isOff { StatusPill(text: "勤務あり", color: .red) }
             HStack(spacing: 6) {
                 Button { decide([r], .rejected) } label: { Image(systemName: "xmark") }
