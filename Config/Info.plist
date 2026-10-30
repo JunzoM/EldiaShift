@@ -13,6 +13,8 @@
 			</array>
 		</dict>
 	</array>
+	<key>CKSharingSupported</key>
+	<true/>
 	<key>NSFaceIDUsageDescription</key>
 	<string>隠している人件費・給与を表示するときに、本人の確認に使います。</string>
 	<key>UIFileSharingEnabled</key>

@@ -1,0 +1,212 @@
+import CloudKit
+import Observation
+import SwiftUI
+import UIKit
+
+// MARK: - iCloud 共有（シフト表をほかの管理者と共同編集する）
+// 共有は Apple の共有の画面（UICloudSharingController）で招待を送る。招待のリンクを押すと、
+// シーンのデリゲートに届くので、データベースに受け取らせる。給与は共有されない（ShiftDatabase を参照）。
+
+/// 招待を受け取った結果を画面に出す
+@MainActor
+@Observable
+final class ShareInbox {
+    static let shared = ShareInbox()
+    var message: String?
+
+    func accept(_ metadata: CKShare.Metadata) {
+        Task { @MainActor in
+            guard let db = ShiftDatabase.current else { return }
+            do {
+                try await db.accept(metadata)
+                self.message = "共有されたシフト表を受け取りました。届くまで少しかかることがあります。届いたら自動で切り替わります（設定の「シフト表の共有」でも切り替えられます）。"
+            } catch {
+                self.message = "共有を受け取れませんでした（\(error.localizedDescription)）"
+            }
+        }
+    }
+}
+
+/// 招待のリンクを押したときに呼ばれる（アプリが開いているとき・閉じていたとき）
+final class ShareSceneDelegate: NSObject, UIWindowSceneDelegate {
+    func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
+        if let metadata = connectionOptions.cloudKitShareMetadata {
+            Task { @MainActor in ShareInbox.shared.accept(metadata) }
+        }
+    }
+
+    func windowScene(_ windowScene: UIWindowScene, userDidAcceptCloudKitShareWith cloudKitShareMetadata: CKShare.Metadata) {
+        Task { @MainActor in ShareInbox.shared.accept(cloudKitShareMetadata) }
+    }
+}
+
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication, configurationForConnecting connectingSceneSession: UISceneSession,
+                     options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        let config = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+        config.delegateClass = ShareSceneDelegate.self
+        return config
+    }
+}
+
+/// Apple の共有の画面を、いちばん上の画面から出す（参加者の招待・権限・共有をやめる）
+@MainActor
+enum CloudSharingPresenter {
+    private static var delegate: Delegate?
+
+    static func present(_ share: CKShare, container: CKContainer, onChange: @escaping (CKShare?) -> Void) {
+        let controller = UICloudSharingController(share: share, container: container)
+        controller.availablePermissions = [.allowPrivate, .allowReadWrite, .allowReadOnly]
+        let d = Delegate(onChange: onChange)
+        delegate = d
+        controller.delegate = d
+        guard let top = topViewController() else { return }
+        if let pop = controller.popoverPresentationController {
+            pop.sourceView = top.view
+            pop.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.midY, width: 1, height: 1)
+            pop.permittedArrowDirections = []
+        }
+        top.present(controller, animated: true)
+    }
+
+    private static func topViewController() -> UIViewController? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let window = scenes.flatMap(\.windows).first { $0.isKeyWindow } ?? scenes.first?.windows.first
+        var top = window?.rootViewController
+        while let next = top?.presentedViewController { top = next }
+        return top
+    }
+
+    private final class Delegate: NSObject, UICloudSharingControllerDelegate {
+        let onChange: (CKShare?) -> Void
+        init(onChange: @escaping (CKShare?) -> Void) { self.onChange = onChange }
+
+        func itemTitle(for csc: UICloudSharingController) -> String? { "シフト表" }
+
+        func cloudSharingController(_ csc: UICloudSharingController, failedToSaveShareWithError error: Error) {
+            Task { @MainActor in ShareInbox.shared.message = "共有を保存できませんでした（\(error.localizedDescription)）" }
+        }
+
+        func cloudSharingControllerDidSaveShare(_ csc: UICloudSharingController) {
+            let share = csc.share
+            let done = onChange
+            Task { @MainActor in done(share) }
+        }
+
+        func cloudSharingControllerDidStopSharing(_ csc: UICloudSharingController) {
+            let done = onChange
+            Task { @MainActor in done(nil) }
+        }
+    }
+}
+
+/// 設定 → シフト表の共有
+struct ShareSettingsView: View {
+    @Environment(ShiftDatabase.self) private var db
+    @Environment(ShiftStore.self) private var store
+    @State private var teams: [ShiftDatabase.TeamInfo] = []
+    @State private var working = false
+    @State private var error: String?
+
+    var body: some View {
+        let active = teams.first(where: \.isActive)
+        Form {
+            if !db.iCloudEnabled {
+                Section {
+                    Toggle("iCloud で同期する", isOn: Binding(get: { db.iCloudEnabled }, set: { db.setICloud($0) }))
+                } footer: {
+                    Text("共有には iCloud 同期が要ります。オンにすると、この端末のシフト表が iCloud に保存されます。")
+                }
+            }
+
+            if teams.count > 1 {
+                Section {
+                    ForEach(teams) { t in
+                        Button {
+                            db.setActiveTeam(t.sharedWithMe ? t.id : nil)
+                            store.reload()
+                            refresh()
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(t.title).foregroundStyle(.primary)
+                                    if t.sharedWithMe {
+                                        Text(t.canEdit ? "編集できる" : "見るだけ").font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                                Spacer()
+                                if t.isActive { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
+                            }
+                        }
+                    }
+                } header: {
+                    Text("表示するシフト表")
+                } footer: {
+                    Text("自分のシフト表と、ほかの人から共有されたシフト表を切り替えます（端末ごとに覚えます）。")
+                }
+            }
+
+            Section {
+                if let active, active.sharedWithMe {
+                    LabeledContent("共有した人", value: active.ownerName.map { "\($0)さん" } ?? "—")
+                    LabeledContent("この端末でできること", value: active.canEdit ? "編集できる" : "見るだけ")
+                    Button { manage() } label: { Label("参加者を見る・共有から抜ける", systemImage: "person.2") }
+                        .disabled(working)
+                } else {
+                    LabeledContent("いまの状態", value: (active?.participants ?? 0) > 0 ? "\(active?.participants ?? 0)人と共有中" : "共有していません")
+                    Button { manage() } label: {
+                        Label((active?.participants ?? 0) > 0 ? "参加者を管理する" : "シフト表を共有する", systemImage: "person.badge.plus")
+                    }
+                    .disabled(working || !db.iCloudEnabled)
+                }
+                if working { ProgressView() }
+            } header: {
+                Text("共有")
+            } footer: {
+                Text("LINE・メッセージ・メールで招待を送れます。相手ごとに「編集できる」か「見るだけ」かを選べます。招待された人は、リンクを押すと同じシフト表を使えます（相手の端末にも SHIFT が要ります）。")
+            }
+
+            Section("共有されるもの・されないもの") {
+                Label("店舗・部門・時間のひな形・スタッフ・シフト・マスのメモ・希望休の申請・会社の情報・人件費の予算と割増の決まり", systemImage: "checkmark.circle")
+                    .font(.subheadline)
+                Label("時給・月給（給与）は共有されません。この端末と、同じ Apple ID の端末にだけ残ります。", systemImage: "lock")
+                    .font(.subheadline)
+                Label("共有を始める前に、同じ Apple ID のほかの端末の SHIFT も最新の版にしてください（前の版は給与をスタッフの記録に書くため）。", systemImage: "exclamationmark.triangle")
+                    .font(.footnote).foregroundStyle(.orange)
+            }
+        }
+        .navigationTitle("シフト表の共有")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear(perform: refresh)
+        .onChange(of: db.changeToken) { refresh() }
+        .errorAlert($error)
+    }
+
+    private func refresh() { teams = db.teams() }
+
+    /// 共有を作って（まだなら）、Apple の共有の画面を出す
+    private func manage() {
+        working = true
+        Task { @MainActor in
+            defer { working = false }
+            do {
+                let pair: (CKShare, CKContainer)
+                if let existing = db.shareForActiveTeam() {
+                    pair = (existing, CKContainer(identifier: ShiftDatabase.cloudContainerID))
+                } else {
+                    pair = try await db.makeShare()
+                }
+                CloudSharingPresenter.present(pair.0, container: pair.1) { updated in
+                    Task { @MainActor in
+                        if let updated { await db.persistUpdatedShare(updated) }
+                        store.reload()
+                        refresh()
+                    }
+                }
+                refresh()
+            } catch {
+                self.error = error.localizedDescription
+            }
+        }
+    }
+}

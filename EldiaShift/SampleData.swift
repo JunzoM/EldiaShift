@@ -96,9 +96,7 @@ extension ShiftStore {
         let ctx = db.viewContext
         for m in book.staff where SampleData.isSample(m.id) {
             try ShiftRecords.delete(ShiftModel.Entity.staff, key: m.id, in: ctx)
-            let req = NSFetchRequest<NSManagedObject>(entityName: ShiftModel.Entity.cell)
-            req.predicate = NSPredicate(format: "staffKey == %@", m.id)
-            try ctx.fetch(req).forEach(ctx.delete)
+            try ShiftRecords.deleteCells(ofStaff: m.id, in: ctx)
             dropHistory(for: m.id)
         }
         for d in book.departments where SampleData.isSample(d.id) {

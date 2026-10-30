@@ -79,6 +79,7 @@ struct LaborCostLockedView: View {
 struct LaborCostView: View {
     let month: MonthKey
     @Environment(ShiftStore.self) private var store
+    @Environment(ShiftDatabase.self) private var db
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var csvFile: ExportFile?
     @State private var failure: String?
@@ -101,6 +102,12 @@ struct LaborCostView: View {
         let total = pays.values.reduce(StaffPay()) { $0 + $1 }
         let missing = groups.flatMap(\.members).filter { (pays[$0.id]?.missingWageDays ?? 0) > 0 }
         return List {
+            if db.viewingSharedTeam {
+                Section {
+                    Label("共有されたシフト表です。給与は共有されないので、この端末で給与を入れた人の分だけを数えます。", systemImage: "lock")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+            }
             Section {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("\(month.month)月の人件費（概算）").font(.subheadline).foregroundStyle(.secondary)

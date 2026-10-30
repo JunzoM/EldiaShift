@@ -200,8 +200,8 @@ final class ShiftStore {
     func setBreakRules(_ rules: BreakRules) throws {
         var b = book
         b.breakRules = rules
-        // 2台で同期を始めたときにチームが2つできていても、どちらにも書く
-        for team in try ShiftRecords.allTeams(db.viewContext) { try ShiftRecords.saveSettings(b, team: team) }
+        // 2台で同期を始めたときにチームが2つできていても、どちらにも書く（共有されたシフト表なら、そのチームだけ）
+        for team in try ShiftRecords.settingsTeams(db.viewContext) { try ShiftRecords.saveSettings(b, team: team) }
         try db.save()
         book.breakRules = rules
     }
@@ -209,7 +209,7 @@ final class ShiftStore {
     func setStaffing(_ plan: StaffingPlan) throws {
         var b = book
         b.staffing = plan
-        for team in try ShiftRecords.allTeams(db.viewContext) { try ShiftRecords.saveSettings(b, team: team) }
+        for team in try ShiftRecords.settingsTeams(db.viewContext) { try ShiftRecords.saveSettings(b, team: team) }
         try db.save()
         book.staffing = plan
     }
@@ -218,7 +218,7 @@ final class ShiftStore {
     private func updateSettings(_ change: (inout ShiftBook) -> Void) throws {
         var b = book
         change(&b)
-        for team in try ShiftRecords.allTeams(db.viewContext) { try ShiftRecords.saveSettings(b, team: team) }
+        for team in try ShiftRecords.settingsTeams(db.viewContext) { try ShiftRecords.saveSettings(b, team: team) }
         try db.save()
         book.breakRules = b.breakRules
         book.staffing = b.staffing
@@ -321,7 +321,7 @@ enum ShiftRecords {
         /// 雇用形態・顔写真。前の版の記録には無い
         var employment: String? = nil
         var photo: Data? = nil
-        /// 給与の決まり。前の版の記録には無い
+        /// 給与の決まり。1.1 までの記録にだけある（1.2 からは PayRecord に入れ、ここには書かない。共有されないように）
         var wages: [WageEntry]? = nil
         /// 希望休の申請。前の版の記録には無い
         var leaveRequests: [LeaveRequest]? = nil
@@ -335,21 +335,21 @@ enum ShiftRecords {
             extraStoreIDs = s.extraStoreIDs
             employment = s.employment.isEmpty ? nil : s.employment
             photo = s.photo
-            wages = s.wages.isEmpty ? nil : s.wages
+            wages = nil
             leaveRequests = s.leaveRequests.isEmpty ? nil : s.leaveRequests
         }
     }
 
+    /// 表示するチーム（端末ごとに覚えたもの。nil は自分のシフト表）。ShiftDatabase が入れる
+    nonisolated(unsafe) static var activeTeamID: UUID?
+
     static func load(_ ctx: NSManagedObjectContext) throws -> ShiftBook {
         var book = ShiftBook()
 
-        let teams = try ctx.fetch({ () -> NSFetchRequest<NSManagedObject> in
-            let r = NSFetchRequest<NSManagedObject>(entityName: ShiftModel.Entity.team)
-            r.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: true)]
-            return r
-        }())
-        if teams.count > 1 { try mergeTeams(ctx) }
-        if let data = teams.first(where: { $0.value(forKey: "settings") != nil })?.value(forKey: "settings") as? Data,
+        if try ownTeams(ctx).count > 1 { try mergeTeams(ctx) }
+        let team = try currentTeam(ctx)
+        let theirs = ShiftDatabase.isShared(team.objectID.persistentStore)
+        if let data = team.value(forKey: "settings") as? Data,
            let settings = try? JSONDecoder().decode(TeamSettings.self, from: data) {
             book.breakRules = settings.breakRules
             book.staffing = settings.staffing ?? StaffingPlan()
@@ -361,12 +361,12 @@ enum ShiftRecords {
             book.brandColor = settings.brandColor
         }
 
-        book.departments = try newestByKey(fetch(ShiftModel.Entity.department, ctx), key: "key", ctx: ctx).map { r in
+        book.departments = try newestByKey(fetch(ShiftModel.Entity.department, ctx, team: team), key: "key", ctx: ctx).map { r in
             Department(id: r.str("key"), name: r.str("name"), colorIndex: Palette.index(r.int("colorIndex")),
                        sortOrder: r.int("sortOrder"), storeID: r.str("storeKey"))
         }.sorted { $0.sortOrder < $1.sortOrder }
 
-        book.templates = try newestByKey(fetch(ShiftModel.Entity.template, ctx), key: "key", ctx: ctx)
+        book.templates = try newestByKey(fetch(ShiftModel.Entity.template, ctx, team: team), key: "key", ctx: ctx)
             .sorted { $0.int("sortOrder") < $1.int("sortOrder") }
             .map { r in
                 let i = r.int("inMinutes"), o = r.int("outMinutes")
@@ -377,19 +377,31 @@ enum ShiftRecords {
             }
 
         let decoder = JSONDecoder()
-        book.staff = try newestByKey(fetch(ShiftModel.Entity.staff, ctx), key: "key", ctx: ctx).map { r in
+        // 給与は自分だけの入れ物から（無ければ、前の版でスタッフの記録に入れた給与。共有されたシフト表のものは使わない）
+        var pays = Dictionary(newestByKey(try ctx.fetch(NSFetchRequest<NSManagedObject>(entityName: ShiftModel.Entity.pay)), key: "key", ctx: ctx)
+            .map { ($0.str("key"), $0) }, uniquingKeysWith: { a, _ in a })
+        book.staff = try newestByKey(fetch(ShiftModel.Entity.staff, ctx, team: team), key: "key", ctx: ctx).map { r -> StaffMember in
             let detail = (r.value(forKey: "detail") as? Data).flatMap { try? decoder.decode(StaffDetail.self, from: $0) }
+            let key = r.str("key")
+            let oldWages = theirs ? [] : (detail?.wages ?? [])
+            if !oldWages.isEmpty, var d = detail {
+                // 前の版の給与を、自分だけの入れ物へ移す（入れ物にもう入っていれば、そちらを使う）
+                if pays[key] == nil { pays[key] = try upsertPay(key, oldWages, in: ctx) }
+                d.wages = nil
+                r.setValue(try JSONEncoder().encode(d), forKey: "detail")
+            }
+            let staffWages = pays[key].map { Self.wages(of: $0) } ?? oldWages
             return StaffMember(id: r.str("key"), number: r.int("number"), name: r.str("name"),
                                departmentID: r.str("departmentKey"), active: r.value(forKey: "active") as? Bool ?? true,
                                joinDate: r.str("joinDate"), leaveDate: r.str("leaveDate"),
                                timeBlocks: detail?.timeBlocks ?? [], patterns: detail?.patterns ?? [],
                                activePatternID: detail?.activePatternID, periodPatterns: detail?.periodPatterns ?? [],
                                offRequests: detail?.offRequests ?? [], extraStoreIDs: detail?.extraStoreIDs ?? [],
-                               employment: detail?.employment ?? "", photo: detail?.photo, wages: detail?.wages ?? [],
+                               employment: detail?.employment ?? "", photo: detail?.photo, wages: staffWages,
                                leaveRequests: detail?.leaveRequests ?? [])
         }
 
-        for r in try newestByKey(fetch(ShiftModel.Entity.cell, ctx), keyOf: { "\($0.str("staffKey"))|\($0.str("day"))" }, ctx: ctx) {
+        for r in try newestByKey(fetch(ShiftModel.Entity.cell, ctx, team: team), keyOf: { "\($0.str("staffKey"))|\($0.str("day"))" }, ctx: ctx) {
             guard let day = DayKey(r.str("day")) else { continue }
             let block = r.str("blockKey")
             let st = r.str("storeKey")
@@ -399,15 +411,53 @@ enum ShiftRecords {
                 blockID: block.isEmpty ? nil : block, isOff: r.value(forKey: "isOff") as? Bool ?? false,
                 storeID: st.isEmpty ? nil : st, note: note.isEmpty ? nil : note)
         }
-        if ctx.hasChanges { try ctx.save() }   // 重複を片付けた分
+        // 重複を片付けた分・給与を移した分。「見るだけ」で共有されたシフト表は保存できないので、そのときは取り消す
+        if ctx.hasChanges {
+            do { try ctx.save() } catch { ctx.rollback() }
+        }
         return book
+    }
+
+    /// 給与の記録を書く（無ければ作る。自分のデータの入れ物に入る）
+    @discardableResult
+    static func upsertPay(_ staffID: String, _ wages: [WageEntry], in ctx: NSManagedObjectContext) throws -> NSManagedObject? {
+        let req = NSFetchRequest<NSManagedObject>(entityName: ShiftModel.Entity.pay)
+        req.predicate = NSPredicate(format: "key == %@", staffID)
+        let rows = try ctx.fetch(req)
+        if rows.isEmpty && wages.isEmpty { return nil }
+        let r = rows.first ?? NSEntityDescription.insertNewObject(forEntityName: ShiftModel.Entity.pay, into: ctx)
+        rows.dropFirst().forEach(ctx.delete)
+        r.setValue(staffID, forKey: "key")
+        r.setValue(try JSONEncoder().encode(wages), forKey: "wages")
+        r.setValue(Date(), forKey: "updatedAt")
+        return r
+    }
+
+    static func wages(of r: NSManagedObject) -> [WageEntry] {
+        (r.value(forKey: "wages") as? Data).flatMap { try? JSONDecoder().decode([WageEntry].self, from: $0) } ?? []
+    }
+
+    /// 共有を作る前に：自分のシフト表のスタッフの記録に残っている給与（前の版の書き方）を、自分だけの入れ物へ移して消す
+    static func stripWagesFromStaff(in ctx: NSManagedObjectContext) throws {
+        let team = try currentTeam(ctx)
+        guard !ShiftDatabase.isShared(team.objectID.persistentStore) else { return }
+        let decoder = JSONDecoder()
+        for r in try fetch(ShiftModel.Entity.staff, ctx, team: team) {
+            guard let data = r.value(forKey: "detail") as? Data, var d = try? decoder.decode(StaffDetail.self, from: data),
+                  let old = d.wages, !old.isEmpty else { continue }
+            let req = NSFetchRequest<NSManagedObject>(entityName: ShiftModel.Entity.pay)
+            req.predicate = NSPredicate(format: "key == %@", r.str("key"))
+            if try ctx.fetch(req).isEmpty { try upsertPay(r.str("key"), old, in: ctx) }
+            d.wages = nil
+            r.setValue(try JSONEncoder().encode(d), forKey: "detail")
+        }
     }
 
     static func replaceAll(with book: ShiftBook, in ctx: NSManagedObjectContext) throws {
         let team = try currentTeam(ctx)
         try saveSettings(book, team: team)
         for name in [ShiftModel.Entity.department, ShiftModel.Entity.template, ShiftModel.Entity.staff, ShiftModel.Entity.cell] {
-            for r in try fetch(name, ctx) { ctx.delete(r) }
+            for r in try fetch(name, ctx, team: team) { ctx.delete(r) }
         }
         let now = Date()
 
@@ -441,6 +491,7 @@ enum ShiftRecords {
             r.setValue(s.joinDate, forKey: "joinDate")
             r.setValue(s.leaveDate, forKey: "leaveDate")
             r.setValue(try encoder.encode(StaffDetail(s)), forKey: "detail")
+            try upsertPay(s.id, s.wages, in: ctx)
         }
         for (k, c) in book.cells {
             let r = insert(ShiftModel.Entity.cell, ctx, team: team, now: now)
@@ -457,8 +508,9 @@ enum ShiftRecords {
 
     /// 1人×1日の記録を書き換える（nil なら消す）。同じ人・同じ日の記録が複数あれば1つにまとめる
     static func upsertCell(_ key: CellKey, _ entry: CellEntry?, in ctx: NSManagedObjectContext) throws {
-        let req = NSFetchRequest<NSManagedObject>(entityName: ShiftModel.Entity.cell)
-        req.predicate = NSPredicate(format: "staffKey == %@ AND day == %@", key.staffID, key.day.description)
+        let team = try currentTeam(ctx)
+        let req = request(ShiftModel.Entity.cell, NSPredicate(format: "staffKey == %@ AND day == %@", key.staffID, key.day.description),
+                          team: team, ctx: ctx)
         let rows = try ctx.fetch(req)
         guard let entry else {
             rows.forEach(ctx.delete)
@@ -469,7 +521,7 @@ enum ShiftRecords {
             r = first
             rows.dropFirst().forEach(ctx.delete)
         } else {
-            r = insert(ShiftModel.Entity.cell, ctx, team: try currentTeam(ctx), now: Date())
+            r = insert(ShiftModel.Entity.cell, ctx, team: team, now: Date())
             r.setValue(key.staffID, forKey: "staffKey")
             r.setValue(key.day.description, forKey: "day")
         }
@@ -487,11 +539,10 @@ enum ShiftRecords {
         guard !items.isEmpty else { return }
         if items.count == 1 { return try upsertCell(items[0].0, items[0].1, in: ctx) }
         let days = Array(Set(items.map { $0.0.day.description }))
-        let req = NSFetchRequest<NSManagedObject>(entityName: ShiftModel.Entity.cell)
-        req.predicate = NSPredicate(format: "day IN %@", days)
+        let team = try currentTeam(ctx)
+        let req = request(ShiftModel.Entity.cell, NSPredicate(format: "day IN %@", days), team: team, ctx: ctx)
         var existing: [String: [NSManagedObject]] = [:]
         for r in try ctx.fetch(req) { existing["\(r.str("staffKey"))|\(r.str("day"))", default: []].append(r) }
-        var team: NSManagedObject?
         let now = Date()
         for (key, entry) in items {
             let rows = existing[key.description] ?? []
@@ -505,8 +556,7 @@ enum ShiftRecords {
                 r = first
                 rows.dropFirst().forEach(ctx.delete)
             } else {
-                if team == nil { team = try currentTeam(ctx) }
-                r = insert(ShiftModel.Entity.cell, ctx, team: team!, now: now)
+                r = insert(ShiftModel.Entity.cell, ctx, team: team, now: now)
                 r.setValue(key.staffID, forKey: "staffKey")
                 r.setValue(key.day.description, forKey: "day")
             }
@@ -536,12 +586,26 @@ enum ShiftRecords {
         return teams.isEmpty ? [try currentTeam(ctx)] : teams
     }
 
-    /// 2台で同期を始めると、それぞれが作った「チーム」が2つになることがある。
-    /// いちばん古いチームに記録を寄せ、設定の無いほうを片付ける（記録を先に移すので、チームを消しても記録は消えない）
-    static func mergeTeams(_ ctx: NSManagedObjectContext) throws {
+    /// 自分のチーム（自分のデータの入れ物にあるもの。ほかの人から共有されたものは入れない）。古い順
+    static func ownTeams(_ ctx: NSManagedObjectContext) throws -> [NSManagedObject] {
         let req = NSFetchRequest<NSManagedObject>(entityName: ShiftModel.Entity.team)
         req.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: true)]
-        let teams = try ctx.fetch(req)
+        return try ctx.fetch(req).filter { !ShiftDatabase.isShared($0.objectID.persistentStore) }
+    }
+
+    /// 設定を書くチーム：自分のシフト表なら自分のチームすべて（2台で同期を始めたときの重複にも書く）、共有されたものならそのチームだけ
+    static func settingsTeams(_ ctx: NSManagedObjectContext) throws -> [NSManagedObject] {
+        let team = try currentTeam(ctx)
+        if ShiftDatabase.isShared(team.objectID.persistentStore) { return [team] }
+        let own = try ownTeams(ctx)
+        return own.isEmpty ? [team] : own
+    }
+
+    /// 2台で同期を始めると、それぞれが作った「チーム」が2つになることがある。
+    /// いちばん古いチームに記録を寄せ、設定の無いほうを片付ける（記録を先に移すので、チームを消しても記録は消えない）。
+    /// まとめるのは自分のチームどうしだけ（ほかの人から共有されたシフト表は混ぜない）
+    static func mergeTeams(_ ctx: NSManagedObjectContext) throws {
+        let teams = try ownTeams(ctx)
         guard teams.count > 1, let keep = teams.first else { return }
         for extra in teams.dropFirst() {
             if keep.value(forKey: "settings") == nil, let s = extra.value(forKey: "settings") { keep.setValue(s, forKey: "settings") }
@@ -552,11 +616,18 @@ enum ShiftRecords {
         }
     }
 
-    /// このアプリのチーム（無ければ作る。複数あれば一番古いもの）
-    static func currentTeam(_ ctx: NSManagedObjectContext) throws -> NSManagedObject {
+    /// 表示しているチーム（選んだチーム → 自分のチームのいちばん古いもの）。無ければ nil（作らない）
+    static func existingCurrentTeam(_ ctx: NSManagedObjectContext) throws -> NSManagedObject? {
         let req = NSFetchRequest<NSManagedObject>(entityName: ShiftModel.Entity.team)
         req.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: true)]
-        if let t = try ctx.fetch(req).first { return t }
+        let teams = try ctx.fetch(req)
+        if let id = activeTeamID, let t = teams.first(where: { $0.value(forKey: "id") as? UUID == id }) { return t }
+        return teams.first { !ShiftDatabase.isShared($0.objectID.persistentStore) }
+    }
+
+    /// 表示しているチーム（無ければ自分のチームを作る）
+    static func currentTeam(_ ctx: NSManagedObjectContext) throws -> NSManagedObject {
+        if let t = try existingCurrentTeam(ctx) { return t }
         let t = NSEntityDescription.insertNewObject(forEntityName: ShiftModel.Entity.team, into: ctx)
         t.setValue(UUID(), forKey: "id")
         t.setValue("シフト表", forKey: "name")
@@ -566,12 +637,37 @@ enum ShiftRecords {
 
     // MARK: 部品
 
-    static func fetch(_ name: String, _ ctx: NSManagedObjectContext) throws -> [NSManagedObject] {
-        try ctx.fetch(NSFetchRequest<NSManagedObject>(entityName: name))
+    /// そのチームの記録（自分のチームなら、チームにつながっていない古い記録も含める）
+    static func fetch(_ name: String, _ ctx: NSManagedObjectContext, team: NSManagedObject) throws -> [NSManagedObject] {
+        try ctx.fetch(request(name, team: team, ctx: ctx))
+    }
+
+    /// 表示しているチームの記録を探す条件。自分のチームなら自分のデータの入れ物だけ、共有されたものなら共有の入れ物だけを見る
+    /// （共有の記録が届く途中でチームのつながりがまだ無いときに、自分のシフト表へ紛れ込まないように）
+    static func request(_ entity: String, _ p: NSPredicate? = nil, team: NSManagedObject, ctx: NSManagedObjectContext) -> NSFetchRequest<NSManagedObject> {
+        let req = NSFetchRequest<NSManagedObject>(entityName: entity)
+        req.predicate = p.map { scoped($0, to: team) } ?? inTeam(team)
+        let shared = ShiftDatabase.isShared(team.objectID.persistentStore)
+        let stores = ctx.persistentStoreCoordinator?.persistentStores.filter { ShiftDatabase.isShared($0) == shared } ?? []
+        if !stores.isEmpty { req.affectedStores = stores }
+        return req
+    }
+
+    static func inTeam(_ team: NSManagedObject) -> NSPredicate {
+        ShiftDatabase.isShared(team.objectID.persistentStore)
+            ? NSPredicate(format: "team == %@", team)
+            : NSPredicate(format: "team == %@ OR team == nil", team)
+    }
+
+    /// 条件に「表示しているチームの記録」を足す
+    static func scoped(_ p: NSPredicate, to team: NSManagedObject) -> NSPredicate {
+        NSCompoundPredicate(andPredicateWithSubpredicates: [p, inTeam(team)])
     }
 
     static func insert(_ name: String, _ ctx: NSManagedObjectContext, team: NSManagedObject, now: Date) -> NSManagedObject {
         let r = NSEntityDescription.insertNewObject(forEntityName: name, into: ctx)
+        // 共有されたシフト表の記録は、共有の入れ物に入れる（チームと同じ入れ物でないと保存できない）
+        if !team.objectID.isTemporaryID, let store = team.objectID.persistentStore { ctx.assign(r, to: store) }
         r.setValue(team, forKey: "team")
         r.setValue(now, forKey: "updatedAt")
         return r

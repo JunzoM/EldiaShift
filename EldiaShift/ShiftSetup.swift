@@ -101,9 +101,7 @@ extension ShiftStore {
     /// スタッフを消す（その人のシフトも消す）
     func deleteStaff(_ s: StaffMember) throws {
         try ShiftRecords.delete(ShiftModel.Entity.staff, key: s.id, in: db.viewContext)
-        let req = NSFetchRequest<NSManagedObject>(entityName: ShiftModel.Entity.cell)
-        req.predicate = NSPredicate(format: "staffKey == %@", s.id)
-        try db.viewContext.fetch(req).forEach(db.viewContext.delete)
+        try ShiftRecords.deleteCells(ofStaff: s.id, in: db.viewContext)
         // 同じ部門の番号を詰める（PC版と同じ）
         let rest = book.staff.filter { $0.departmentID == s.departmentID && $0.id != s.id }.sorted(by: StaffMember.order)
         for (i, original) in rest.enumerated() where original.number != i + 1 {
@@ -186,24 +184,32 @@ extension ShiftRecords {
         r.setValue(s.leaveDate, forKey: "leaveDate")
         r.setValue(try JSONEncoder().encode(StaffDetail(s)), forKey: "detail")
         r.setValue(Date(), forKey: "updatedAt")
+        // 給与は共有されない自分だけの入れ物へ
+        try upsertPay(s.id, s.wages, in: ctx)
     }
 
+    /// 表示しているチームの、そのキーの記録を消す
     static func delete(_ entity: String, key: String, in ctx: NSManagedObjectContext) throws {
-        let req = NSFetchRequest<NSManagedObject>(entityName: entity)
-        req.predicate = NSPredicate(format: "key == %@", key)
+        let req = request(entity, NSPredicate(format: "key == %@", key), team: try currentTeam(ctx), ctx: ctx)
         try ctx.fetch(req).forEach(ctx.delete)
     }
 
-    /// そのキーの記録（無ければ作る。重複していれば1つにまとめる）
+    /// 表示しているチームの、そのスタッフのマスをすべて消す
+    static func deleteCells(ofStaff staffID: String, in ctx: NSManagedObjectContext) throws {
+        let req = request(ShiftModel.Entity.cell, NSPredicate(format: "staffKey == %@", staffID), team: try currentTeam(ctx), ctx: ctx)
+        try ctx.fetch(req).forEach(ctx.delete)
+    }
+
+    /// 表示しているチームの、そのキーの記録（無ければ作る。重複していれば1つにまとめる）
     private static func record(_ entity: String, key: String, in ctx: NSManagedObjectContext) throws -> NSManagedObject {
-        let req = NSFetchRequest<NSManagedObject>(entityName: entity)
-        req.predicate = NSPredicate(format: "key == %@", key)
+        let team = try currentTeam(ctx)
+        let req = request(entity, NSPredicate(format: "key == %@", key), team: team, ctx: ctx)
         let rows = try ctx.fetch(req)
         if let first = rows.first {
             rows.dropFirst().forEach(ctx.delete)
             return first
         }
-        let r = insert(entity, ctx, team: try currentTeam(ctx), now: Date())
+        let r = insert(entity, ctx, team: team, now: Date())
         r.setValue(key, forKey: "key")
         return r
     }
