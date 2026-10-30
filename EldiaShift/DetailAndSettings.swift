@@ -150,11 +150,16 @@ struct SettingsView: View {
     @State private var exportError: String?
     @State private var confirmReset = false
     @State private var tipsReset = false
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    /// iPad・Mac のサイドバーから開いたとき（スタッフ・店舗はサイドバーにあるので出さない）
+    private var wide: Bool { inTab && sizeClass != .compact }
 
     var body: some View {
         NavigationStack {
             Form {
                 // よく使うもの（iPhone は下のタブにスタッフ・店舗が無いので、いちばん上に置く）
+                if !wide {
                 Section {
                     NavigationLink { StaffListView() } label: {
                         LabeledContent {
@@ -170,6 +175,7 @@ struct SettingsView: View {
                             Label("店舗", systemImage: "building.2")
                         }
                     }
+                }
                 }
 
                 Section {
@@ -252,6 +258,10 @@ struct SettingsView: View {
                     LabeledContent("手で入れたシフト", value: "\(store.book.cells.count)件")
                 }
             }
+            // iPad・Mac：1行が画面幅いっぱいだと項目名と値が離れすぎるので、幅 760 までにして真ん中に置く
+            .frame(maxWidth: wide ? 760 : .infinity)
+            .frame(maxWidth: .infinity)
+            .background(Color(.systemGroupedBackground))
             .navigationTitle("設定")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
