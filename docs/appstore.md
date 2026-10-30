@@ -108,6 +108,17 @@ bash scripts/duo-screenshots.sh
 - 開いた画面：iPad と同じく左のサイドバー＋表。閉じた画面：iPhone と同じく下のタブ。開け閉めで自動で切り替わる
 - 閉じたときにタブに無い項目（スタッフ・印刷・店舗）を開いていたら、設定・シフト表へ移る
 
+## Mac 版（Mac Catalyst）
+
+- iPad と同じアプリを Mac でも動かす（Mac Catalyst・「iPad に合わせて拡大縮小」）。バンドル ID は iOS と同じ `com.bestdelight.eldiashift`（`DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO`）なので、同じ App Store のアプリとして出し、**同じ Apple ID なら追加の購入は要らない**（ユニバーサル購入）
+- Mac 用の権限は `Config/EldiaShift-mac.entitlements`（App Sandbox・ネットワーク（iCloud）・選んだファイルの読み書き・印刷・iCloud・プッシュ・Associated Domains）。iOS の権限ファイルは今までのまま
+- Developer サイト：App ID で「Mac Catalyst」を有効にし、Mac 用のプロビジョニングプロファイルを作る（Xcode の自動署名なら Signing & Capabilities で Mac を選ぶだけ）。iCloud コンテナは iOS と同じ
+- App Store Connect：同じアプリに macOS のビルドを足す（Xcode の Archive で「My Mac (Mac Catalyst)」を選んでアップロード）。Mac 用の画面写真（1280×800 以上）が要る
+- ウインドウの最初の大きさ 1280×820、いちばん小さい大きさ 960×640
+- メニュー：表示（⌘1〜⌘6）・印刷・出力（⌘P）・設定（⌘,）
+- CI（Build）で、Mac Catalyst のビルドも毎回確かめる
+- 実機で確かめること：iCloud 同期・共有の招待のリンクを Mac で開く・申請の取り込み用リンク（Associated Domains）・印刷・PDF の共有・写真と似顔絵・人件費を隠す設定（Touch ID）・⌘Z（文字の入力中とシフト表の上）
+
 ## 提出前のチェック
 1. CloudKit Console で、開発環境のスキーマを本番へ反映（Deploy Schema Changes）
 2. Xcode：Product → Archive → Distribute App → App Store Connect → Upload

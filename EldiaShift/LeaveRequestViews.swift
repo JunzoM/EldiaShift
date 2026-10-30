@@ -406,7 +406,13 @@ struct LeaveRequestGuide: View {
     var showQR: () -> Void
     var receive: () -> Void
 
-    private var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+    private var isPad: Bool {
+        #if targetEnvironment(macCatalyst)
+        return true   // Mac も iPad と同じ案内（LINE のある iPhone で受け取って iCloud で届ける）
+        #else
+        return UIDevice.current.userInterfaceIdiom == .pad
+        #endif
+    }
 
     var body: some View {
         Section {
