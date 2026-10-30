@@ -16,6 +16,8 @@ struct ResolvedShift: Hashable, Sendable {
     var storeID: String? = nil
     /// いま見ている店舗ではなく、ほかの店舗で勤務する日（掛け持ち）。人数には数えない
     var elsewhere = false
+    /// その日のメモ（手で入れたマスだけ）
+    var note: String? = nil
 
     /// 拘束時間（時間）。休み・時刻なしは nil
     var hours: Double? {
@@ -54,6 +56,7 @@ enum Schedule {
         if member.hasLeft(on: day) { return nil }
         if let cell = book.cells[CellKey(staffID: member.id, day: day)] {
             var r = ResolvedShift(inTime: cell.inTime, outTime: cell.outTime, blockID: cell.blockID, isOff: cell.isOff, isAuto: false)
+            r.note = cell.note
             // ひな形のまま入れた日は、そのひな形の休憩を使う（時刻を変えた日は決まりに従う）
             if let b = book.block(cell.blockID, for: member), b.inTime == cell.inTime, b.outTime == cell.outTime {
                 r.breakOverride = b.breakMinutes

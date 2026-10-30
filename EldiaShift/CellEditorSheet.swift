@@ -13,6 +13,13 @@ struct CellEditorSheet: View {
     @State private var search = ""
     /// 勤務する店舗（掛け持ちの人だけ選べる）
     @State private var workStore: String?
+    /// 時刻の刻み（タイムラインと同じ設定）
+    @AppStorage("timelineStep") private var stepMinutes = 30
+    /// メモ（開いたときの内容を入れる）
+    @State private var noteText = ""
+    @State private var noteLoaded = false
+    /// 希望休の日に勤務を入れるときの確認
+    @State private var pendingEntry: CellEntry?
 
     private var key: CellKey { CellKey(staffID: member.id, day: day) }
 
@@ -69,6 +76,21 @@ struct CellEditorSheet: View {
                 }
                 if q.isEmpty {
                     Section {
+                        TextField("引き継ぎ・注意点など", text: $noteText, axis: .vertical).lineLimit(1...4)
+                        if noteText != (current?.note ?? "") {
+                            Button("メモを保存") { saveNote(current) }
+                                .disabled(current == nil)
+                        }
+                    } header: {
+                        Label("メモ", systemImage: "note.text")
+                    } footer: {
+                        if current == nil {
+                            Text("勤務か休みを入れた日にメモを付けられます。")
+                        } else if current?.isAuto == true {
+                            Text("パターンで自動で入った日にメモを付けると、この日は手入力の扱いになります（内容は同じです）。")
+                        }
+                    }
+                    Section {
                         Toggle(isOn: Binding(get: { fresh.requestsOff(day) }, set: { on in
                             var set = Set(fresh.offRequests.compactMap { DayKey($0) })
                             if on { set.insert(day) } else { set.remove(day) }
@@ -94,12 +116,12 @@ struct CellEditorSheet: View {
                 if q.isEmpty {
                 Section {
                     Picker("出勤", selection: $inM) {
-                        ForEach(Array(stride(from: 0, to: 1440, by: 30)), id: \.self) { m in
+                        ForEach(Array(stride(from: 0, to: 1440, by: stepMinutes)), id: \.self) { m in
                             Text(ClockTime.format(m)).tag(m)
                         }
                     }
                     Picker("退勤", selection: $outM) {
-                        ForEach(Array(stride(from: 0, through: 1440, by: 30)), id: \.self) { m in
+                        ForEach(Array(stride(from: 0, through: 1440, by: stepMinutes)), id: \.self) { m in
                             Text(ClockTime.format(m) + (m <= inM ? "（翌日）" : "")).tag(m)
                         }
                     }
@@ -129,10 +151,20 @@ struct CellEditorSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } }
             }
             .onAppear {
+                if !noteLoaded { noteText = current?.note ?? ""; noteLoaded = true }
                 if let span = TimelineMath.span(of: current) {
                     inM = span.inM
                     outM = span.outM % 1440 == 0 && span.outM > 0 ? 1440 : span.outM % 1440
                 }
+            }
+            .confirmationDialog("希望休の日です", isPresented: Binding(get: { pendingEntry != nil }, set: { if !$0 { pendingEntry = nil } }),
+                                titleVisibility: .visible) {
+                Button("勤務を入れる") {
+                    if let e = pendingEntry { apply(e, confirmed: true) }
+                }
+                Button("やめる", role: .cancel) {}
+            } message: {
+                Text("\(member.name)さんはこの日に希望休を出しています。勤務を入れますか？")
             }
             .alert("保存できませんでした", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
                 Button("OK") { error = nil }
@@ -172,7 +204,13 @@ struct CellEditorSheet: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    private func apply(_ entry: CellEntry?) {
+    private func apply(_ entry: CellEntry?, confirmed: Bool = false) {
+        // 希望休の日に勤務を入れるときは確かめる
+        if !confirmed, let w = entry, !w.isOff,
+           (store.book.staff.first { $0.id == member.id } ?? member).requestsOff(day) {
+            pendingEntry = w
+            return
+        }
         var e = entry
         if e?.isOff == false, let ws = workStore ?? currentWorkStore { e?.storeID = ws }
         if save(e) { dismiss() }
@@ -182,6 +220,19 @@ struct CellEditorSheet: View {
     private var currentWorkStore: String? {
         guard let r = Schedule.resolve(member, on: day, in: store.book), !r.isOff else { return nil }
         return r.storeID
+    }
+
+    /// メモだけを保存する（パターンで決まった日は、その内容のまま手入力にしてメモを付ける）
+    private func saveNote(_ current: ResolvedShift?) {
+        let text = String(noteText.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500))
+        if var cell = store.book.cells[key] {
+            cell.note = text   // 空ならメモを消す
+            save(cell)
+        } else if let r = current, !text.isEmpty {
+            save(CellEntry(inTime: r.inTime, outTime: r.outTime, blockID: r.blockID, isOff: r.isOff,
+                           storeID: r.isOff ? nil : r.storeID, note: text))
+        }
+        noteText = text
     }
 
     @discardableResult

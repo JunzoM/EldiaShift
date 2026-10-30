@@ -177,6 +177,8 @@ enum ShiftModel {
             attr("isOff", .booleanAttributeType, default: false),
             // 掛け持ちでほかの店舗に入る日の店舗（空はその人の店舗）
             attr("storeKey", .stringAttributeType),
+            // メモ（引き継ぎ・注意点）。1.2 で足した項目（追加のみ。前の版の記録は空）
+            attr("note", .stringAttributeType),
             attr("updatedAt", .dateAttributeType),
             attr("updatedBy", .stringAttributeType)
         ])

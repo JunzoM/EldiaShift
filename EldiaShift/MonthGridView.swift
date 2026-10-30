@@ -788,6 +788,14 @@ struct ShiftCellView: View {
                     .accessibilityHidden(true)
             }
         }
+        .overlay(alignment: large ? .topTrailing : .bottomTrailing) {
+            // メモがある日の印（自動で決まったマスの印と重ならない隅に）
+            if let n = resolved?.note, !n.isEmpty {
+                Image(systemName: "note.text").font(.system(size: large ? 10 : 7, weight: .bold))
+                    .foregroundStyle(Color.secondary).padding(large ? 4 : 1.5)
+                    .accessibilityHidden(true)
+            }
+        }
         .overlay(alignment: .topLeading) {
             if !issues.isEmpty {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -904,6 +912,7 @@ struct ShiftCellView: View {
 
     private func accessibilityText(_ block: TimeBlock?) -> String {
         let extra = (requested ? "、希望休" : "") + (issues.isEmpty ? "" : "、注意：" + issues.map(\.text).joined(separator: "、"))
+            + (resolved?.note.map { "、メモ：\($0)" } ?? "")
         return base(block) + extra
     }
 

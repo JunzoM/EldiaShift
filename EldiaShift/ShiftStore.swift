@@ -115,7 +115,14 @@ final class ShiftStore {
     func setCells(_ items: [(CellKey, CellEntry?)], title: String) throws {
         var changes: [CellChange] = []
         var seen = Set<CellKey>()
-        for (key, raw) in items where seen.insert(key).inserted {
+        for (key, given) in items where seen.insert(key).inserted {
+            // 時刻だけ変えたときもメモは残す（メモを消すときは空の文字を渡す）
+            var raw = given
+            if var e = raw {
+                if e.note == nil { e.note = book.cells[key]?.note }
+                if e.note?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true { e.note = nil }
+                raw = e
+            }
             let entry = stamped(raw, for: key.staffID)
             let before = book.cells[key]
             guard before != entry else { continue }
@@ -377,10 +384,11 @@ enum ShiftRecords {
             guard let day = DayKey(r.str("day")) else { continue }
             let block = r.str("blockKey")
             let st = r.str("storeKey")
+            let note = r.str("note")
             book.cells[CellKey(staffID: r.str("staffKey"), day: day)] = CellEntry(
                 inTime: r.str("inTime"), outTime: r.str("outTime"),
                 blockID: block.isEmpty ? nil : block, isOff: r.value(forKey: "isOff") as? Bool ?? false,
-                storeID: st.isEmpty ? nil : st)
+                storeID: st.isEmpty ? nil : st, note: note.isEmpty ? nil : note)
         }
         if ctx.hasChanges { try ctx.save() }   // 重複を片付けた分
         return book
@@ -434,6 +442,7 @@ enum ShiftRecords {
             r.setValue(c.blockID ?? "", forKey: "blockKey")
             r.setValue(c.isOff, forKey: "isOff")
             r.setValue(c.storeID ?? "", forKey: "storeKey")
+            r.setValue(c.note ?? "", forKey: "note")
         }
     }
 
@@ -460,6 +469,7 @@ enum ShiftRecords {
         r.setValue(entry.blockID ?? "", forKey: "blockKey")
         r.setValue(entry.isOff, forKey: "isOff")
         r.setValue(entry.storeID ?? "", forKey: "storeKey")
+        r.setValue(entry.note ?? "", forKey: "note")
         r.setValue(Date(), forKey: "updatedAt")
     }
 
@@ -497,6 +507,7 @@ enum ShiftRecords {
             r.setValue(entry.blockID ?? "", forKey: "blockKey")
             r.setValue(entry.isOff, forKey: "isOff")
             r.setValue(entry.storeID ?? "", forKey: "storeKey")
+            r.setValue(entry.note ?? "", forKey: "note")
             r.setValue(now, forKey: "updatedAt")
         }
     }
