@@ -799,9 +799,8 @@ struct PrintSheet: View {
     }
 
     private var monthRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("対象期間").appFont(.subheadline.weight(.semibold))
-            HStack {
+        group("対象期間") {
+            row {
                 Button { target = DayKey(MonthKey(day).adding(months: -1).year, MonthKey(day).adding(months: -1).month, 1) } label: {
                     Image(systemName: "chevron.left")
                 }
@@ -814,26 +813,52 @@ struct PrintSheet: View {
                 }
                 .accessibilityLabel("次の月")
             }
-            .fieldBox()
         }
     }
 
-    private func departmentChecks(_ depts: [Department]) -> some View {
+    // MARK: 出力設定の形（見出し＋枠の中に行を並べる。どのまとまりも同じ形にする）
+
+    private func group<C: View>(_ title: String, footer: String? = nil, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("対象部門").appFont(.subheadline.weight(.semibold))
-            if depts.isEmpty {
-                Text("この店舗には部門がありません。設定 →「部門」で作ると、ここで選べます。")
-                    .appFont(.caption).foregroundStyle(.secondary)
+            Text(title).appFont(.subheadline.weight(.semibold))
+            VStack(spacing: 0) { content() }
+                .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: DS.controlRadius, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.controlRadius, style: .continuous).strokeBorder(Color(.separator), lineWidth: 0.5))
+            if let footer {
+                Text(footer).appFont(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
-            ForEach(depts) { d in
+        }
+    }
+
+    /// 枠の中の1行（高さをそろえる）
+    private func row<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        HStack(spacing: 10) { content() }
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .frame(maxWidth: .infinity, minHeight: 44 * zoom, alignment: .leading)
+            .contentShape(Rectangle())
+    }
+
+    private var rowDivider: some View { Divider().padding(.leading, 12) }
+
+    private func departmentChecks(_ depts: [Department]) -> some View {
+        group("対象部門") {
+            if depts.isEmpty {
+                row {
+                    Text("この店舗には部門がありません。設定 →「部門」で作ると、ここで選べます。")
+                        .appFont(.subheadline).foregroundStyle(.secondary)
+                }
+            }
+            ForEach(Array(depts.enumerated()), id: \.element.id) { i, d in
                 let on = selected.contains(d.id)
+                if i > 0 { rowDivider }
                 Button {
                     if on { selected.remove(d.id) } else { selected.insert(d.id) }
                 } label: {
-                    HStack(spacing: 8) {
+                    row {
                         Image(systemName: on ? "checkmark.square.fill" : "square")
                             .foregroundStyle(on ? Color.accentColor : Color.secondary)
                         Text(d.name).foregroundStyle(.primary)
+                        Spacer(minLength: 0)
                     }
                     .appFont(.subheadline)
                 }
@@ -847,51 +872,64 @@ struct PrintSheet: View {
         VStack(alignment: .leading, spacing: DS.section) {
             monthRow
             if output != .csv {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("レイアウト").appFont(.subheadline.weight(.semibold))
-                    // 対象期間と同じ枠で、選んでいるレイアウトを出す
+                group("レイアウト", footer: "A3 は A4 と同じ割り付けを大きくします。人数が多くて1枚に入らないときは、自動で次のページに分けます。") {
                     Menu {
                         Picker("レイアウト", selection: $format) {
                             ForEach(PrintFormat.allCases) { Text($0.title).tag($0) }
                         }
                     } label: {
-                        HStack {
+                        row {
                             Text(format.title).appFont(.body.weight(.semibold)).foregroundStyle(.primary)
                                 .lineLimit(1).minimumScaleFactor(0.8)
                             Spacer(minLength: 8)
                             Image(systemName: "chevron.up.chevron.down").appFont(.caption).foregroundStyle(.secondary)
                         }
-                        .fieldBox()
-                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("レイアウト：\(format.title)")
                     if format.usesHalf {
-                        Picker("印刷範囲", selection: $half) {
-                            ForEach(HalfSelection.allCases) { Text($0.title).tag($0) }
+                        rowDivider
+                        row {
+                            Text("印刷範囲").appFont(.subheadline)
+                            Spacer(minLength: 8)
+                            Picker("印刷範囲", selection: $half) {
+                                ForEach(HalfSelection.allCases) { Text($0.title).tag($0) }
+                            }
+                            .pickerStyle(.segmented).labelsHidden().fixedSize()
                         }
-                        .pickerStyle(.segmented)
                     }
-                    Picker("用紙", selection: $paper) {
-                        ForEach(PaperSize.allCases) { Text("用紙 \($0.title)").tag($0) }
+                    rowDivider
+                    row {
+                        Text("用紙").appFont(.subheadline)
+                        Spacer(minLength: 8)
+                        Picker("用紙", selection: $paper) {
+                            ForEach(PaperSize.allCases) { Text($0.title).tag($0) }
+                        }
+                        .pickerStyle(.segmented).labelsHidden().fixedSize()
                     }
-                    .pickerStyle(.segmented)
-                    Text("A3 は A4 と同じ割り付けを大きくします。人数が多くて1枚に入らないときは、自動で次のページに分けます。")
-                        .appFont(.caption).foregroundStyle(.secondary)
                 }
             }
             departmentChecks(depts)
-            VStack(alignment: .leading, spacing: 8) {
-                Text("表示オプション").appFont(.subheadline.weight(.semibold))
-                TextField("表の上に出す名前（例：店名）", text: $title)
-                    .textFieldStyle(.plain)
-                    .appFont(.body)
-                    .fieldBox()
-                if output != .csv { displayToggles.appFont(.subheadline) }
+            group("表示オプション") {
+                row {
+                    TextField("表の上に出す名前（例：店名）", text: $title)
+                        .textFieldStyle(.plain)
+                        .appFont(.subheadline)
+                }
+                if output != .csv {
+                    rowDivider
+                    row { Toggle("名前を出す（オフは番号だけ）", isOn: $showNames) }
+                    rowDivider
+                    row { Toggle("出勤・退勤の時刻を出す（オフは勤務の記号）", isOn: $showTimes) }
+                    rowDivider
+                    row { Toggle("マスのメモを表の下に出す", isOn: $showNotes) }
+                }
                 if output == .pdf {
-                    Toggle("変更点の文章も一緒に送る", isOn: $withChanges).appFont(.subheadline)
+                    rowDivider
+                    row { Toggle("変更点の文章も一緒に送る", isOn: $withChanges) }
                 }
             }
+            .appFont(.subheadline)
             let month = MonthKey(day)
             if let diff = PublishDiff.changes(book, month: month) {
                 Label(diff.changes.isEmpty ? "前回の公開から変更はありません" : "前回の公開から \(diff.changes.count)件の変更",
@@ -1199,15 +1237,5 @@ struct PrintPreviewSheet: View {
             Text("\(number) / \(pages.count)　\(spec.paper.title)\(spec.landscape ? "横" : "縦")")
                 .font(.caption).foregroundStyle(.secondary).monospacedDigit()
         }
-    }
-}
-
-/// 対象期間・レイアウト・名前の入力を同じ枠にそろえる
-private extension View {
-    func fieldBox() -> some View {
-        padding(.horizontal, 12).padding(.vertical, 9)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: DS.controlRadius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: DS.controlRadius, style: .continuous).strokeBorder(Color(.separator), lineWidth: 0.5))
     }
 }
