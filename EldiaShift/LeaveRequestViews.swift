@@ -26,6 +26,9 @@ struct LeaveRequestSections: View {
     let month: MonthKey
     /// 部門で絞り込むとき（nil はすべての部門）
     var departmentID: String? = nil
+    /// 出すもの（iPad・Mac は承認待ちを左、結果を右に分けて出す）
+    var parts: Parts = .all
+    enum Parts { case all, pending, decided }
     @Environment(\.shiftStore) private var store
     @AppStorage("requestAlsoOff") private var alsoOff = true
     /// 返事・エラーの画面は一覧（親）に出す
@@ -54,7 +57,15 @@ struct LeaveRequestSections: View {
         let decided = all.filter { $0.request.status != .pending && $0.day.map { MonthKey($0) == month } == true }
             .sorted { ($0.request.day, $0.member.name) < ($1.request.day, $1.member.name) }
 
-        if !pending.isEmpty {
+        if parts == .pending && pending.isEmpty {
+            Section {
+                Label("承認待ちの申請はありません", systemImage: "checkmark.circle").foregroundStyle(.secondary)
+            } header: {
+                Text("承認待ちの申請")
+            }
+        }
+
+        if parts != .decided && !pending.isEmpty {
             Section {
                 ForEach(pending) { r in
                     pendingRow(r, color: deptColor[r.member.departmentID] ?? 8, book: book)
@@ -104,7 +115,7 @@ struct LeaveRequestSections: View {
             }
         }
 
-        if !decided.isEmpty {
+        if parts != .pending && !decided.isEmpty {
             Section {
                 ForEach(decided) { r in
                     decidedRow(r)

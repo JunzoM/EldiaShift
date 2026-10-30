@@ -288,6 +288,7 @@ struct AppSidebar: View {
 
 struct OffRequestListView: View {
     @Environment(\.shiftStore) private var store
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var month = MonthKey.current
     @State private var filter = 0
     @State private var adding = false
@@ -324,8 +325,7 @@ struct OffRequestListView: View {
         let conflicts = rows.filter { $0.state == .conflict }.count
         let shown = rows.filter { filter == 0 || (filter == 1 ? $0.state == .conflict : $0.state != .conflict) }
 
-        List {
-            LeaveRequestGuide(showQR: { showingQR = true }, receive: { receiving = true })
+        let deptPicker = Group {
             if groups.count > 1 {
                 Section {
                     Picker(selection: Binding(get: { dept }, set: { departmentID = $0 })) {
@@ -337,7 +337,8 @@ struct OffRequestListView: View {
                     .pickerStyle(.menu)
                 }
             }
-            LeaveRequestSections(month: month, departmentID: dept, reply: $reply, error: $requestError)
+        }
+        let monthSections = Group {
             Section {
                 Picker("表示", selection: $filter) {
                     Text("すべて \(rows.count)").tag(0)
@@ -347,6 +348,8 @@ struct OffRequestListView: View {
                 .segmented(3)
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets())
+            } header: {
+                Text("\(month.month)月の希望休（\(rows.count)日）")
             }
             Section {
                 if shown.isEmpty {
@@ -374,6 +377,33 @@ struct OffRequestListView: View {
                 }
             } footer: {
                 Text("「勤務あり」は希望休の日に勤務が入っています。シフト表のマスで休みに変えてください。")
+            }
+        }
+
+        Group {
+            if sizeClass == .compact {
+                List {
+                    LeaveRequestGuide(showQR: { showingQR = true }, receive: { receiving = true })
+                    deptPicker
+                    LeaveRequestSections(month: month, departmentID: dept, reply: $reply, error: $requestError)
+                    monthSections
+                }
+            } else {
+                // iPad・Mac：左に承認待ち（すぐ決めるもの）、右にその月の希望休と申請の結果
+                HStack(spacing: 0) {
+                    List {
+                        LeaveRequestGuide(showQR: { showingQR = true }, receive: { receiving = true })
+                        deptPicker
+                        LeaveRequestSections(month: month, departmentID: dept, parts: .pending, reply: $reply, error: $requestError)
+                    }
+                    .frame(maxWidth: .infinity)
+                    Divider()
+                    List {
+                        monthSections
+                        LeaveRequestSections(month: month, departmentID: dept, parts: .decided, reply: $reply, error: $requestError)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
             }
         }
         .navigationTitle("希望休 \(month.description)")
