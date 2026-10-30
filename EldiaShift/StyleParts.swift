@@ -355,11 +355,11 @@ struct OffRequestListView: View {
                     .buttonStyle(.borderedProminent)
             }
         }
-        .sheet(isPresented: $adding) { OffRequestSheet(month: month) }
-        .sheet(isPresented: $receiving) { LeaveRequestImportSheet(month: month) }
-        .sheet(isPresented: $registering) { LeaveRequestProxySheet(month: month) }
-        .sheet(isPresented: $showingQR) { RequestQRSheet() }
-        .sheet(item: $reply) { LeaveReplySheet(reply: $0) }
+        .shiftSheet(isPresented: $adding) { OffRequestSheet(month: month) }
+        .shiftSheet(isPresented: $receiving) { LeaveRequestImportSheet(month: month) }
+        .shiftSheet(isPresented: $registering) { LeaveRequestProxySheet(month: month) }
+        .shiftSheet(isPresented: $showingQR) { RequestQRSheet() }
+        .shiftSheet(item: $reply) { LeaveReplySheet(reply: $0) }
         .errorAlert($requestError)
     }
 
@@ -420,7 +420,7 @@ struct BackupView: View {
         .navigationTitle("バックアップ・復元")
         .navigationBarTitleDisplayMode(.inline)
         .backupImporter(isPresented: $importing, file: $restoreFile)
-        .sheet(item: $exportFile) { f in ShareSheet(items: [f.url]) }
+        .shiftSheet(item: $exportFile) { f in ShareSheet(items: [f.url]) }
         .errorAlert($error)
         .onAppear { loadAutoFiles() }
         .onChange(of: tab) { loadAutoFiles() }

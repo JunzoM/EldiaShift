@@ -184,7 +184,7 @@ struct MonthGridView: View {
         .onAppear { availableWidth = geo.size.width }
         .onChange(of: geo.size.width) { availableWidth = geo.size.width }
         }
-        .sheet(item: $selected) { s in
+        .shiftSheet(item: $selected) { s in
             if store.editing {
                 CellEditorSheet(member: s.member, day: s.day)
                     .presentationDetents([.medium, .large])
@@ -196,11 +196,11 @@ struct MonthGridView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if selecting { selectionBar(book) }
         }
-        .sheet(item: $shortage) { t in CandidatesSheet(target: t).presentationDetents([.medium, .large]) }
-        .sheet(isPresented: $showRequests) { OffRequestSheet(month: MonthKey(days[days.count / 2])) }
+        .shiftSheet(item: $shortage) { t in CandidatesSheet(target: t).presentationDetents([.medium, .large]) }
+        .shiftSheet(isPresented: $showRequests) { OffRequestSheet(month: MonthKey(days[days.count / 2])) }
         .onChange(of: store.editing) { if !store.editing { selecting = false; picked = []; pickAnchor = nil } }
         .errorAlert($saveError)
-        .sheet(item: $staffSheet) { s in
+        .shiftSheet(item: $staffSheet) { s in
             if s.isNew {
                 StaffEditView(member: s.member, isNew: true)
             } else {

@@ -267,7 +267,7 @@ struct SettingsView: View {
             } message: {
                 Text("消す前に自動でバックアップを残します。")
             }
-            .sheet(item: $exportFile) { f in ShareSheet(items: [f.url]) }
+            .shiftSheet(item: $exportFile) { f in ShareSheet(items: [f.url]) }
             .alert("書き出せませんでした", isPresented: Binding(get: { exportError != nil }, set: { if !$0 { exportError = nil } })) {
                 Button("OK") { exportError = nil }
             } message: {

@@ -175,8 +175,8 @@ struct LaborCostView: View {
             }
             yearTotals = totals
         }
-        .sheet(isPresented: $editingBudget) { BudgetEditView(month: month) }
-        .sheet(item: $csvFile) { f in ShareSheet(items: [f.url]) }
+        .shiftSheet(isPresented: $editingBudget) { BudgetEditView(month: month) }
+        .shiftSheet(item: $csvFile) { f in ShareSheet(items: [f.url]) }
         .errorAlert($failure)
     }
 
@@ -494,7 +494,7 @@ struct WageSection: View {
                 Text("「この日から時給〇円（月給〇円）」を入れます。昇給したら、変える日から新しい金額を追加してください。その日より前のシフトは前の金額で計算します。人件費の集計にだけ使います。")
             }
         }
-        .sheet(item: $editing) { w in
+        .shiftSheet(item: $editing) { w in
             WageEditView(entry: w, wages: $member.wages, minimumWage: MinimumWage.value(for: member, in: store.book))
         }
     }
