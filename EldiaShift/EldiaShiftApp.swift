@@ -3,6 +3,8 @@ import Combine
 
 @main
 struct EldiaShiftApp: App {
+    /// iCloud 共有の招待（リンク）を受け取るため
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var db: ShiftDatabase
     @State private var store: ShiftStore
 
@@ -63,6 +65,13 @@ struct RootView: View {
         }
         .sheet(item: $incomingRequest) { link in
             LeaveRequestImportSheet(month: link.month, initialText: link.formText)
+        }
+        // iCloud 共有の招待を受け取った結果
+        .alert("シフト表の共有", isPresented: Binding(get: { ShareInbox.shared.message != nil },
+                                                set: { if !$0 { ShareInbox.shared.message = nil } })) {
+            Button("OK") { ShareInbox.shared.message = nil }
+        } message: {
+            Text(ShareInbox.shared.message ?? "")
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {

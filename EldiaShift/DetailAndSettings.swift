@@ -174,8 +174,11 @@ struct SettingsView: View {
 
                 Section {
                     Toggle("iCloud で同期する", isOn: Binding(get: { db.iCloudEnabled }, set: { db.setICloud($0) }))
+                    NavigationLink { ShareSettingsView() } label: {
+                        Label(db.viewingSharedTeam ? "シフト表の共有（共有されたシフト表を表示中）" : "シフト表の共有", systemImage: "person.2.badge.gearshape")
+                    }
                 } footer: {
-                    Text("同じ Apple ID の iPad・iPhone で同じシフト表を使えます。ほかの管理者との共同編集は、次の更新で使えるようになります。")
+                    Text("同じ Apple ID の iPad・iPhone で同じシフト表を使えます。「シフト表の共有」で、ほかの管理者（別の Apple ID）と共同編集できます。給与は共有されません。")
                 }
 
                 Section {
