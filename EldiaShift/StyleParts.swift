@@ -245,7 +245,10 @@ struct OffRequestListView: View {
     @State private var filter = 0
     @State private var adding = false
     @State private var receiving = false
+    @State private var registering = false
     @State private var showingQR = false
+    /// 部門で絞り込む（nil はすべて）
+    @State private var departmentID: String?
     @State private var reply: LeaveReply?
     @State private var requestError: String?
 
@@ -262,7 +265,10 @@ struct OffRequestListView: View {
     var body: some View {
         let book = store.book
         let deptOf = Dictionary(book.departments.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        let rows: [Row] = book.staffByDepartment(visibleIn: month).flatMap(\.members).flatMap { m in
+        let groups = book.staffByDepartment(visibleIn: month)
+        // 店舗を切り替えて、選んでいた部門が無くなったら「すべて」
+        let dept = groups.contains { $0.department.id == departmentID } ? departmentID : nil
+        let rows: [Row] = groups.filter { dept == nil || $0.department.id == dept }.flatMap(\.members).flatMap { m in
             m.offRequests.compactMap { DayKey($0) }.filter { MonthKey($0) == month }.map { d in
                 Row(member: m, department: deptOf[m.departmentID], day: d, state: Self.state(m, d, book))
             }
@@ -273,7 +279,18 @@ struct OffRequestListView: View {
 
         List {
             LeaveRequestGuide(showQR: { showingQR = true }, receive: { receiving = true })
-            LeaveRequestSections(month: month, reply: $reply, error: $requestError)
+            if groups.count > 1 {
+                Section {
+                    Picker(selection: Binding(get: { dept }, set: { departmentID = $0 })) {
+                        Text("すべての部門").tag(String?.none)
+                        ForEach(groups) { g in Text(g.department.name).tag(Optional(g.department.id)) }
+                    } label: {
+                        Label("部門", systemImage: "line.3.horizontal.decrease.circle")
+                    }
+                    .pickerStyle(.menu)
+                }
+            }
+            LeaveRequestSections(month: month, departmentID: dept, reply: $reply, error: $requestError)
             Section {
                 Picker("表示", selection: $filter) {
                     Text("すべて \(rows.count)").tag(0)
@@ -324,14 +341,20 @@ struct OffRequestListView: View {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button { showingQR = true } label: { Label("申請用QRコード", systemImage: "qrcode") }
                     .accessibilityLabel("壁に貼る申請用のQRコード")
-                Button { receiving = true } label: { Label("申請を受け取る", systemImage: "tray.and.arrow.down") }
-                    .accessibilityLabel("LINE などで届いた申請を受け取る")
+                Menu {
+                    Button { receiving = true } label: { Label("届いた文章を受け取る", systemImage: "doc.on.clipboard") }
+                    Button { registering = true } label: { Label("代わりに申請を登録", systemImage: "person.badge.plus") }
+                } label: {
+                    Label("申請を受け取る", systemImage: "tray.and.arrow.down")
+                }
+                .accessibilityLabel("申請を受け取る・代わりに登録する")
                 Button { adding = true } label: { Label("希望休を入れる", systemImage: "plus") }
                     .buttonStyle(.borderedProminent)
             }
         }
         .sheet(isPresented: $adding) { OffRequestSheet(month: month) }
         .sheet(isPresented: $receiving) { LeaveRequestImportSheet(month: month) }
+        .sheet(isPresented: $registering) { LeaveRequestProxySheet(month: month) }
         .sheet(isPresented: $showingQR) { RequestQRSheet() }
         .sheet(item: $reply) { LeaveReplySheet(reply: $0) }
         .errorAlert($requestError)

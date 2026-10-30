@@ -35,11 +35,13 @@ enum LeaveRequestInbox {
         var name: String
         var dates: String
         var reason: String
+        /// 「店舗：」の行（無ければ空）
+        var store: String = ""
     }
 
     /// 決まった形（「名前：」「休みたい日：」の行がある）なら、その項目。ほかの文章なら nil
     static func formFields(_ text: String) -> FormText? {
-        var name: String?, dates: String?, reason = ""
+        var name: String?, dates: String?, reason = "", store = ""
         for raw in text.components(separatedBy: .newlines) {
             let line = raw.trimmingCharacters(in: .whitespaces)
             func value(_ key: String) -> String? {
@@ -48,10 +50,10 @@ enum LeaveRequestInbox {
                 }
                 return nil
             }
-            if let v = value("名前") { name = v } else if let v = value("休みたい日") { dates = v } else if let v = value("理由") { reason = v }
+            if let v = value("名前") { name = v } else if let v = value("休みたい日") { dates = v } else if let v = value("理由") { reason = v } else if let v = value("店舗") { store = v }
         }
         guard let name, !name.isEmpty, let dates, !dates.isEmpty else { return nil }
-        return FormText(name: name, dates: dates, reason: reason)
+        return FormText(name: name, dates: dates, reason: reason, store: store)
     }
 
     /// 名前の比べ方（空白を取る）
@@ -107,6 +109,36 @@ enum LeaveRequestInbox {
         return m
     }
 
+    /// 申請を消す（間違えて受け取ったときなど）。承認で入れた希望休・シフトはそのまま残す
+    static func remove(_ ids: Set<String>, from m: StaffMember) -> StaffMember {
+        var m = m
+        m.leaveRequests.removeAll { ids.contains($0.id) }
+        return m
+    }
+
+    /// 申請に書かれた店舗が、その人の店舗（掛け持ち先を含む）と違うときの注意。店舗が1つ・店舗の指定が無いときは nil
+    static func storeWarning(requestStore: String, member: StaffMember, in book: ShiftBook) -> String? {
+        let asked = normalize(requestStore)
+        guard !asked.isEmpty, book.allStores.count > 1 else { return nil }
+        // 名前が同じ・どちらかがもう一方を含む（「神戸」と「ELDIA神戸」）店舗
+        let matched = book.allStores.filter { st in
+            [st.name, st.short].map(normalize).contains { !$0.isEmpty && ($0 == asked || $0.contains(asked) || asked.contains($0)) }
+        }
+        let home = book.store(book.homeStoreID(of: member))?.name ?? ""
+        if matched.isEmpty { return "申請の店舗「\(requestStore)」は、登録している店舗にありません。\(member.name)さんの店舗は「\(home)」です。" }
+        guard !matched.contains(where: { book.storeIDs(of: member).contains($0.id) }) else { return nil }
+        return "申請の店舗は「\(requestStore)」ですが、\(member.name)さんの店舗は「\(home)」です。"
+    }
+
+    /// 返事を送る相手と、その人の決まった申請（承認待ちに戻したものは入れない）。名前の順
+    static func replyGroups(_ ids: Set<String>, staff: [StaffMember]) -> [(member: StaffMember, decided: [LeaveRequest])] {
+        staff.compactMap { m -> (member: StaffMember, decided: [LeaveRequest])? in
+            let decided = m.leaveRequests.filter { ids.contains($0.id) && $0.status != .pending }
+            return decided.isEmpty ? nil : (m, decided)
+        }
+        .sorted { $0.member.name < $1.member.name }
+    }
+
     /// スタッフへの返事（LINE などに貼る）
     static func reply(to m: StaffMember, _ decided: [LeaveRequest]) -> String {
         func days(_ s: LeaveRequest.Status) -> String {
@@ -131,6 +163,14 @@ extension ShiftStore {
         let (next, added) = LeaveRequestInbox.receive(days, note: note, into: m, now: Date())
         if added > 0 { try save(next) }
         return added
+    }
+
+    /// 申請を消す（希望休・シフトは変えない）
+    func deleteLeaveRequests(_ ids: Set<String>, for staffID: String) throws {
+        guard let m = book.staff.first(where: { $0.id == staffID }) else { return }
+        let next = LeaveRequestInbox.remove(ids, from: m)
+        guard next.leaveRequests.count != m.leaveRequests.count else { return }
+        try save(next)
     }
 
     /// 承認・却下する。承認した日を休みにするときは offBlockID（休みのひな形）を渡す
