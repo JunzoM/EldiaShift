@@ -73,20 +73,118 @@ struct MacCommands: Commands {
 }
 #endif
 
-/// Mac の文字の大きさ（表示 → 拡大・縮小）。Mac は iPad の画面を縮めて出すので、標準でも iPad より一段大きくする
+/// Mac の文字の大きさ（表示 → 拡大・縮小）。Mac は iPad の画面を縮めて出すので、標準でも iPad より一回り大きくする。
+/// Mac は iPhone・iPad の「文字の大きさ」の設定（Dynamic Type）を受け付けないので、アプリで決めている文字（.appFont）を倍率で大きくする
 struct MacZoom: ViewModifier {
     static let key = "macZoom"
-    static let steps: [DynamicTypeSize] = [.medium, .large, .xLarge, .xxLarge, .xxxLarge, .accessibility1, .accessibility2]
+    static let steps: [CGFloat] = [0.85, 1.0, 1.15, 1.3, 1.45, 1.6, 1.8]
     static let standard = 2
 
     @AppStorage(key) private var zoom = standard
 
     func body(content: Content) -> some View {
         #if targetEnvironment(macCatalyst)
-        content.dynamicTypeSize(Self.steps[min(max(zoom, 0), Self.steps.count - 1)])
+        let scale = Self.steps[min(max(zoom, 0), Self.steps.count - 1)]
+        // 大きさを決めていない文字（一覧の行・ボタンなど）も、本文の大きさに合わせる
+        content
+            .environment(\.appZoom, scale)
+            .font(.system(size: AppFont.size(of: .body) * scale))
         #else
         content
         #endif
+    }
+}
+
+// MARK: - 拡大・縮小できる文字
+// .font(.caption) の代わりに .appFont(.caption) と書く。倍率（appZoom）が 1 のときは、ふつうの .font と同じ。
+// 倍率は Mac だけで変わる。印刷・画像の書き出しは倍率をかけない（そこでは .font のまま）
+
+struct AppFont {
+    enum Base {
+        case style(Font.TextStyle)
+        case size(CGFloat)
+    }
+
+    var base: Base
+    var weight: Font.Weight?
+    var design: Font.Design?
+
+    static var largeTitle: AppFont { AppFont(base: .style(.largeTitle)) }
+    static var title: AppFont { AppFont(base: .style(.title)) }
+    static var title2: AppFont { AppFont(base: .style(.title2)) }
+    static var title3: AppFont { AppFont(base: .style(.title3)) }
+    static var headline: AppFont { AppFont(base: .style(.headline)) }
+    static var body: AppFont { AppFont(base: .style(.body)) }
+    static var callout: AppFont { AppFont(base: .style(.callout)) }
+    static var subheadline: AppFont { AppFont(base: .style(.subheadline)) }
+    static var footnote: AppFont { AppFont(base: .style(.footnote)) }
+    static var caption: AppFont { AppFont(base: .style(.caption)) }
+    static var caption2: AppFont { AppFont(base: .style(.caption2)) }
+
+    static func system(size: CGFloat, weight: Font.Weight? = nil, design: Font.Design? = nil) -> AppFont {
+        AppFont(base: .size(size), weight: weight, design: design)
+    }
+
+    func weight(_ weight: Font.Weight) -> AppFont {
+        var f = self
+        f.weight = weight
+        return f
+    }
+
+    func bold() -> AppFont { weight(.bold) }
+
+    /// iPhone・iPad の標準（文字の大きさ「標準」）のときの大きさ
+    static func size(of style: Font.TextStyle) -> CGFloat {
+        switch style {
+        case .largeTitle: 34
+        case .title: 28
+        case .title2: 22
+        case .title3: 20
+        case .headline, .body: 17
+        case .callout: 16
+        case .subheadline: 15
+        case .footnote: 13
+        case .caption: 12
+        case .caption2: 11
+        @unknown default: 17
+        }
+    }
+
+    func font(zoom: CGFloat) -> Font {
+        switch base {
+        case .style(let style):
+            if zoom == 1 { return .system(style, design: design, weight: weight) }
+            return .system(size: Self.size(of: style) * zoom, weight: weight ?? (style == .headline ? .semibold : nil), design: design)
+        case .size(let size):
+            return .system(size: size * zoom, weight: weight, design: design)
+        }
+    }
+}
+
+private struct AppZoomKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 1
+}
+
+extension EnvironmentValues {
+    /// 文字の倍率（Mac の 表示 → 拡大・縮小）
+    var appZoom: CGFloat {
+        get { self[AppZoomKey.self] }
+        set { self[AppZoomKey.self] = newValue }
+    }
+}
+
+private struct AppFontModifier: ViewModifier {
+    let font: AppFont
+    @Environment(\.appZoom) private var zoom
+
+    func body(content: Content) -> some View {
+        content.font(font.font(zoom: zoom))
+    }
+}
+
+extension View {
+    func appFont(_ font: AppFont) -> some View {
+        modifier(AppFontModifier(font: font))
     }
 }
 
@@ -302,11 +400,11 @@ struct UndoBar: View {
             if let c = store.lastChange {
                 HStack(spacing: 12) {
                     Text(c.title)
-                        .font(.subheadline).lineLimit(1)
+                        .appFont(.subheadline).lineLimit(1)
                     Button("元に戻す") {
                         do { try store.undo() } catch { self.error = error.localizedDescription }
                     }
-                    .font(.subheadline.weight(.bold))
+                    .appFont(.subheadline.weight(.bold))
                 }
                 .padding(.horizontal, 18).padding(.vertical, 12)
                 .modifier(GlassCapsule())

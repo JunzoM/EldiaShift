@@ -96,9 +96,9 @@ struct LeaveRequestSections: View {
             Section {
                 ForEach(decided) { r in
                     HStack(spacing: 10) {
-                        Text(r.member.name).font(.subheadline.weight(.semibold))
+                        Text(r.member.name).appFont(.subheadline.weight(.semibold))
                         Spacer()
-                        Text(r.day.map { HomeView.dayLabel($0) } ?? r.request.day).font(.subheadline).monospacedDigit()
+                        Text(r.day.map { HomeView.dayLabel($0) } ?? r.request.day).appFont(.subheadline).monospacedDigit()
                         StatusPill(text: r.request.status.label, color: r.request.status == .approved ? .green : .gray)
                     }
                     .swipeActions {
@@ -130,11 +130,11 @@ struct LeaveRequestSections: View {
             InitialAvatar(name: r.member.name, colorIndex: color, size: 34, photo: r.member.photo)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(r.member.name).font(.body.weight(.semibold))
-                    Text(r.day.map { HomeView.dayLabel($0) } ?? r.request.day).font(.subheadline.weight(.semibold)).monospacedDigit()
+                    Text(r.member.name).appFont(.body.weight(.semibold))
+                    Text(r.day.map { HomeView.dayLabel($0) } ?? r.request.day).appFont(.subheadline.weight(.semibold)).monospacedDigit()
                 }
                 if !r.request.note.isEmpty {
-                    Text(r.request.note).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    Text(r.request.note).appFont(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
             }
             Spacer()
@@ -234,7 +234,7 @@ struct LeaveReplySheet: View {
                 if reply.recipients.count > 1 {
                     Section {
                         Text("\(reply.recipients.count)人に、宛名ごとの返事を作りました。一人ずつ直して送れます。")
-                            .font(.footnote).foregroundStyle(.secondary)
+                            .appFont(.footnote).foregroundStyle(.secondary)
                     }
                 }
                 ForEach(reply.recipients) { r in
@@ -319,10 +319,10 @@ struct LeaveRequestImportSheet: View {
                         ForEach(members) { Text($0.name).tag($0.id) }
                     }
                     if !text.isEmpty, staffID.isEmpty {
-                        Text("文章から名前が見つかりませんでした。スタッフを選んでください。").font(.footnote).foregroundStyle(.orange)
+                        Text("文章から名前が見つかりませんでした。スタッフを選んでください。").appFont(.footnote).foregroundStyle(.orange)
                     }
                     if let storeWarning {
-                        Label(storeWarning, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange)
+                        Label(storeWarning, systemImage: "exclamationmark.triangle").appFont(.footnote).foregroundStyle(.orange)
                         Toggle("このスタッフの申請として受け取る", isOn: $storeConfirmed)
                     }
                 }
@@ -336,7 +336,7 @@ struct LeaveRequestImportSheet: View {
                     }
                     if parsed.isEmpty {
                         Text(text.isEmpty ? "文章を貼ると、ここに日付が出ます。" : "日付が見つかりませんでした。")
-                            .font(.footnote).foregroundStyle(.secondary)
+                            .appFont(.footnote).foregroundStyle(.secondary)
                     } else {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 8)], spacing: 8) {
                             ForEach(parsed, id: \.self) { d in
@@ -344,7 +344,7 @@ struct LeaveRequestImportSheet: View {
                                 Button {
                                     if on { excluded.insert(d) } else { excluded.remove(d) }
                                 } label: {
-                                    Text(HomeView.dayLabel(d)).font(.subheadline.weight(.semibold)).monospacedDigit()
+                                    Text(HomeView.dayLabel(d)).appFont(.subheadline.weight(.semibold)).monospacedDigit()
                                         .frame(maxWidth: .infinity, minHeight: 34)
                                         .foregroundStyle(on ? Color.white : Color.secondary)
                                         .background(on ? Color.purple : Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
@@ -428,20 +428,20 @@ struct LeaveRequestGuide: View {
                     Text(isPad
                          ? "この iPad に LINE が無いときは、LINE が入っている iPhone にも SHIFT を入れて、iPhone でリンクを押してください。同じ Apple ID で iCloud 同期をオンにすると、iPhone で受け取った申請がこの iPad にも出ます。"
                          : "iPad で承認するときは、iPad とこの iPhone を同じ Apple ID にして iCloud 同期をオンにしてください。この iPhone で受け取った申請が iPad にも出ます。")
-                        .font(.footnote)
+                        .appFont(.footnote)
                 } icon: {
                     Image(systemName: isPad ? "iphone" : "ipad").foregroundStyle(.secondary)
                 }
 
                 if db.iCloudEnabled {
                     Label("iCloud 同期：オン（ほかの端末で受け取った申請もここに出ます）", systemImage: "checkmark.icloud")
-                        .font(.footnote).foregroundStyle(.green)
+                        .appFont(.footnote).foregroundStyle(.green)
                 } else {
                     VStack(alignment: .leading, spacing: 6) {
                         Label("iCloud 同期がオフです。ほかの端末で受け取った申請は、この端末に出ません。", systemImage: "exclamationmark.icloud")
-                            .font(.footnote).foregroundStyle(.orange)
+                            .appFont(.footnote).foregroundStyle(.orange)
                         Toggle("iCloud で同期する", isOn: Binding(get: { db.iCloudEnabled }, set: { db.setICloud($0) }))
-                            .font(.subheadline)
+                            .appFont(.subheadline)
                     }
                 }
 
@@ -450,18 +450,18 @@ struct LeaveRequestGuide: View {
                     Button(action: receive) { Label("貼り付けで受け取る", systemImage: "doc.on.clipboard") }
                 }
                 .buttonStyle(.bordered)
-                .font(.subheadline)
+                .appFont(.subheadline)
             } label: {
-                Label("申請の受け取り方", systemImage: "questionmark.circle").font(.subheadline.weight(.semibold))
+                Label("申請の受け取り方", systemImage: "questionmark.circle").appFont(.subheadline.weight(.semibold))
             }
         }
     }
 
     private func step(_ n: Int, _ text: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text("\(n)").font(.caption.weight(.bold)).foregroundStyle(.white)
+            Text("\(n)").appFont(.caption.weight(.bold)).foregroundStyle(.white)
                 .frame(width: 20, height: 20).background(Color.accentColor, in: Circle())
-            Text(text).font(.subheadline)
+            Text(text).appFont(.subheadline)
         }
     }
 }
@@ -499,7 +499,7 @@ struct LeaveRequestProxySheet: View {
                         Button { month = month.adding(months: -1) } label: { Image(systemName: "chevron.left") }
                             .accessibilityLabel("前の月")
                         Spacer()
-                        Text(month.description).font(.headline).monospacedDigit()
+                        Text(month.description).appFont(.headline).monospacedDigit()
                         Spacer()
                         Button { month = month.adding(months: 1) } label: { Image(systemName: "chevron.right") }
                             .accessibilityLabel("次の月")
@@ -570,7 +570,7 @@ struct LeaveDayCalendar: View {
         let days = month.days
         let lead = days[0].weekday
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7), spacing: 4) {
-            ForEach(["日", "月", "火", "水", "木", "金", "土"], id: \.self) { Text($0).font(.caption2).foregroundStyle(.secondary) }
+            ForEach(["日", "月", "火", "水", "木", "金", "土"], id: \.self) { Text($0).appFont(.caption2).foregroundStyle(.secondary) }
             ForEach(0..<lead, id: \.self) { _ in Color.clear.frame(height: 36) }
             ForEach(days, id: \.self) { d in
                 dayButton(d)
@@ -587,7 +587,7 @@ struct LeaveDayCalendar: View {
         return Button {
             if on { picked.remove(d) } else { picked.insert(d) }
         } label: {
-            Text("\(d.day)").font(.subheadline.weight(on ? .bold : .regular)).monospacedDigit()
+            Text("\(d.day)").appFont(.subheadline.weight(on ? .bold : .regular)).monospacedDigit()
                 .frame(maxWidth: .infinity, minHeight: 36)
                 .foregroundStyle(ink)
                 .background(on ? Color.purple : Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))

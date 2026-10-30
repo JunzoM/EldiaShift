@@ -107,7 +107,7 @@ struct BreakRulesView: View {
                         Text(b == 0 ? "休憩なし" : "休憩 \(b)分").foregroundStyle(.secondary)
                         Text("実働 \(String(format: "%.2f", Double(m - b) / 60))h").monospacedDigit().frame(width: 96, alignment: .trailing)
                     }
-                    .font(.subheadline)
+                    .appFont(.subheadline)
                 }
             }
         }

@@ -196,8 +196,8 @@ struct ManualView: View {
                 Section {
                     ForEach(s.items, id: \.0) { item in
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(item.0).font(.subheadline.weight(.bold))
-                            Text(item.1).font(.subheadline).foregroundStyle(.secondary)
+                            Text(item.0).appFont(.subheadline.weight(.bold))
+                            Text(item.1).appFont(.subheadline).foregroundStyle(.secondary)
                         }
                         .padding(.vertical, 2)
                     }

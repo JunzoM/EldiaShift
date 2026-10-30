@@ -385,7 +385,7 @@ struct StaffAvatarCreator: View {
         GeometryReader { geometry in
             let side = max(48, min(360, min(geometry.size.width - 32, geometry.size.height - 110)))
             VStack(spacing: 12) {
-                Text("プレビュー").font(.headline)
+                Text("プレビュー").appFont(.headline)
                 Image(uiImage: StaffAvatarDrawing.render(configuration, size: 640))
                     .resizable().scaledToFit().frame(width: side, height: side)
                     .clipShape(Circle())
@@ -413,9 +413,9 @@ struct StaffAvatarCreator: View {
                         Button("登録中の写真から作成") { startAnalysis { sourcePhoto } }.disabled(analysing)
                     }
                     if analysing { ProgressView("顔の特徴を読み取り中…") }
-                    if let analysisNotice { Text(analysisNotice).font(.footnote).foregroundStyle(.secondary) }
+                    if let analysisNotice { Text(analysisNotice).appFont(.footnote).foregroundStyle(.secondary) }
                     Text("顔が1人、正面に写った写真を選んでください。輪郭・目・口と肌色の目安を反映します。写真をサーバーへ送信しません。髪型などは下で調整できます。")
-                        .font(.footnote).foregroundStyle(.secondary)
+                        .appFont(.footnote).foregroundStyle(.secondary)
                 }.buttonStyle(.borderless)
                 Section {
                     Button { randomize() } label: {
@@ -480,7 +480,7 @@ struct StaffAvatarCreator: View {
                 }
                 Section {
                     Text("「このアバターを使う」でスタッフ写真に反映します。スタッフ情報の「保存」で登録が完了します。")
-                        .font(.footnote).foregroundStyle(.secondary)
+                        .appFont(.footnote).foregroundStyle(.secondary)
                 }
             }
     }

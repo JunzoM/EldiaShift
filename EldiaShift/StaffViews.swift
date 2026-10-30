@@ -123,8 +123,8 @@ struct StaffListView: View {
         let on = deptFilter == id
         return Button { deptFilter = id } label: {
             HStack(spacing: 6) {
-                Text(title).font(.subheadline.weight(.semibold))
-                Text("\(count)").font(.caption.weight(.bold)).monospacedDigit()
+                Text(title).appFont(.subheadline.weight(.semibold))
+                Text("\(count)").appFont(.caption.weight(.bold)).monospacedDigit()
                     .padding(.horizontal, 6).padding(.vertical, 1)
                     .background(on ? Color.white.opacity(0.25) : Color(.tertiarySystemFill), in: Capsule())
             }
@@ -148,22 +148,22 @@ struct StaffListView: View {
         return HStack(spacing: 12) {
             InitialAvatar(name: m.name, colorIndex: dept?.colorIndex ?? 8, size: 36, photo: m.photo)
             VStack(alignment: .leading, spacing: 2) {
-                Text(m.name).font(.body.weight(.semibold)).lineLimit(1)
+                Text(m.name).appFont(.body.weight(.semibold)).lineLimit(1)
                 Text(wide ? "No.\(m.number)" : [dept?.name, p.map { $0.label }].compactMap { $0 }.joined(separator: "・"))
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    .appFont(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             // 名前を縦に折り返さない（ほかの列より先に幅を取る）
             .frame(minWidth: 96, alignment: .leading)
             .layoutPriority(1)
             Spacer(minLength: 8)
             if wide {
-                Text(dept?.name ?? "—").font(.subheadline).lineLimit(1).frame(width: 84, alignment: .leading)
-                Text(p?.label ?? "—").font(.subheadline).foregroundStyle(.secondary).lineLimit(1).frame(width: 72, alignment: .leading)
-                Text(Self.usualHours(m, book: book)).font(.subheadline).monospacedDigit().lineLimit(1)
+                Text(dept?.name ?? "—").appFont(.subheadline).lineLimit(1).frame(width: 84, alignment: .leading)
+                Text(p?.label ?? "—").appFont(.subheadline).foregroundStyle(.secondary).lineLimit(1).frame(width: 72, alignment: .leading)
+                Text(Self.usualHours(m, book: book)).appFont(.subheadline).monospacedDigit().lineLimit(1)
                     .minimumScaleFactor(0.8).frame(width: 112, alignment: .leading)
                 if showPay {
                     Text(wage.map { "\($0.kind == .hourly ? "時給" : "月給") \(LaborCostView.yen($0.amount))" } ?? "—")
-                        .font(.subheadline).monospacedDigit().foregroundStyle(short == nil ? Color.secondary : Color.red)
+                        .appFont(.subheadline).monospacedDigit().foregroundStyle(short == nil ? Color.secondary : Color.red)
                         .lineLimit(1).minimumScaleFactor(0.7).frame(width: 104, alignment: .trailing)
                 }
             }
@@ -296,7 +296,7 @@ struct StaffEditView: View {
                     .textContentType(.name)
                 if let other = duplicateName(book) {
                     Text("同じ名前の人がいます（\(other)）。表で見分けやすい名前にすると迷いません。")
-                        .font(.footnote).foregroundStyle(.orange)
+                        .appFont(.footnote).foregroundStyle(.orange)
                 }
                 Picker("部署", selection: Binding(get: { member.departmentID }, set: { id in
                     member.departmentID = id
@@ -330,7 +330,7 @@ struct StaffEditView: View {
                 OptionalDateRow(title: "入社日", text: $member.joinDate)
                 OptionalDateRow(title: "退職日", text: $member.leaveDate)
                 if let issue = dateIssue {
-                    Text(issue).font(.footnote).foregroundStyle(.red)
+                    Text(issue).appFont(.footnote).foregroundStyle(.red)
                 }
             }
 
@@ -499,9 +499,9 @@ struct StaffEditView: View {
             HStack {
                 Circle().fill(PaletteColor.fg(p.colorIndex)).frame(width: 10, height: 10)
                 Text(p.label.isEmpty ? "パターン" : p.label).foregroundStyle(.primary)
-                if let f = p.activeFrom { Text("\(f)〜").font(.caption).foregroundStyle(.secondary) }
+                if let f = p.activeFrom { Text("\(f)〜").appFont(.caption).foregroundStyle(.secondary) }
                 Spacer()
-                if isActive { Text("標準").font(.caption.bold()).foregroundStyle(Color.accentColor) }
+                if isActive { Text("標準").appFont(.caption.bold()).foregroundStyle(Color.accentColor) }
             }
             WeekStrip(days: p.days) { book.block($0, for: member) }
         }
@@ -512,8 +512,8 @@ struct StaffEditView: View {
             Circle().fill(PaletteColor.fg(p.colorIndex)).frame(width: 10, height: 10)
             Text(p.label.isEmpty ? "期間限定" : p.label).foregroundStyle(.primary)
             Spacer()
-            Text("\(p.startDate ?? "?") 〜 \(p.endDate ?? "?")").font(.caption).foregroundStyle(.secondary).monospacedDigit()
-            Text("\(p.days.count)日").font(.caption).foregroundStyle(.secondary)
+            Text("\(p.startDate ?? "?") 〜 \(p.endDate ?? "?")").appFont(.caption).foregroundStyle(.secondary).monospacedDigit()
+            Text("\(p.days.count)日").appFont(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -720,11 +720,11 @@ struct PeriodPatternEditView: View {
                     DatePicker("開始日", selection: date(\.startDate), displayedComponents: .date)
                     DatePicker("終了日", selection: date(\.endDate), displayedComponents: .date)
                     if days.isEmpty {
-                        Text("終了日は開始日以降にしてください").font(.footnote).foregroundStyle(.red)
+                        Text("終了日は開始日以降にしてください").appFont(.footnote).foregroundStyle(.red)
                     }
                     ForEach(PatternChecks.overlapping(pattern, in: periods)) { o in
                         Text("「\(o.label)」（\(o.startDate ?? "")〜\(o.endDate ?? "")）と期間が重なっています。重なった日はどちらか一方しか使われないので、期間をずらしてください。")
-                            .font(.footnote).foregroundStyle(.red)
+                            .appFont(.footnote).foregroundStyle(.red)
                     }
                 }
                 Section("色") { ColorChoice(index: $pattern.colorIndex) }
@@ -838,14 +838,14 @@ struct BlockRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Text(block.short.isEmpty ? "・" : block.short).font(.headline)
+            Text(block.short.isEmpty ? "・" : block.short).appFont(.headline)
                 .foregroundStyle(PaletteColor.fg(block.colorIndex))
                 .frame(width: 44, height: 32)
                 .background(PaletteColor.bg(block.colorIndex), in: RoundedRectangle(cornerRadius: 8))
             Text(block.label).foregroundStyle(.primary)
             Spacer()
             if !block.isOff {
-                Text("\(block.inTime)〜\(block.outTime)").font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
+                Text("\(block.inTime)〜\(block.outTime)").appFont(.subheadline).monospacedDigit().foregroundStyle(.secondary)
             }
         }
     }
@@ -858,11 +858,11 @@ struct BlockChip: View {
 
     var body: some View {
         VStack(spacing: 1) {
-            Text(block.label).font(.caption.weight(.bold)).lineLimit(1)
+            Text(block.label).appFont(.caption.weight(.bold)).lineLimit(1)
             if !block.isOff {
-                Text("\(block.inTime)〜\(block.outTime)").font(.system(size: 10)).monospacedDigit()
+                Text("\(block.inTime)〜\(block.outTime)").appFont(.system(size: 10)).monospacedDigit()
             }
-            if count > 0 { Text("\(count)日").font(.system(size: 9, weight: .bold)) }
+            if count > 0 { Text("\(count)日").appFont(.system(size: 9, weight: .bold)) }
         }
         .foregroundStyle(PaletteColor.fg(block.colorIndex))
         .frame(maxWidth: .infinity, minHeight: 50)
@@ -882,8 +882,8 @@ struct WeekStrip: View {
             ForEach([1, 2, 3, 4, 5, 6, 0], id: \.self) { w in
                 let b = days.indices.contains(w) ? block(days[w]) : nil
                 VStack(spacing: 0) {
-                    Text(["日", "月", "火", "水", "木", "金", "土"][w]).font(.system(size: 9)).foregroundStyle(.secondary)
-                    Text(b?.short ?? "－").font(.system(size: 11, weight: .bold))
+                    Text(["日", "月", "火", "水", "木", "金", "土"][w]).appFont(.system(size: 9)).foregroundStyle(.secondary)
+                    Text(b?.short ?? "－").appFont(.system(size: 11, weight: .bold))
                         .foregroundStyle(b.map { PaletteColor.fg($0.colorIndex) } ?? Color(.tertiaryLabel))
                 }
                 .frame(maxWidth: .infinity)

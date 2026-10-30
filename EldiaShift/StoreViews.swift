@@ -23,7 +23,7 @@ struct StoreTag: View {
 
     var body: some View {
         Text(label)
-            .font(.system(size: size, weight: .heavy))
+            .appFont(.system(size: size, weight: .heavy))
             .foregroundStyle(PaletteColor.fg(store.colorIndex))
             .padding(.horizontal, 3).padding(.vertical, 1)
             .background(PaletteColor.bg(store.colorIndex), in: RoundedRectangle(cornerRadius: 3))
@@ -59,15 +59,15 @@ struct StoreSwitcher: View {
                     Circle().fill(PaletteColor.fg(current.colorIndex)).frame(width: 7, height: 7)
                     Text(store.book.shortName(of: current)).lineLimit(1).minimumScaleFactor(0.6)
                 }
-                .font(.caption.weight(.bold))
+                .appFont(.caption.weight(.bold))
                 .frame(width: 48)
             } else {
                 HStack(spacing: 5) {
                     Circle().fill(PaletteColor.fg(current.colorIndex)).frame(width: 7, height: 7)
                     Text(current.name).lineLimit(1)
-                    Image(systemName: "chevron.down").font(.caption2.weight(.bold))
+                    Image(systemName: "chevron.down").appFont(.caption2.weight(.bold))
                 }
-                .font(.subheadline.weight(.semibold))
+                .appFont(.subheadline.weight(.semibold))
             }
         }
         .accessibilityLabel("店舗：\(current.name)。押すと切り替え")
@@ -93,9 +93,9 @@ struct StorePhoto: View {
                     LinearGradient(colors: [PaletteColor.bg(store.colorIndex), PaletteColor.fg(store.colorIndex).opacity(0.35)],
                                    startPoint: .topLeading, endPoint: .bottomTrailing)
                     VStack(spacing: 2) {
-                        Image(systemName: "building.2.fill").font(.system(size: min(size.width, size.height) * 0.28))
+                        Image(systemName: "building.2.fill").appFont(.system(size: min(size.width, size.height) * 0.28))
                         if size.height >= 60 {
-                            Text(label).font(.system(size: min(size.width, size.height) * 0.16, weight: .heavy)).lineLimit(1)
+                            Text(label).appFont(.system(size: min(size.width, size.height) * 0.16, weight: .heavy)).lineLimit(1)
                         }
                     }
                     .foregroundStyle(PaletteColor.fg(store.colorIndex))
@@ -259,7 +259,7 @@ struct StoreListView: View {
 
     private var listHeader: some View {
         HStack {
-            Text("店舗一覧").font(.headline)
+            Text("店舗一覧").appFont(.headline)
             Spacer()
             Button { editing = store.newStore() } label: { Label("新規登録", systemImage: "plus") }
                 .buttonStyle(.borderedProminent).controlSize(.small)
@@ -298,14 +298,14 @@ struct StoreListView: View {
         return HStack(spacing: 12) {
             StorePhoto(store: st, label: book.shortName(of: st), size: CGSize(width: 72, height: 56), corner: 10)
             VStack(alignment: .leading, spacing: 3) {
-                Text(st.name.isEmpty ? "（名前なし）" : st.name).font(.body.weight(.semibold)).foregroundStyle(.primary)
-                Text(st.address.isEmpty ? "住所未登録" : st.address).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(st.name.isEmpty ? "（名前なし）" : st.name).appFont(.body.weight(.semibold)).foregroundStyle(.primary)
+                Text(st.address.isEmpty ? "住所未登録" : st.address).appFont(.caption).foregroundStyle(.secondary).lineLimit(1)
                 Text("部門 \(book.departments(in: st.id).count)・スタッフ \(staff)人" + (st.facilitySummary.isEmpty ? "" : "・\(st.facilitySummary)"))
-                    .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    .appFont(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 4)
             if current {
-                Text("選択中").font(.caption2.weight(.bold)).foregroundStyle(.white)
+                Text("選択中").appFont(.caption2.weight(.bold)).foregroundStyle(.white)
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Color.accentColor, in: Capsule())
             }
@@ -334,7 +334,7 @@ struct StoreDetailPanel: View {
         let helpers = book.staff.filter { $0.active && $0.extraStoreIDs.contains(st.id) && book.homeStoreID(of: $0) != st.id }
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Text(st.name.isEmpty ? "（名前なし）" : st.name).font(.title2.weight(.bold))
+                Text(st.name.isEmpty ? "（名前なし）" : st.name).appFont(.title2.weight(.bold))
                     .lineLimit(2).minimumScaleFactor(0.7)
                 Spacer(minLength: 8)
                 Button("編集", action: onEdit).buttonStyle(.bordered)
@@ -345,7 +345,7 @@ struct StoreDetailPanel: View {
             .frame(height: 200)
 
             VStack(alignment: .leading, spacing: 0) {
-                Text("店舗情報").font(.headline).padding(.bottom, 8)
+                Text("店舗情報").appFont(.headline).padding(.bottom, 8)
                 info("店舗名", st.name)
                 info("略称", book.shortName(of: st))
                 info("アプリの表示名", "\(st.displayPrefix) SHIFT")
@@ -363,7 +363,7 @@ struct StoreDetailPanel: View {
 
             if !depts.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("部門").font(.headline)
+                    Text("部門").appFont(.headline)
                     FlowChips(items: depts.map { d in (d.name + " \(book.staff.filter { $0.departmentID == d.id && $0.active }.count)人", d.colorIndex) })
                 }
             }
@@ -375,7 +375,7 @@ struct StoreDetailPanel: View {
                 .buttonStyle(.borderedProminent).controlSize(.large)
             } else {
                 Label("いま表示している店舗です", systemImage: "checkmark.circle.fill")
-                    .font(.subheadline).foregroundStyle(Color.accentColor)
+                    .appFont(.subheadline).foregroundStyle(Color.accentColor)
             }
         }
         .padding(20)
@@ -384,9 +384,9 @@ struct StoreDetailPanel: View {
     private func info(_ label: String, _ value: String) -> some View {
         VStack(spacing: 0) {
             HStack(alignment: .top) {
-                Text(label).font(.subheadline).foregroundStyle(.secondary).lineLimit(1).fixedSize()
+                Text(label).appFont(.subheadline).foregroundStyle(.secondary).lineLimit(1).fixedSize()
                     .frame(minWidth: 80, alignment: .leading)
-                Text(value.isEmpty ? "—" : value).font(.subheadline).frame(maxWidth: .infinity, alignment: .leading)
+                Text(value.isEmpty ? "—" : value).appFont(.subheadline).frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
             }
             .padding(.vertical, 10)
@@ -402,7 +402,7 @@ struct FlowChips: View {
     var body: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 8)], alignment: .leading, spacing: 8) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, it in
-                Text(it.0).font(.caption.weight(.semibold))
+                Text(it.0).appFont(.caption.weight(.semibold))
                     .foregroundStyle(PaletteColor.fg(it.1))
                     .padding(.horizontal, 10).padding(.vertical, 6)
                     .frame(maxWidth: .infinity)
@@ -459,7 +459,7 @@ struct StoreEditView: View {
                     HStack {
                         TextField("HOTEL", text: $storeInfo.brandPrefix)
                             .textInputAutocapitalization(.characters)
-                        Text("SHIFT").font(.body.weight(.heavy)).foregroundStyle(.secondary)
+                        Text("SHIFT").appFont(.body.weight(.heavy)).foregroundStyle(.secondary)
                     }
                 } header: {
                     Text("アプリの表示名")
@@ -707,9 +707,9 @@ struct BrandColorView: View {
                             VStack(spacing: 6) {
                                 Circle().fill(Color(hex: p.hex)).frame(width: 40, height: 40)
                                     .overlay {
-                                        if current == p.hex { Image(systemName: "checkmark").font(.headline).foregroundStyle(.white) }
+                                        if current == p.hex { Image(systemName: "checkmark").appFont(.headline).foregroundStyle(.white) }
                                     }
-                                Text(p.name).font(.caption).foregroundStyle(.primary)
+                                Text(p.name).appFont(.caption).foregroundStyle(.primary)
                             }
                             .frame(maxWidth: .infinity)
                         }
@@ -734,16 +734,16 @@ struct BrandColorView: View {
             if let current {
                 Section("見え方") {
                     HStack(spacing: 12) {
-                        Text("保存").font(.headline).foregroundStyle(.white)
+                        Text("保存").appFont(.headline).foregroundStyle(.white)
                             .padding(.horizontal, 18).padding(.vertical, 8)
                             .background(Color(hex: current), in: Capsule())
-                        Text("選択中").font(.subheadline.weight(.semibold)).foregroundStyle(Color(hex: current))
+                        Text("選択中").appFont(.subheadline.weight(.semibold)).foregroundStyle(Color(hex: current))
                         Spacer()
                     }
                     if BrandColor.contrastWithWhite(current) < 3 {
                         Label("明るすぎて、白い文字が読みにくい色です。もう少し濃い色をおすすめします。",
                               systemImage: "exclamationmark.triangle.fill")
-                            .font(.footnote).foregroundStyle(.orange)
+                            .appFont(.footnote).foregroundStyle(.orange)
                     }
                 }
             }

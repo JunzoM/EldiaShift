@@ -54,7 +54,7 @@ struct DayTimelineView: View {
             // ロック中はドラッグできないので、すぐ編集に切り替えられるよう案内する（PC版と同じ）
             HStack(spacing: 10) {
                 Image(systemName: "lock.fill").foregroundStyle(.secondary)
-                Text("ロック中のため、シフトは変更できません").font(.subheadline)
+                Text("ロック中のため、シフトは変更できません").appFont(.subheadline)
                 Spacer(minLength: 0)
                 Button("編集する") { store.editing = true }.buttonStyle(.borderedProminent).controlSize(.small)
             }
@@ -88,7 +88,7 @@ struct DayTimelineView: View {
                         HStack(spacing: 0) {
                             HStack(spacing: 6) {
                                 Circle().fill(PaletteColor.fg(g.department.colorIndex)).frame(width: 8, height: 8)
-                                Text(g.department.name).font(.caption.bold()).foregroundStyle(.secondary).lineLimit(1)
+                                Text(g.department.name).appFont(.caption.bold()).foregroundStyle(.secondary).lineLimit(1)
                                 Spacer(minLength: 0)
                             }
                             .padding(.leading, 10)
@@ -136,7 +136,7 @@ struct DayTimelineView: View {
         let block = book.block(r?.blockID, for: m)
         return HStack(spacing: 0) {
             Button { if store.editing { editing = Edit(member: m) } } label: {
-                Text(m.name).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.7)
+                Text(m.name).appFont(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.7)
                     .frame(width: nameWidth - 10, alignment: .leading)
                     .padding(.leading, 10)
             }
@@ -155,7 +155,7 @@ struct DayTimelineView: View {
                     })
 
                 if let r, r.isOff {
-                    Text(block?.label ?? "休み").font(.caption.weight(.bold))
+                    Text(block?.label ?? "休み").appFont(.caption.weight(.bold))
                         .foregroundStyle(PaletteColor.fg(block?.colorIndex ?? 8))
                         .padding(.horizontal, 10).padding(.vertical, 4)
                         .background(PaletteColor.bg(block?.colorIndex ?? 8), in: Capsule())
@@ -188,12 +188,12 @@ struct DayTimelineView: View {
                 .fill(color.opacity(dragging ? 0.95 : (r?.isAuto == true ? 0.55 : 0.85)))
             HStack(spacing: 4) {
                 Text("\(TimelineMath.label(s.inM))〜\(TimelineMath.label(s.outM))")
-                    .font(.caption2.weight(.bold)).monospacedDigit()
+                    .appFont(.caption2.weight(.bold)).monospacedDigit()
                     .lineLimit(1).minimumScaleFactor(0.6)
                 // メモがある日は印と最初の部分を出す
                 if let note = r?.note, !note.isEmpty {
-                    Image(systemName: "note.text").font(.caption2)
-                    if w > 180 { Text(note).font(.caption2).lineLimit(1).truncationMode(.tail) }
+                    Image(systemName: "note.text").appFont(.caption2)
+                    if w > 180 { Text(note).appFont(.caption2).lineLimit(1).truncationMode(.tail) }
                 }
             }
             .foregroundStyle(.white)
@@ -228,7 +228,7 @@ struct DayTimelineView: View {
         return HStack(spacing: 6) {
             if let st = book.store(r.storeID) { StoreTag(store: st, label: book.shortName(of: st), size: 10) }
             Text("\(TimelineMath.label(s.inM))〜\(TimelineMath.label(s.outM))")
-                .font(.caption2).monospacedDigit().foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.6)
+                .appFont(.caption2).monospacedDigit().foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.6)
         }
         .padding(.horizontal, 8)
         .frame(width: w, height: rowHeight - 14, alignment: .leading)
@@ -288,7 +288,7 @@ struct DayTimelineView: View {
             ZStack(alignment: .topLeading) {
                 ForEach(hours, id: \.self) { h in
                     if h % 2 == 1 {
-                        Text("\(h % 24)").font(.caption2.weight(h >= 24 ? .regular : .semibold)).monospacedDigit()
+                        Text("\(h % 24)").appFont(.caption2.weight(h >= 24 ? .regular : .semibold)).monospacedDigit()
                             .foregroundStyle(h >= 24 ? .secondary : .primary)
                             .offset(x: CGFloat(h * 60 - TimelineMath.start) * perMinute - 4)
                     }
@@ -310,7 +310,7 @@ struct DayTimelineView: View {
                 let need = book.staffing.need(g.department.id, on: day, hour: h % 24)
                 Group {
                     if let need, let c = StaffingStyle.color(n, need: need) {
-                        Text("\(n)/\(need)").font(.system(size: 9, weight: .bold)).monospacedDigit()
+                        Text("\(n)/\(need)").appFont(.system(size: 9, weight: .bold)).monospacedDigit()
                             .foregroundStyle(n < need ? .white : c)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .background(n < need ? c.opacity(0.85) : c.opacity(0.15))
@@ -334,11 +334,11 @@ struct DayTimelineView: View {
             return TimelineMath.span(of: r)
         }
         return HStack(spacing: 0) {
-            Text("人数").font(.caption2).foregroundStyle(.secondary).frame(width: nameWidth)
+            Text("人数").appFont(.caption2).foregroundStyle(.secondary).frame(width: nameWidth)
             HStack(spacing: 0) {
                 ForEach(hours, id: \.self) { h in
                     let n = TimelineMath.headcount(spans, hour: h)
-                    Text(n == 0 ? "" : "\(n)").font(.system(size: 10, weight: .bold)).monospacedDigit()
+                    Text(n == 0 ? "" : "\(n)").appFont(.system(size: 10, weight: .bold)).monospacedDigit()
                         .frame(width: 60 * perMinute, height: 22)
                         .background(Color.accentColor.opacity(min(0.45, Double(n) * 0.08)))
                 }
@@ -366,9 +366,9 @@ struct EditingChip: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Label("編集中", systemImage: "pencil").font(.caption.weight(.bold)).foregroundStyle(Color.accentColor)
+            Label("編集中", systemImage: "pencil").appFont(.caption.weight(.bold)).foregroundStyle(Color.accentColor)
             Button("終える") { store.editing = false }
-                .font(.caption.weight(.bold))
+                .appFont(.caption.weight(.bold))
                 .buttonStyle(.bordered).controlSize(.mini)
         }
         .padding(.leading, 10).padding(.trailing, 4).padding(.vertical, 3)

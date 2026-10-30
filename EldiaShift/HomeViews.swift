@@ -271,15 +271,15 @@ struct HomeView: View {
             : "まだバックアップを作っていません"
         return Button { showBackup = true } label: {
             HStack(spacing: 12) {
-                Image(systemName: "externaldrive.badge.exclamationmark").font(.title3).foregroundStyle(.orange)
+                Image(systemName: "externaldrive.badge.exclamationmark").appFont(.title3).foregroundStyle(.orange)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(headline)
-                        .font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                        .appFont(.subheadline.weight(.semibold)).foregroundStyle(.primary)
                     Text("iCloud 同期とは別に、ファイルにも残しておくと安心です。押してバックアップを作ります。")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .appFont(.caption).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                Image(systemName: "chevron.right").appFont(.caption).foregroundStyle(.tertiary)
             }
             .padding(12)
             .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -304,9 +304,9 @@ struct HomeView: View {
         let st = store.currentStore
         return HStack(alignment: .firstTextBaseline, spacing: 8) {
             Circle().fill(PaletteColor.fg(st.colorIndex)).frame(width: 9, height: 9)
-            Text("\(st.name)の今日").font(.title2.weight(.bold))
+            Text("\(st.name)の今日").appFont(.title2.weight(.bold))
             Text(verbatim: "\(today.month)月\(today.day)日（\(wd)）\(JapaneseHolidays.name(today).map { " \($0)" } ?? "")")
-                .font(.subheadline).foregroundStyle(.secondary)
+                .appFont(.subheadline).foregroundStyle(.secondary)
         }
     }
 
@@ -383,20 +383,20 @@ struct HomeView: View {
                 HStack(spacing: 10) {
                     InitialAvatar(name: w.member.name, colorIndex: w.department?.colorIndex ?? 8, size: 32, photo: w.member.photo)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(w.member.name).font(.body.weight(.semibold))
-                        Text(w.department?.name ?? "").font(.caption).foregroundStyle(.secondary)
+                        Text(w.member.name).appFont(.body.weight(.semibold))
+                        Text(w.department?.name ?? "").appFont(.caption).foregroundStyle(.secondary)
                     }
-                    if w.helper { Text("掛け持ち").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
+                    if w.helper { Text("掛け持ち").appFont(.caption2.weight(.bold)).foregroundStyle(.secondary)
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(Color(.tertiarySystemFill), in: Capsule()) }
                     Spacer()
                     if let b = w.block {
-                        Text(b.label).font(.caption.weight(.bold))
+                        Text(b.label).appFont(.caption.weight(.bold))
                             .foregroundStyle(PaletteColor.fg(b.colorIndex))
                             .padding(.horizontal, 8).padding(.vertical, 3)
                             .background(PaletteColor.bg(b.colorIndex), in: Capsule())
                     }
-                    Text("\(w.shift.inTime)〜\(w.shift.outTime)").font(.subheadline).monospacedDigit()
+                    Text("\(w.shift.inTime)〜\(w.shift.outTime)").appFont(.subheadline).monospacedDigit()
                 }
                 .padding(.vertical, 6)
                 if w.id != info.working.last?.id { Divider() }
@@ -409,7 +409,7 @@ struct HomeView: View {
     private func shortList(_ info: HomeInfo) -> some View {
         HomeSection(title: "人手が足りない日（2週間）", trailing: nil, action: nil) {
             if store.book.staffing.isEmpty {
-                Text("適正人員を決めると、足りない日がここに出ます。").font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 8)
+                Text("適正人員を決めると、足りない日がここに出ます。").appFont(.subheadline).foregroundStyle(.secondary).padding(.vertical, 8)
             } else if info.shortDays.isEmpty {
                 Label("すべての日でそろっています", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(StaffingStyle.ok).padding(.vertical, 8)
@@ -417,11 +417,11 @@ struct HomeView: View {
             ForEach(info.shortDays.prefix(6)) { s in
                 Button { openDay(s.day) } label: {
                     HStack {
-                        Text(Self.dayLabel(s.day)).font(.subheadline.weight(.semibold)).monospacedDigit()
-                        Text(s.departments.joined(separator: "・")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        Text(Self.dayLabel(s.day)).appFont(.subheadline.weight(.semibold)).monospacedDigit()
+                        Text(s.departments.joined(separator: "・")).appFont(.caption).foregroundStyle(.secondary).lineLimit(1)
                         Spacer()
-                        Text("−\(s.short)人時").font(.subheadline.weight(.heavy)).monospacedDigit().foregroundStyle(StaffingStyle.short)
-                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                        Text("−\(s.short)人時").appFont(.subheadline.weight(.heavy)).monospacedDigit().foregroundStyle(StaffingStyle.short)
+                        Image(systemName: "chevron.right").appFont(.caption).foregroundStyle(.tertiary)
                     }
                     .padding(.vertical, 6)
                     .contentShape(Rectangle())
@@ -577,20 +577,20 @@ struct HomeCard: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                    Text(title).appFont(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
                         .lineLimit(1).minimumScaleFactor(0.8)
                     Spacer()
                     Image(systemName: systemImage)
-                        .font(.subheadline)
+                        .appFont(.subheadline)
                         .foregroundStyle(tint)
                         .frame(width: 32, height: 32)
                         .background(tint.opacity(0.14), in: Circle())
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    Text(value).font(.system(size: 32, weight: .bold, design: .rounded)).monospacedDigit()
-                    Text(unit).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                    Text(value).appFont(.system(size: 32, weight: .bold, design: .rounded)).monospacedDigit()
+                    Text(unit).appFont(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
                 }
-                Text(note).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                Text(note).appFont(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(14)
@@ -612,10 +612,10 @@ struct HomeSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(title).font(.headline)
+                Text(title).appFont(.headline)
                 Spacer()
                 if let trailing, let action {
-                    Button(trailing, action: action).font(.subheadline)
+                    Button(trailing, action: action).appFont(.subheadline)
                 }
             }
             VStack(alignment: .leading, spacing: 0) { content }
@@ -634,8 +634,8 @@ struct QuickButton: View {
     var body: some View {
         Button(action: action) {
             VStack(spacing: 6) {
-                Image(systemName: systemImage).font(.title3).foregroundStyle(Color.accentColor)
-                Text(title).font(.caption.weight(.semibold)).foregroundStyle(.primary).lineLimit(1).minimumScaleFactor(0.8)
+                Image(systemName: systemImage).appFont(.title3).foregroundStyle(Color.accentColor)
+                Text(title).appFont(.caption.weight(.semibold)).foregroundStyle(.primary).lineLimit(1).minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity, minHeight: 64)
             .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -655,7 +655,7 @@ struct HomeMonthCalendar: View {
         let days = month.days
         let lead = days[0].weekday
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7), spacing: 4) {
-            ForEach(["日", "月", "火", "水", "木", "金", "土"], id: \.self) { Text($0).font(.caption2).foregroundStyle(.secondary) }
+            ForEach(["日", "月", "火", "水", "木", "金", "土"], id: \.self) { Text($0).appFont(.caption2).foregroundStyle(.secondary) }
             ForEach(0..<lead, id: \.self) { _ in Color.clear.frame(height: 40) }
             ForEach(days, id: \.self) { d in dayCell(d) }
         }
@@ -668,8 +668,8 @@ struct HomeMonthCalendar: View {
         let ink: Color = red ? .red : d.weekday == 6 ? .blue : .primary
         return Button { open(d) } label: {
             VStack(spacing: 1) {
-                Text("\(d.day)").font(.subheadline.weight(isToday ? .bold : .regular)).monospacedDigit().foregroundStyle(ink)
-                Text(n > 0 ? "\(n)人" : " ").font(.caption2.weight(.semibold)).monospacedDigit().foregroundStyle(Color.accentColor)
+                Text("\(d.day)").appFont(.subheadline.weight(isToday ? .bold : .regular)).monospacedDigit().foregroundStyle(ink)
+                Text(n > 0 ? "\(n)人" : " ").appFont(.caption2.weight(.semibold)).monospacedDigit().foregroundStyle(Color.accentColor)
             }
             .frame(maxWidth: .infinity, minHeight: 40)
             .background(isToday ? Color.accentColor.opacity(0.12) : Color(.tertiarySystemFill).opacity(0.5),

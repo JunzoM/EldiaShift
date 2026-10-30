@@ -121,7 +121,7 @@ struct MonthGridView: View {
                     Text("No").frame(width: 26)
                     Text("氏名").frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                .appFont(.caption.weight(.bold)).foregroundStyle(.secondary)
                 .padding(.horizontal, 6)
                 .frame(width: nameWidth, height: headerHeight)
                 .overlay(alignment: .trailing) { Divider() }
@@ -234,7 +234,7 @@ struct MonthGridView: View {
                         Circle().fill(Color.orange.opacity(0.8)).frame(width: 6, height: 6)
                         Text("自動")
                     }
-                    .font(.caption).foregroundStyle(.secondary)
+                    .appFont(.caption).foregroundStyle(.secondary)
                 }
                 if store.editing {
                     UndoRedoButtons()
@@ -254,10 +254,10 @@ struct MonthGridView: View {
                     }
                     EditingChip()
                 } else {
-                    Text("ロック中（鉛筆で編集）").font(.caption).foregroundStyle(.secondary)
+                    Text("ロック中（鉛筆で編集）").appFont(.caption).foregroundStyle(.secondary)
                 }
             }
-            .font(.subheadline)
+            .appFont(.subheadline)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .frame(minWidth: availableWidth, alignment: .leading)
@@ -292,8 +292,8 @@ struct MonthGridView: View {
         let off = book.templates.filter(\.isOff)
         return HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 1) {
-                Text("\(picked.count)マスを選択中").font(.subheadline.weight(.bold)).monospacedDigit()
-                Text("押して選ぶ・長押しで前のマスから四角く選ぶ").font(.caption2).foregroundStyle(.secondary)
+                Text("\(picked.count)マスを選択中").appFont(.subheadline.weight(.bold)).monospacedDigit()
+                Text("押して選ぶ・長押しで前のマスから四角く選ぶ").appFont(.caption2).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
             Menu {
@@ -307,7 +307,7 @@ struct MonthGridView: View {
                     Button("自動（パターン）に戻す", role: .destructive) { applyPicked(nil) }
                 }
             } label: {
-                Label("入れる", systemImage: "square.and.pencil").font(.subheadline.weight(.bold))
+                Label("入れる", systemImage: "square.and.pencil").appFont(.subheadline.weight(.bold))
             }
             .buttonStyle(.borderedProminent)
             .disabled(picked.isEmpty)
@@ -371,8 +371,8 @@ struct MonthGridView: View {
             Button { toggleHourly(d) } label: {
                 HStack(spacing: 6) {
                     Image(systemName: openHourly.contains(d.id) ? "chevron.down.circle.fill" : "chevron.right.circle.fill")
-                        .font(.body)
-                    Text("時間帯別在籍人数").font(.subheadline.weight(.bold)).lineLimit(1).minimumScaleFactor(0.6)
+                        .appFont(.body)
+                    Text("時間帯別在籍人数").appFont(.subheadline.weight(.bold)).lineLimit(1).minimumScaleFactor(0.6)
                     Spacer(minLength: 0)
                 }
                 .foregroundStyle(Color.accentColor)
@@ -386,8 +386,8 @@ struct MonthGridView: View {
         case .hour(_, _, let h):
             let night = h <= 8
             HStack(spacing: 0) {
-                Text(night ? "明" : "").font(.system(size: 9)).foregroundStyle(.secondary).frame(width: 26)
-                Text(String(format: "%02d:00", h)).font(.system(size: 11, weight: .bold)).monospacedDigit()
+                Text(night ? "明" : "").appFont(.system(size: 9)).foregroundStyle(.secondary).frame(width: 26)
+                Text(String(format: "%02d:00", h)).appFont(.system(size: 11, weight: .bold)).monospacedDigit()
                     .foregroundStyle(night ? Color.blue : Color.secondary)
                 Spacer(minLength: 0)
             }
@@ -436,7 +436,7 @@ struct MonthGridView: View {
                             if g.short > 0 {
                                 // 押すと、その日に入れられる人を出す
                                 Button { shortage = ShortageTarget(department: dept, day: d) } label: {
-                                    Text("−\(g.short)").font(.system(size: 11, weight: .heavy)).monospacedDigit()
+                                    Text("−\(g.short)").appFont(.system(size: 11, weight: .heavy)).monospacedDigit()
                                         .foregroundStyle(.white)
                                         .padding(.horizontal, 4).padding(.vertical, 3)
                                         .background(StaffingStyle.short, in: RoundedRectangle(cornerRadius: 4))
@@ -446,12 +446,12 @@ struct MonthGridView: View {
                                 .buttonStyle(.plain)
                                 .accessibilityLabel("\(d.day)日 \(dept.name) 不足 \(g.short)人時。入れられる人を見る")
                             } else {
-                                Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(StaffingStyle.ok.opacity(0.7))
+                                Image(systemName: "checkmark").appFont(.system(size: 9, weight: .bold)).foregroundStyle(StaffingStyle.ok.opacity(0.7))
                             }
                         }
                         .frame(width: cellWidth, height: toggleHeight)
                     }
-                    Text("不足").font(.system(size: 9)).foregroundStyle(.secondary).frame(width: summaryWidth)
+                    Text("不足").appFont(.system(size: 9)).foregroundStyle(.secondary).frame(width: summaryWidth)
                 }
                 .background(Color(.systemBackground))
                 .overlay(alignment: .bottom) { Divider() }
@@ -473,8 +473,8 @@ struct MonthGridView: View {
                     if let need, let c = StaffingStyle.color(n, need: need) {
                         // 必要人数がある時間：実際/必要 を色で（足りない＝赤、多い＝オレンジ）
                         HStack(spacing: 0) {
-                            Text("\(n)").font(.system(size: 12, weight: .heavy))
-                            Text("/\(need)").font(.system(size: 8)).foregroundStyle(.secondary)
+                            Text("\(n)").appFont(.system(size: 12, weight: .heavy))
+                            Text("/\(need)").appFont(.system(size: 8)).foregroundStyle(.secondary)
                         }
                         .monospacedDigit()
                         .foregroundStyle(n < need ? Color.white : c)
@@ -487,7 +487,7 @@ struct MonthGridView: View {
                         .accessibilityAddTraits(n < need ? .isButton : [])
                     } else {
                     Text(n == 0 ? "0" : "\(n)")
-                        .font(.system(size: n > 2 ? 13 : 11, weight: n > 2 ? .heavy : n > 0 ? .bold : .regular))
+                        .appFont(.system(size: n > 2 ? 13 : 11, weight: n > 2 ? .heavy : n > 0 ? .bold : .regular))
                         .monospacedDigit()
                         .foregroundStyle(n == 0 ? Color(.tertiaryLabel) : night ? Color.blue : Color.green)
                         .frame(width: cellWidth, height: hourHeight)
@@ -515,8 +515,8 @@ struct MonthGridView: View {
     private func sectionLabel(_ d: Department, count: Int) -> some View {
         HStack(spacing: 6) {
             Circle().fill(PaletteColor.fg(d.colorIndex)).frame(width: 8, height: 8)
-            Text(d.name).font(.caption.bold()).foregroundStyle(PaletteColor.fg(d.colorIndex))
-            Text("\(count)人").font(.caption).foregroundStyle(.secondary)
+            Text(d.name).appFont(.caption.bold()).foregroundStyle(PaletteColor.fg(d.colorIndex))
+            Text("\(count)人").appFont(.caption).foregroundStyle(.secondary)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 10)
@@ -528,7 +528,7 @@ struct MonthGridView: View {
     private func nameCell(_ m: StaffMember, book: ShiftBook) -> some View {
         let active = m.patterns.first { $0.id == m.activePatternID }
         return HStack(alignment: .center, spacing: 0) {
-            Text("\(m.number)").font(.caption2).foregroundStyle(.secondary).monospacedDigit().frame(width: 22)
+            Text("\(m.number)").appFont(.caption2).foregroundStyle(.secondary).monospacedDigit().frame(width: 22)
             if !compact {
                 InitialAvatar(name: m.name, colorIndex: book.departments.first { $0.id == m.departmentID }?.colorIndex ?? 8, size: 28, photo: m.photo)
                     .padding(.trailing, 6)
@@ -541,7 +541,7 @@ struct MonthGridView: View {
                 if m.active {
                     if m.patterns.isEmpty {
                         Button("＋パターン") { staffSheet = StaffSheet(member: m, isNew: false) }
-                            .font(.caption2).foregroundStyle(.secondary)
+                            .appFont(.caption2).foregroundStyle(.secondary)
                     } else {
                         Menu {
                             ForEach(m.patterns) { p in
@@ -556,7 +556,7 @@ struct MonthGridView: View {
                                 }
                             }
                         } label: {
-                            Text(active?.label ?? "パターン").font(.caption2.weight(.semibold))
+                            Text(active?.label ?? "パターン").appFont(.caption2.weight(.semibold))
                                 .lineLimit(1)
                                 .padding(.horizontal, 5).padding(.vertical, 1)
                                 .foregroundStyle(PaletteColor.fg(active?.colorIndex ?? 8))
@@ -567,7 +567,7 @@ struct MonthGridView: View {
                 }
                 if !m.timeBlocks.isEmpty && !compact {
                     Button("個人の時間 \(m.timeBlocks.count)件") { staffSheet = StaffSheet(member: m, isNew: false) }
-                        .font(.system(size: 10)).foregroundStyle(Color.accentColor)
+                        .appFont(.system(size: 10)).foregroundStyle(Color.accentColor)
                 }
             }
             Spacer(minLength: 0)
@@ -600,11 +600,11 @@ struct MonthGridView: View {
         let wd = ["日", "月", "火", "水", "木", "金", "土"][d.weekday]
         return VStack(spacing: 1) {
             if isWeek {
-                Text("\(d.month)/\(d.day)（\(wd)）").font(.subheadline.weight(.bold)).monospacedDigit()
-                if let holiday { Text(holiday).font(.caption2).lineLimit(1) }
+                Text("\(d.month)/\(d.day)（\(wd)）").appFont(.subheadline.weight(.bold)).monospacedDigit()
+                if let holiday { Text(holiday).appFont(.caption2).lineLimit(1) }
             } else {
-                Text("\(d.day)").font(.subheadline.weight(.bold)).monospacedDigit()
-                Text(wd).font(.caption2)
+                Text("\(d.day)").appFont(.subheadline.weight(.bold)).monospacedDigit()
+                Text(wd).appFont(.caption2)
             }
         }
         .foregroundStyle(color)
@@ -616,7 +616,7 @@ struct MonthGridView: View {
         .overlay(alignment: .topLeading) {
             let t = store.book.staffing.type(of: d)
             if !store.book.staffing.isEmpty, t == .busy || t == .quiet {
-                Text(t.short).font(.system(size: 8, weight: .heavy)).foregroundStyle(.white)
+                Text(t.short).appFont(.system(size: 8, weight: .heavy)).foregroundStyle(.white)
                     .padding(.horizontal, 2)
                     .background(t == .busy ? Color.red : Color.brown, in: RoundedRectangle(cornerRadius: 2))
                     .padding(2)
@@ -643,14 +643,14 @@ struct MonthGridView: View {
     }
 
     private var summaryHeader: some View {
-        Text("合計").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+        Text("合計").appFont(.caption.weight(.bold)).foregroundStyle(.secondary)
             .frame(width: summaryWidth, height: headerHeight)
     }
 
     private func summaryCell(_ s: MonthSummary) -> some View {
         VStack(spacing: 1) {
-            Text("\(s.workDays)日").font(.caption.weight(.semibold))
-            Text(String(format: "%.1fh", s.hours)).font(.caption2).foregroundStyle(.secondary)
+            Text("\(s.workDays)日").appFont(.caption.weight(.semibold))
+            Text(String(format: "%.1fh", s.hours)).appFont(.caption2).foregroundStyle(.secondary)
         }
         .monospacedDigit()
         .frame(width: summaryWidth, height: rowHeight)
@@ -791,7 +791,7 @@ struct ShiftCellView: View {
         .overlay(alignment: large ? .topTrailing : .bottomTrailing) {
             // メモがある日の印（自動で決まったマスの印と重ならない隅に）
             if let n = resolved?.note, !n.isEmpty {
-                Image(systemName: "note.text").font(.system(size: large ? 10 : 7, weight: .bold))
+                Image(systemName: "note.text").appFont(.system(size: large ? 10 : 7, weight: .bold))
                     .foregroundStyle(Color.secondary).padding(large ? 4 : 1.5)
                     .accessibilityHidden(true)
             }
@@ -799,14 +799,14 @@ struct ShiftCellView: View {
         .overlay(alignment: .topLeading) {
             if !issues.isEmpty {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: large ? 11 : 9))
+                    .appFont(.system(size: large ? 11 : 9))
                     .foregroundStyle(issues.contains(.requestedOff) ? Color.purple : Color.orange)
                     .padding(2)
             }
         }
         .overlay(alignment: .bottomLeading) {
             if requested {
-                Text("希").font(.system(size: 8, weight: .heavy)).foregroundStyle(.white)
+                Text("希").appFont(.system(size: 8, weight: .heavy)).foregroundStyle(.white)
                     .padding(.horizontal, 2)
                     .background(Color.purple, in: RoundedRectangle(cornerRadius: 2))
                     .padding(2)
@@ -848,19 +848,19 @@ struct ShiftCellView: View {
     @ViewBuilder
     private func content(_ block: TimeBlock?) -> some View {
         if member.hasLeft(on: day) {
-            Text("－").font(.caption2).foregroundStyle(.tertiary)
+            Text("－").appFont(.caption2).foregroundStyle(.tertiary)
         } else if let r = resolved, r.elsewhere {
             VStack(spacing: 2) {
                 if let st = book.store(r.storeID) { StoreTag(store: st, label: book.shortName(of: st), size: large ? 11 : 9) }
-                Text(r.inTime.isEmpty ? "—" : r.inTime).font(.system(size: large ? 12 : 10)).foregroundStyle(.secondary)
-                if large { Text(r.outTime).font(.system(size: 11)).foregroundStyle(.tertiary) }
+                Text(r.inTime.isEmpty ? "—" : r.inTime).appFont(.system(size: large ? 12 : 10)).foregroundStyle(.secondary)
+                if large { Text(r.outTime).appFont(.system(size: 11)).foregroundStyle(.tertiary) }
             }
             .monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
         } else if let r = resolved {
             if r.isOff {
                 if large {
                     Text(block?.label ?? "休み")
-                        .font(.headline)
+                        .appFont(.headline)
                         .foregroundStyle(PaletteColor.fg(block?.colorIndex ?? 8))
                 } else {
                     ShiftChip(text: block.map(ShiftChip.label) ?? "休み", colorIndex: block?.colorIndex ?? 8)
@@ -871,11 +871,11 @@ struct ShiftCellView: View {
                     VStack(spacing: 2) {
                         if compact {
                             // iPhone は幅が狭いので、出勤・退勤を2行に
-                            Text(r.inTime.isEmpty ? "—" : r.inTime).font(.system(size: 13, weight: .bold))
-                            Text(r.outTime.isEmpty ? "—" : r.outTime).font(.system(size: 13)).foregroundStyle(.secondary)
+                            Text(r.inTime.isEmpty ? "—" : r.inTime).appFont(.system(size: 13, weight: .bold))
+                            Text(r.outTime.isEmpty ? "—" : r.outTime).appFont(.system(size: 13)).foregroundStyle(.secondary)
                         } else {
                             Text("\(r.inTime.isEmpty ? "—" : r.inTime)〜\(r.outTime.isEmpty ? "—" : r.outTime)")
-                                .font(.system(size: 14, weight: .bold))
+                                .appFont(.system(size: 14, weight: .bold))
                         }
                         HStack(spacing: 4) {
                             if let block {
@@ -883,7 +883,7 @@ struct ShiftCellView: View {
                             }
                             if let h = r.netHours(book.breakRules) { Text(String(format: "%.1fh", h)).foregroundStyle(.secondary) }
                         }
-                        .font(.caption2)
+                        .appFont(.caption2)
                     }
                     .monospacedDigit()
                     .lineLimit(1)
@@ -895,10 +895,10 @@ struct ShiftCellView: View {
                     if let block, block.inTime == r.inTime, block.outTime == r.outTime {
                         ShiftChip(text: ShiftChip.label(block), colorIndex: block.colorIndex)
                         Text("\(ShortTime.compact(r.inTime))-\(ShortTime.compact(r.outTime))")
-                            .font(.system(size: 9)).foregroundStyle(.secondary)
+                            .appFont(.system(size: 9)).foregroundStyle(.secondary)
                     } else {
                         ShiftChip(text: r.inTime.isEmpty ? "—" : r.inTime, colorIndex: block?.colorIndex ?? 8)
-                        Text("〜\(r.outTime)").font(.system(size: 9)).foregroundStyle(.secondary)
+                        Text("〜\(r.outTime)").appFont(.system(size: 9)).foregroundStyle(.secondary)
                     }
                 }
                 .monospacedDigit()

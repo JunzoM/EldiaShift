@@ -27,7 +27,7 @@ struct StartView: View {
                 }
                 .buttonStyle(.bordered)
                 Text("「新しく作る」は、部門と時間のひな形の例が入った状態で始まります。名前や時間はあとで変えられます。")
-                    .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .appFont(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     .frame(maxWidth: 360)
             }
         }
@@ -78,7 +78,7 @@ struct DepartmentListView: View {
                                 Text(d.name).foregroundStyle(.primary)
                                 Spacer()
                                 Text("\(book.staff.filter { $0.departmentID == d.id }.count)人")
-                                    .font(.caption).foregroundStyle(.secondary)
+                                    .appFont(.caption).foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -190,14 +190,14 @@ struct TemplateListView: View {
             ForEach(items) { t in
                 Button { editing = t } label: {
                     HStack(spacing: 12) {
-                        Text(t.short.isEmpty ? "・" : t.short).font(.headline)
+                        Text(t.short.isEmpty ? "・" : t.short).appFont(.headline)
                             .foregroundStyle(PaletteColor.fg(t.colorIndex))
                             .frame(width: 44, height: 32)
                             .background(PaletteColor.bg(t.colorIndex), in: RoundedRectangle(cornerRadius: 8))
                         Text(t.label).foregroundStyle(.primary)
                         Spacer()
                         if !t.isOff {
-                            Text("\(t.inTime)〜\(t.outTime)").font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
+                            Text("\(t.inTime)〜\(t.outTime)").appFont(.subheadline).monospacedDigit().foregroundStyle(.secondary)
                         }
                     }
                 }

@@ -18,7 +18,7 @@ struct InitialAvatar: View {
                     .clipShape(Circle())
             } else {
                 Text(String(name.trimmingCharacters(in: .whitespaces).prefix(1)))
-                    .font(.system(size: size * 0.45, weight: .bold))
+                    .appFont(.system(size: size * 0.45, weight: .bold))
                     .foregroundStyle(PaletteColor.fg(colorIndex))
                     .frame(width: size, height: size)
                     .background(PaletteColor.bg(colorIndex), in: Circle())
@@ -78,7 +78,7 @@ struct ShiftChip: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: fontSize, weight: .bold))
+            .appFont(.system(size: fontSize, weight: .bold))
             .lineLimit(1).minimumScaleFactor(0.6)
             .foregroundStyle(PaletteColor.fg(colorIndex))
             .padding(.horizontal, 5)
@@ -102,7 +102,7 @@ struct StatusPill: View {
 
     var body: some View {
         Text(text)
-            .font(.caption.weight(.bold))
+            .appFont(.caption.weight(.bold))
             .foregroundStyle(color)
             .padding(.horizontal, 10).padding(.vertical, 4)
             .background(color.opacity(0.13), in: Capsule())
@@ -147,16 +147,16 @@ struct AppSidebar: View {
                         .frame(width: 34, height: 34)
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 } else {
-                    Image(systemName: "building.columns.fill").font(.title2)
+                    Image(systemName: "building.columns.fill").appFont(.title2)
                 }
                 if !compact {
                     VStack(alignment: .leading, spacing: -2) {
                         // 〇〇 は店舗ごと（店舗管理の「アプリの表示名」）
-                        Text(store.currentStore.displayPrefix).font(.caption.weight(.heavy))
+                        Text(store.currentStore.displayPrefix).appFont(.caption.weight(.heavy))
                             .lineLimit(1).minimumScaleFactor(0.6)
-                        Text("SHIFT").font(.headline.weight(.heavy))
+                        Text("SHIFT").appFont(.headline.weight(.heavy))
                         if !store.book.company.name.isEmpty {
-                            Text(store.book.company.name).font(.caption2).opacity(0.75)
+                            Text(store.book.company.name).appFont(.caption2).opacity(0.75)
                                 .lineLimit(1).minimumScaleFactor(0.7).padding(.top, 2)
                         }
                     }
@@ -206,7 +206,7 @@ struct AppSidebar: View {
                     Spacer(minLength: 0)
                 }
             }
-            .font(.subheadline.weight(.medium))
+            .appFont(.subheadline.weight(.medium))
             .foregroundStyle(Color.white.opacity(0.6))
             .padding(.horizontal, compact ? 0 : 14).padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: compact ? .center : .leading)
@@ -313,12 +313,12 @@ struct OffRequestListView: View {
                     HStack(spacing: 12) {
                         InitialAvatar(name: r.member.name, colorIndex: r.department?.colorIndex ?? 8, size: 34, photo: r.member.photo)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(r.member.name).font(.body.weight(.semibold))
-                            Text(r.department?.name ?? "").font(.caption).foregroundStyle(.secondary)
+                            Text(r.member.name).appFont(.body.weight(.semibold))
+                            Text(r.department?.name ?? "").appFont(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Text("希望休").font(.subheadline).foregroundStyle(.secondary)
-                        Text(HomeView.dayLabel(r.day)).font(.subheadline.weight(.semibold)).monospacedDigit()
+                        Text("希望休").appFont(.subheadline).foregroundStyle(.secondary)
+                        Text(HomeView.dayLabel(r.day)).appFont(.subheadline.weight(.semibold)).monospacedDigit()
                             .frame(minWidth: 86, alignment: .trailing)
                         switch r.state {
                         case .done: StatusPill(text: "休み済み", color: .green)
@@ -431,21 +431,21 @@ struct BackupView: View {
     private var autoBackups: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("自動バックアップ").font(.headline)
+                Text("自動バックアップ").appFont(.headline)
                 Spacer()
-                Text("新しい30件まで").font(.caption).foregroundStyle(.secondary)
+                Text("新しい30件まで").appFont(.caption).foregroundStyle(.secondary)
             }
             .padding(.bottom, 8)
             if autoFiles.isEmpty {
-                Text("まだありません。消去・取り込みの前に自動で作られます。").font(.subheadline).foregroundStyle(.secondary)
+                Text("まだありません。消去・取り込みの前に自動で作られます。").appFont(.subheadline).foregroundStyle(.secondary)
                     .padding(.vertical, 8)
             }
             ForEach(autoFiles.prefix(10), id: \.self) { url in
                 HStack(spacing: 12) {
                     Image(systemName: "clock.arrow.circlepath").foregroundStyle(.secondary)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(Self.title(of: url)).font(.subheadline.weight(.semibold)).monospacedDigit()
-                        Text(Self.reason(of: url)).font(.caption).foregroundStyle(.secondary)
+                        Text(Self.title(of: url)).appFont(.subheadline.weight(.semibold)).monospacedDigit()
+                        Text(Self.reason(of: url)).appFont(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
                     Button("復元") { restoreFile = url }.buttonStyle(.bordered)
@@ -483,7 +483,7 @@ struct BackupView: View {
         let on = tab == tag
         return Button { tab = tag } label: {
             Text(title)
-                .font(.subheadline.weight(on ? .bold : .medium))
+                .appFont(.subheadline.weight(on ? .bold : .medium))
                 .foregroundStyle(on ? Color.accentColor : Color.secondary)
                 .padding(.vertical, 10)
                 .overlay(alignment: .bottom) {
@@ -496,8 +496,8 @@ struct BackupView: View {
 
     private func notice(_ text: String, color: Color, icon: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: icon).font(.title3).foregroundStyle(color)
-            Text(text).font(.subheadline).foregroundStyle(color)
+            Image(systemName: icon).appFont(.title3).foregroundStyle(color)
+            Text(text).appFont(.subheadline).foregroundStyle(color)
             Spacer(minLength: 0)
         }
         .padding(16)
@@ -508,12 +508,12 @@ struct BackupView: View {
     private func card(icon: String, title: String, detail: String, button: String?, disabled: Bool,
                       action: @escaping () -> Void) -> some View {
         HStack(alignment: .center, spacing: 14) {
-            Image(systemName: icon).font(.title2).foregroundStyle(Color.accentColor)
+            Image(systemName: icon).appFont(.title2).foregroundStyle(Color.accentColor)
                 .frame(width: 48, height: 48)
                 .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.headline)
-                Text(detail).font(.subheadline).foregroundStyle(.secondary)
+                Text(title).appFont(.headline)
+                Text(detail).appFont(.subheadline).foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
             if let button {
