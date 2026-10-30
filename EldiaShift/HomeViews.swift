@@ -216,25 +216,26 @@ struct HomeView: View {
                 // 見本の画面（スクショ）には出さない
                 if !DemoMode.enabled, !store.book.isEmpty, BackupReminder.isDue(last: lastBackup, now: Date()) { backupNotice }
                 cards(info)
+                // 出勤人数のカレンダーは、クイックメニューの下に置く
                 if sizeClass == .compact {
                     todayList(info)
-                    monthCalendar(info, today: today)
                     shortList(info)
+                    quickMenu
+                    monthCalendar(info, today: today)
                 } else {
                     HStack(alignment: .top, spacing: DS.gap) {
                         VStack(spacing: DS.section) {
                             todayList(info)
-                            monthCalendar(info, today: today)
+                            shortList(info)
                         }
                         .frame(maxWidth: .infinity)
                         VStack(spacing: DS.section) {
-                            shortList(info)
                             quickMenu
+                            monthCalendar(info, today: today)
                         }
                         .frame(maxWidth: .infinity)
                     }
                 }
-                if sizeClass == .compact { quickMenu }
             }
             .padding(DS.page)
             .frame(maxWidth: Self.contentWidth)
