@@ -75,6 +75,8 @@ struct ShiftChip: View {
     let colorIndex: Int
     var height: CGFloat = 22
     var fontSize: CGFloat = 11
+    /// 文字の倍率（Mac）。高さも同じだけ伸ばして、文字が切れないようにする
+    @Environment(\.appZoom) private var zoom
 
     var body: some View {
         Text(text)
@@ -82,7 +84,7 @@ struct ShiftChip: View {
             .lineLimit(1).minimumScaleFactor(0.6)
             .foregroundStyle(PaletteColor.fg(colorIndex))
             .padding(.horizontal, 5)
-            .frame(maxWidth: .infinity, minHeight: height)
+            .frame(maxWidth: .infinity, minHeight: height * zoom)
             .background(PaletteColor.bg(colorIndex), in: RoundedRectangle(cornerRadius: DS.chipRadius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.chipRadius, style: .continuous)
                 .strokeBorder(PaletteColor.fg(colorIndex).opacity(0.22), lineWidth: 1))
