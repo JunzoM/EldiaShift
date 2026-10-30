@@ -253,6 +253,15 @@ final class ShiftStore {
         }
     }
 
+    /// 何店舗かをまとめて外す（見本のデータを消すとき。部門・スタッフは先に消しておく）
+    func removeStores(_ ids: Set<String>) throws {
+        guard !ids.isEmpty else { return }
+        try updateSettings { b in
+            b.stores.removeAll { ids.contains($0.id) }
+            if b.stores.isEmpty { b.stores = [Store.makeDefault()] }
+        }
+    }
+
     func reorderStores(_ ordered: [Store]) throws {
         try updateSettings { b in
             b.stores = ordered.enumerated().map { i, s in var x = s; x.sortOrder = i; return x }

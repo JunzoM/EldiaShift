@@ -22,6 +22,9 @@ struct Store: Identifiable, Hashable, Codable, Sendable {
     var photo: Data? = nil
     /// アプリの中に出す名前「〇〇 SHIFT」の〇〇（空は HOTEL）
     var brandPrefix: String = ""
+    /// 客室数・フロア数（ホテル向け。nil は未登録）
+    var roomCount: Int? = nil
+    var floorCount: Int? = nil
 
     /// 「〇〇 SHIFT」の〇〇（空なら HOTEL）
     var displayPrefix: String {
@@ -63,6 +66,13 @@ struct Store: Identifiable, Hashable, Codable, Sendable {
         sortOrder = try c.decodeIfPresent(Int.self, forKey: .sortOrder) ?? 0
         photo = try c.decodeIfPresent(Data.self, forKey: .photo)
         brandPrefix = try c.decodeIfPresent(String.self, forKey: .brandPrefix) ?? ""
+        roomCount = try c.decodeIfPresent(Int.self, forKey: .roomCount)
+        floorCount = try c.decodeIfPresent(Int.self, forKey: .floorCount)
+    }
+
+    /// 一覧に出す「客室 120・8階」（どちらも未登録なら空）
+    var facilitySummary: String {
+        [roomCount.map { "客室 \($0)" }, floorCount.map { "\($0)階" }].compactMap { $0 }.joined(separator: "・")
     }
 }
 
