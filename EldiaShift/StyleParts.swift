@@ -286,6 +286,26 @@ struct AppSidebar: View {
 
 // MARK: - 希望休の一覧
 
+/// 上のバーのボタン：iPad・Mac は「アイコン＋文字」、iPhone はアイコンだけ
+struct ToolbarLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        ToolbarLabel(configuration: configuration)
+    }
+}
+
+private struct ToolbarLabel: View {
+    let configuration: LabelStyleConfiguration
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    var body: some View {
+        if sizeClass == .compact {
+            configuration.icon
+        } else {
+            HStack(spacing: 4) { configuration.icon; configuration.title }
+        }
+    }
+}
+
 struct OffRequestListView: View {
     @Environment(\.shiftStore) private var store
     @State private var month = MonthKey.current
@@ -386,16 +406,20 @@ struct OffRequestListView: View {
                     .accessibilityLabel("次の月")
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
-                Button { showingQR = true } label: { Label("申請用QRコード", systemImage: "qrcode") }
+                // iPad・Mac は主な操作をアイコンだけにせず、文字も出す
+                Button { showingQR = true } label: { Label("申請用QR", systemImage: "qrcode") }
+                    .labelStyle(ToolbarLabelStyle())
                     .accessibilityLabel("壁に貼る申請用のQRコード")
                 Menu {
                     Button { receiving = true } label: { Label("届いた文章を受け取る", systemImage: "doc.on.clipboard") }
                     Button { registering = true } label: { Label("代わりに申請を登録", systemImage: "person.badge.plus") }
                 } label: {
-                    Label("申請を受け取る", systemImage: "tray.and.arrow.down")
+                    Label("受け取る", systemImage: "tray.and.arrow.down")
+                        .labelStyle(ToolbarLabelStyle())
                 }
                 .accessibilityLabel("申請を受け取る・代わりに登録する")
                 Button { adding = true } label: { Label("希望休を入れる", systemImage: "plus") }
+                    .labelStyle(ToolbarLabelStyle())
                     .buttonStyle(.borderedProminent)
             }
         }
