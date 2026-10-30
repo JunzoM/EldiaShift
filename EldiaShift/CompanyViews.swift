@@ -20,7 +20,7 @@ struct CompanyBanner: View {
                     LinearGradient(colors: [BrandColor.sidebar(brandHex), BrandColor.sidebar(brandHex).opacity(0.75)],
                                    startPoint: .leading, endPoint: .trailing)
                         .overlay(alignment: .trailing) {
-                            Image(systemName: "building.2.fill").font(.system(size: compact ? 70 : 100))
+                            Image(systemName: "building.2.fill").appFont(.system(size: compact ? 70 : 100))
                                 .foregroundStyle(.white.opacity(0.10)).padding(.trailing, 28)
                         }
                 }
@@ -35,7 +35,7 @@ struct CompanyBanner: View {
                     if let data = company.logo, let img = StaffPhoto.image(data) {
                         Image(uiImage: img).resizable().scaledToFill()
                     } else {
-                        Image(systemName: "building.columns.fill").font(.title2).foregroundStyle(.white)
+                        Image(systemName: "building.columns.fill").appFont(.title2).foregroundStyle(.white)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .background(.white.opacity(0.18))
                     }
@@ -48,9 +48,9 @@ struct CompanyBanner: View {
                         .font(compact ? .title3.weight(.bold) : .title2.weight(.bold))
                         .lineLimit(1).minimumScaleFactor(0.7)
                     if !company.tagline.isEmpty {
-                        Text(company.tagline).font(.footnote.weight(.medium)).lineLimit(2).opacity(0.92)
+                        Text(company.tagline).appFont(.footnote.weight(.medium)).lineLimit(2).opacity(0.92)
                     }
-                    Text("\(storeCount)店舗のシフト管理").font(.caption2.weight(.semibold)).opacity(0.8)
+                    Text("\(storeCount)店舗のシフト管理").appFont(.caption2.weight(.semibold)).opacity(0.8)
                 }
                 .foregroundStyle(.white)
                 Spacer(minLength: 0)
@@ -61,7 +61,7 @@ struct CompanyBanner: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(alignment: .topTrailing) {
             Button(action: edit) {
-                Image(systemName: "pencil").font(.subheadline.weight(.semibold))
+                Image(systemName: "pencil").appFont(.subheadline.weight(.semibold))
                     .padding(8).background(.ultraThinMaterial, in: Circle())
             }
             .padding(10)
@@ -102,9 +102,9 @@ struct StoreStrip: View {
         let stores = store.book.allStores
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Label("店舗", systemImage: "arrow.turn.down.right").font(.headline)
+                Label("店舗", systemImage: "arrow.turn.down.right").appFont(.headline)
                 Spacer()
-                Button("店舗を管理", action: manage).font(.subheadline)
+                Button("店舗を管理", action: manage).appFont(.subheadline)
             }
             if compact {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -132,12 +132,12 @@ struct StoreStrip: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 5) {
                         Circle().fill(PaletteColor.fg(st.colorIndex)).frame(width: 7, height: 7)
-                        Text(st.name.isEmpty ? "店舗" : st.name).font(.subheadline.weight(.semibold))
+                        Text(st.name.isEmpty ? "店舗" : st.name).appFont(.subheadline.weight(.semibold))
                             .lineLimit(2).minimumScaleFactor(0.85).fixedSize(horizontal: false, vertical: true)
                     }
-                    Text("今日の出勤 \(s.working)人").font(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
+                    Text("今日の出勤 \(s.working)人").appFont(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
                     if s.pending > 0 {
-                        Text("承認待ち \(s.pending)件").font(.caption2.weight(.bold)).foregroundStyle(.orange)
+                        Text("承認待ち \(s.pending)件").appFont(.caption2.weight(.bold)).foregroundStyle(.orange)
                     }
                 }
                 Spacer(minLength: 0)

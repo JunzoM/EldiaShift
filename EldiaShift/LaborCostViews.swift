@@ -105,23 +105,23 @@ struct LaborCostView: View {
             if db.viewingSharedTeam {
                 Section {
                     Label("共有されたシフト表です。給与は共有されないので、この端末で給与を入れた人の分だけを数えます。", systemImage: "lock")
-                        .font(.footnote).foregroundStyle(.secondary)
+                        .appFont(.footnote).foregroundStyle(.secondary)
                 }
             }
             Section {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("\(month.month)月の人件費（概算）").font(.subheadline).foregroundStyle(.secondary)
-                    Text(Self.yen(total.total)).font(.system(size: 34, weight: .bold)).monospacedDigit()
+                    Text("\(month.month)月の人件費（概算）").appFont(.subheadline).foregroundStyle(.secondary)
+                    Text(Self.yen(total.total)).appFont(.system(size: 34, weight: .bold)).monospacedDigit()
                     Text("時給分 \(Self.yen(total.hourlyBase))・月給分 \(Self.yen(total.monthlyBase))・時間外 \(Self.yen(total.overtimePay))・深夜 \(Self.yen(total.nightPay))")
-                        .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                        .appFont(.caption).foregroundStyle(.secondary).monospacedDigit()
                     Text("実働 \(Self.hours(total.netMinutes))・時間外 \(Self.hours(total.overtimeMinutes))・深夜 \(Self.hours(total.nightMinutes))")
-                        .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                        .appFont(.caption).foregroundStyle(.secondary).monospacedDigit()
                 }
                 .padding(.vertical, 4)
                 if !missing.isEmpty {
                     Label("給与が未設定の人がいます：\(missing.map(\.name).joined(separator: "、"))。スタッフを開いて「給与」に入れると合計に入ります。",
                           systemImage: "exclamationmark.triangle.fill")
-                        .font(.footnote).foregroundStyle(.orange)
+                        .appFont(.footnote).foregroundStyle(.orange)
                 }
             }
 
@@ -147,7 +147,7 @@ struct LaborCostView: View {
 
             Section {
                 Text("シフトから出した目安です（給与計算ではありません）。時間外は1日\(book.pay.dailyEnabled ? "\(book.pay.dailyHours)時間" : "—")・週\(book.pay.weeklyEnabled ? "\(book.pay.weeklyHours)時間" : "—")を超えた分に\(book.pay.overtimeRate)%、深夜（22時〜5時）に\(book.pay.nightRate)%を足しています。月給は在籍した日数で日割りし、時間外は「月給÷\(book.pay.monthlyStandardHours)時間」の\(100 + book.pay.overtimeRate)%で数えます。法定休日・月60時間超の割増、手当・交通費・社会保険は入りません。")
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .appFont(.footnote).foregroundStyle(.secondary)
             }
         }
         .toolbar {
@@ -189,15 +189,15 @@ struct LaborCostView: View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(m.name).font(.body.weight(.semibold))
-                    if !m.employment.isEmpty { Text(m.employment).font(.caption2).foregroundStyle(.secondary) }
+                    Text(m.name).appFont(.body.weight(.semibold))
+                    if !m.employment.isEmpty { Text(m.employment).appFont(.caption2).foregroundStyle(.secondary) }
                 }
                 Text("\(p.workDays)日・\(Self.hours(p.netMinutes))" + (detail.isEmpty ? "" : "・" + detail.joined(separator: "・")))
-                    .font(.caption).foregroundStyle(p.missingWageDays > 0 ? Color.orange : Color.secondary).monospacedDigit()
+                    .appFont(.caption).foregroundStyle(p.missingWageDays > 0 ? Color.orange : Color.secondary).monospacedDigit()
                     .lineLimit(sizeClass == .compact ? 2 : 1)
             }
             Spacer()
-            Text(Self.yen(p.total)).font(.body.weight(.bold)).monospacedDigit()
+            Text(Self.yen(p.total)).appFont(.body.weight(.bold)).monospacedDigit()
         }
     }
 
@@ -210,9 +210,9 @@ struct LaborCostView: View {
                 let color: Color = (usage ?? 0) > 100 ? .red : (usage ?? 0) >= 90 ? .orange : .green
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .firstTextBaseline) {
-                        Text("予算の使用率").font(.subheadline.weight(.semibold))
+                        Text("予算の使用率").appFont(.subheadline.weight(.semibold))
                         Spacer()
-                        Text(usage.map(Self.percent) ?? "—").font(.title3.bold()).foregroundStyle(color).monospacedDigit()
+                        Text(usage.map(Self.percent) ?? "—").appFont(.title3.bold()).foregroundStyle(color).monospacedDigit()
                     }
                     ProgressView(value: min(1, Double(cost) / Double(max(1, budget))))
                         .tint(color)
@@ -223,7 +223,7 @@ struct LaborCostView: View {
                         Text(cost <= budget ? "残り \(Self.yen(budget - cost))" : "超過 \(Self.yen(cost - budget))")
                             .foregroundStyle(cost <= budget ? Color.secondary : Color.red)
                     }
-                    .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                    .appFont(.caption).foregroundStyle(.secondary).monospacedDigit()
                 }
                 .padding(.vertical, 2)
             }
@@ -232,10 +232,10 @@ struct LaborCostView: View {
                     Text("前の月（\(month.adding(months: -1).month)月）")
                     Spacer()
                     Text(Self.yen(prev)).monospacedDigit().foregroundStyle(.secondary)
-                    Text(Self.change(cost, from: prev)).monospacedDigit().font(.subheadline.weight(.semibold))
+                    Text(Self.change(cost, from: prev)).monospacedDigit().appFont(.subheadline.weight(.semibold))
                         .foregroundStyle(cost > prev ? Color.red : cost < prev ? Color.green : Color.secondary)
                 }
-                .font(.subheadline)
+                .appFont(.subheadline)
             }
             Button(budget == nil ? "月の予算を入れる" : "予算を変える") { editingBudget = true }
         } footer: {
@@ -266,7 +266,7 @@ struct LaborCostView: View {
                 .frame(height: 160)
                 .accessibilityLabel("\(month.year)年の月ごとの人件費")
                 .accessibilityValue(totals.enumerated().map { "\($0.offset + 1)月 \(Self.yen($0.element))" }.joined(separator: "、"))
-                Text("年の合計 \(Self.yen(totals.reduce(0, +)))").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                Text("年の合計 \(Self.yen(totals.reduce(0, +)))").appFont(.caption).foregroundStyle(.secondary).monospacedDigit()
             } else if yearTotals == nil {
                 HStack { ProgressView(); Text("数えています…").foregroundStyle(.secondary) }
             } else {
@@ -338,7 +338,7 @@ struct BudgetEditView: View {
                             .monospacedDigit()
                     }
                     if !text.isEmpty, LaborBudget.parse(text) == nil {
-                        Text("金額を数字で入れてください。").font(.footnote).foregroundStyle(.red)
+                        Text("金額を数字で入れてください。").appFont(.footnote).foregroundStyle(.red)
                     }
                     Toggle("\(month.month)月だけの予算にする", isOn: $monthOnly)
                 } header: {
@@ -482,7 +482,7 @@ struct WageSection: View {
                     editing = WageEntry(id: UUID().uuidString, from: start, kind: last?.kind ?? .hourly, amount: last?.amount ?? 0)
                 } label: { Label(member.wages.isEmpty ? "給与を入れる" : "給与の変更を追加", systemImage: "plus") }
                 if let minimum {
-                    LabeledContent("店舗の最低賃金", value: LaborCostView.yen(minimum)).font(.subheadline)
+                    LabeledContent("店舗の最低賃金", value: LaborCostView.yen(minimum)).appFont(.subheadline)
                 }
             } else {
                 LaborCostLockedView(compact: true)
@@ -548,7 +548,7 @@ struct WageEditView: View {
                         Text("円").foregroundStyle(.secondary)
                     }
                     if sameDay {
-                        Text("同じ日から始まる給与がもう入っています。日付を変えてください。").font(.footnote).foregroundStyle(.red)
+                        Text("同じ日から始まる給与がもう入っています。日付を変えてください。").appFont(.footnote).foregroundStyle(.red)
                     }
                     if entry.kind == .hourly {
                         if let minimumWage {
@@ -556,16 +556,16 @@ struct WageEditView: View {
                         }
                         Toggle("10円単位に切り上げる", isOn: $roundUp10)
                         if roundUp10, MinimumWage.roundUp10(entry.amount) != entry.amount {
-                            Text("決定すると \(LaborCostView.yen(MinimumWage.roundUp10(entry.amount))) にします。").font(.footnote).foregroundStyle(.secondary)
+                            Text("決定すると \(LaborCostView.yen(MinimumWage.roundUp10(entry.amount))) にします。").appFont(.footnote).foregroundStyle(.secondary)
                         }
                     }
                     if let short = MinimumWage.shortfall(saved, minimum: minimumWage) {
-                        Text("最低賃金より \(LaborCostView.yen(short)) 低い時給です。都道府県の最低賃金を確かめてください。").font(.footnote).foregroundStyle(.red)
+                        Text("最低賃金より \(LaborCostView.yen(short)) 低い時給です。都道府県の最低賃金を確かめてください。").appFont(.footnote).foregroundStyle(.red)
                     }
                     if entry.amount <= 0 {
-                        Text("金額を入れてください。").font(.footnote).foregroundStyle(.red)
+                        Text("金額を入れてください。").appFont(.footnote).foregroundStyle(.red)
                     } else if entry.kind == .hourly && entry.amount > 20_000 || entry.kind == .monthly && entry.amount < 10_000 {
-                        Text("時給・月給の種類が合っているか確かめてください。").font(.footnote).foregroundStyle(.orange)
+                        Text("時給・月給の種類が合っているか確かめてください。").appFont(.footnote).foregroundStyle(.orange)
                     }
                 }
                 if !isNew {

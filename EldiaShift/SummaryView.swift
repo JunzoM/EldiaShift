@@ -75,7 +75,7 @@ struct SummaryView: View {
             }
             Section {
                 Text("時間は休憩を引いた実働です（休憩の決まり：\(store.book.breakRules.summary)。設定で変えられます）。有休は入社日と週間パターンから付与日数を出し、今期の付与日から表示している月の末日までに「有休」を入れた日数を引いています。")
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .appFont(.footnote).foregroundStyle(.secondary)
             }
         }
     }
@@ -88,7 +88,7 @@ struct SummaryView: View {
             Text("有休残").frame(width: 130)
             Text("個人の時間").frame(width: 200, alignment: .leading)
         }
-        .font(.caption).foregroundStyle(.secondary)
+        .appFont(.caption).foregroundStyle(.secondary)
     }
 
     @ViewBuilder
@@ -97,8 +97,8 @@ struct SummaryView: View {
         if sizeClass == .compact {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text("\(m.number)").font(.caption2).foregroundStyle(.secondary)
-                    Text(m.name).font(.headline)
+                    Text("\(m.number)").appFont(.caption2).foregroundStyle(.secondary)
+                    Text(m.name).appFont(.headline)
                     Spacer()
                     Text("\(s.workDays)日").bold()
                     Text(String(format: "%.1f時間", s.hours))
@@ -111,12 +111,12 @@ struct SummaryView: View {
         } else {
             HStack(spacing: 8) {
                 HStack(spacing: 6) {
-                    Text("\(m.number)").font(.caption2).foregroundStyle(.secondary).monospacedDigit()
-                    Text(m.name).font(.body.weight(.semibold))
+                    Text("\(m.number)").appFont(.caption2).foregroundStyle(.secondary).monospacedDigit()
+                    Text(m.name).appFont(.body.weight(.semibold))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                Text("\(s.workDays)日").font(.body.weight(.bold)).monospacedDigit().frame(width: 72)
-                Text(String(format: "%.1f時間", s.hours)).font(.body.weight(.bold)).monospacedDigit().frame(width: 84)
+                Text("\(s.workDays)日").appFont(.body.weight(.bold)).monospacedDigit().frame(width: 72)
+                Text(String(format: "%.1f時間", s.hours)).appFont(.body.weight(.bold)).monospacedDigit().frame(width: 84)
                 leaveView(m, leave, compact: false).frame(width: 130)
                 blocks(m).frame(width: 200, alignment: .leading)
             }
@@ -126,34 +126,34 @@ struct SummaryView: View {
     @ViewBuilder
     private func leaveView(_ m: StaffMember, _ b: PaidLeave.Balance?, compact: Bool) -> some View {
         if m.joinDate.isEmpty {
-            Text(compact ? "有休：入社日が未設定" : "—").font(.caption).foregroundStyle(.tertiary)
+            Text(compact ? "有休：入社日が未設定" : "—").appFont(.caption).foregroundStyle(.tertiary)
         } else if let b {
             let detail = "付与\(b.grant.total)日 / 使用済\(b.used)日"
                 + (b.usedThisMonth > 0 ? "・今月\(b.usedThisMonth)日" : "")
                 + (b.grant.isProportional ? "・比例付与（週\(b.grant.weeklyDays ?? 0)日）" : "")
             if compact {
-                Text("有休 残\(b.remaining)日（\(detail)）").font(.caption).foregroundStyle(.teal)
+                Text("有休 残\(b.remaining)日（\(detail)）").appFont(.caption).foregroundStyle(.teal)
             } else {
                 VStack(spacing: 1) {
-                    Text("残\(b.remaining)日").font(.subheadline.weight(.bold)).foregroundStyle(.teal)
-                    Text(detail).font(.system(size: 9.5)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    Text("残\(b.remaining)日").appFont(.subheadline.weight(.bold)).foregroundStyle(.teal)
+                    Text(detail).appFont(.system(size: 9.5)).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 }
                 .monospacedDigit()
             }
         } else {
             Text(compact ? "有休：未付与（入社6か月未満）" : "未付与\n（入社6か月未満）")
-                .font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                .appFont(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }
     }
 
     private func blocks(_ m: StaffMember) -> some View {
         HStack(spacing: 4) {
             if m.timeBlocks.isEmpty {
-                Text("—").font(.caption).foregroundStyle(.tertiary)
+                Text("—").appFont(.caption).foregroundStyle(.tertiary)
             }
             ForEach(m.timeBlocks) { b in
                 Text(b.isOff ? b.short : "\(b.short) \(b.inTime)-\(b.outTime)")
-                    .font(.system(size: 10, weight: .bold)).monospacedDigit()
+                    .appFont(.system(size: 10, weight: .bold)).monospacedDigit()
                     .foregroundStyle(PaletteColor.fg(b.colorIndex))
                     .padding(.horizontal, 5).padding(.vertical, 1)
                     .background(PaletteColor.bg(b.colorIndex), in: RoundedRectangle(cornerRadius: 4))

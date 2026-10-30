@@ -30,7 +30,7 @@ struct StaffingSettingsView: View {
         List {
             Section {
                 Text("部門ごとに「この時間帯は何人いてほしいか」を、平日・土曜・日祝で決めます。表の「時間帯別在籍人数」とタイムラインで、足りない時間が赤、多すぎる時間がオレンジになります。")
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .appFont(.footnote).foregroundStyle(.secondary)
             }
             ForEach(depts) { d in
                 Section {
@@ -88,13 +88,13 @@ struct StaffingSettingsView: View {
 
     private func bandRow(_ b: StaffingBand) -> some View {
         HStack {
-            Text(b.timeText).font(.body.weight(.semibold)).monospacedDigit()
+            Text(b.timeText).appFont(.body.weight(.semibold)).monospacedDigit()
             Spacer()
             HStack(spacing: 10) {
                 ForEach([DayType.weekday, .saturday, .holiday], id: \.self) { t in
                     VStack(spacing: 0) {
-                        Text(t.title).font(.caption2).foregroundStyle(.secondary)
-                        Text("\(b.need(t))人").font(.subheadline.weight(.bold)).monospacedDigit()
+                        Text(t.title).appFont(.caption2).foregroundStyle(.secondary)
+                        Text("\(b.need(t))人").appFont(.subheadline.weight(.bold)).monospacedDigit()
                     }
                 }
             }
@@ -140,7 +140,7 @@ struct StaffingBandEditView: View {
                     ForEach(0..<24, id: \.self) { h in Text((h <= band.startHour ? "翌" : "") + "\(h):00").tag(h) }
                 }
                 if band.startHour == band.endHour {
-                    Text("はじめとおわりが同じときは24時間になります").font(.caption).foregroundStyle(.secondary)
+                    Text("はじめとおわりが同じときは24時間になります").appFont(.caption).foregroundStyle(.secondary)
                 }
             }
             Section {
@@ -184,7 +184,7 @@ struct StaffingBandEditView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(title)の人数を決める")
                 if value.wrappedValue == nil {
-                    Text("決めないときは \(autoText)（今は\(auto)人）").font(.caption).foregroundStyle(.secondary)
+                    Text("決めないときは \(autoText)（今は\(auto)人）").appFont(.caption).foregroundStyle(.secondary)
                 }
             }
         }
@@ -294,8 +294,8 @@ struct StaffingAnalysisView: View {
 
     private func stat(_ title: String, _ value: String, _ color: Color) -> some View {
         VStack(spacing: 4) {
-            Text(value).font(.title2.weight(.bold)).monospacedDigit().foregroundStyle(color)
-            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(value).appFont(.title2.weight(.bold)).monospacedDigit().foregroundStyle(color)
+            Text(title).appFont(.caption).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
     }
@@ -319,7 +319,7 @@ struct StaffingAnalysisView: View {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(rowHours, id: \.self) { h in
                     HStack(spacing: 0) {
-                        Text(label(h)).font(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
+                        Text(label(h)).appFont(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
                             .frame(width: labelWidth, alignment: .leading)
                         ForEach(days, id: \.self) { d in
                             let c = byKey["\(d)-\(h)"]
@@ -328,7 +328,7 @@ struct StaffingAnalysisView: View {
                                 .overlay {
                                     if let c, c.diff != 0, w >= 22 {
                                         Text(c.diff > 0 ? "+\(c.diff)" : "\(c.diff)")
-                                            .font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
+                                            .appFont(.system(size: 9, weight: .bold)).foregroundStyle(.white)
                                     }
                                 }
                                 .frame(width: w, height: rowHeight)
@@ -341,7 +341,7 @@ struct StaffingAnalysisView: View {
                     Color.clear.frame(width: labelWidth, height: 16)
                     ForEach(days, id: \.self) { d in
                         Text(d.day == 1 || d.day % 5 == 0 ? "\(d.day)" : "")
-                            .font(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
+                            .appFont(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
                             .fixedSize()
                             .frame(width: w, height: 16)
                     }
@@ -360,7 +360,7 @@ struct StaffingAnalysisView: View {
             legendItem(StaffingStyle.over, "多い")
             Text("空白は必要人数を決めていない時間").foregroundStyle(.secondary)
         }
-        .font(.caption)
+        .appFont(.caption)
     }
 
     private func legendItem(_ c: Color, _ t: String) -> some View {
@@ -414,19 +414,19 @@ struct StaffingAnalysisView: View {
                     }
                 }
             } label: {
-                Text(t.title).font(.caption.weight(.bold))
+                Text(t.title).appFont(.caption.weight(.bold))
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(typeColor(t).opacity(0.15), in: Capsule())
                     .foregroundStyle(typeColor(t))
             }
             Spacer()
             if r.gap.short > 0 {
-                Text("不足 \(r.gap.shortHours)時間・\(r.gap.short)人時").font(.caption.weight(.bold)).foregroundStyle(StaffingStyle.short)
+                Text("不足 \(r.gap.shortHours)時間・\(r.gap.short)人時").appFont(.caption.weight(.bold)).foregroundStyle(StaffingStyle.short)
             } else {
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(StaffingStyle.ok).accessibilityLabel("足りている")
             }
             if r.gap.over > 0 {
-                Text("多い \(r.gap.over)").font(.caption).foregroundStyle(StaffingStyle.over)
+                Text("多い \(r.gap.over)").appFont(.caption).foregroundStyle(StaffingStyle.over)
             }
         }
         .monospacedDigit()

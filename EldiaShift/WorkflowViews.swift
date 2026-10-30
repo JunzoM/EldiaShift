@@ -62,8 +62,8 @@ struct CandidatesSheet: View {
                                     let n = Headcount.working(members, on: d, hour: h, in: book)
                                     let need = book.staffing.need(dept.id, on: d, hour: h) ?? 0
                                     VStack(spacing: 1) {
-                                        Text("\(h)時").font(.caption2)
-                                        Text("\(n)/\(need)").font(.caption.weight(.heavy)).monospacedDigit()
+                                        Text("\(h)時").appFont(.caption2)
+                                        Text("\(n)/\(need)").appFont(.caption.weight(.heavy)).monospacedDigit()
                                     }
                                     .foregroundStyle(.white)
                                     .padding(.horizontal, 8).padding(.vertical, 4)
@@ -81,7 +81,7 @@ struct CandidatesSheet: View {
                         Toggle("ほかの部門の人も出す", isOn: $includeOthers)
                         if list.isEmpty {
                             Text("この日に入れられる人がいません（全員が勤務・有休・希望休・退職後のいずれかです）")
-                                .font(.subheadline).foregroundStyle(.secondary)
+                                .appFont(.subheadline).foregroundStyle(.secondary)
                         }
                         ForEach(list) { c in row(c) }
                     } header: {
@@ -102,24 +102,24 @@ struct CandidatesSheet: View {
         HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text(c.member.name).font(.headline)
+                    Text(c.member.name).appFont(.headline)
                     if c.otherDepartment, let d = store.book.departments.first(where: { $0.id == c.member.departmentID }) {
-                        Text(d.name).font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
+                        Text(d.name).appFont(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
                             .background(PaletteColor.bg(d.colorIndex), in: Capsule())
                             .foregroundStyle(PaletteColor.fg(d.colorIndex))
                     }
                 }
                 HStack(spacing: 6) {
                     Text("\(c.block.label) \(c.block.inTime)〜\(c.block.outTime)")
-                        .font(.caption.weight(.bold)).foregroundStyle(PaletteColor.fg(c.block.colorIndex))
+                        .appFont(.caption.weight(.bold)).foregroundStyle(PaletteColor.fg(c.block.colorIndex))
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(PaletteColor.bg(c.block.colorIndex), in: RoundedRectangle(cornerRadius: 4))
-                    Text("不足を \(c.covers)時間 埋める").font(.caption).foregroundStyle(.secondary)
+                    Text("不足を \(c.covers)時間 埋める").appFont(.caption).foregroundStyle(.secondary)
                 }
-                Text(String(format: "今月 %.1f時間", c.monthHours)).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                Text(String(format: "今月 %.1f時間", c.monthHours)).appFont(.caption).foregroundStyle(.secondary).monospacedDigit()
                 if !c.issues.isEmpty {
                     Label(c.issues.map(\.text).joined(separator: "・"), systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption).foregroundStyle(.orange)
+                        .appFont(.caption).foregroundStyle(.orange)
                 }
             }
             Spacer(minLength: 0)
@@ -175,7 +175,7 @@ struct OffRequestSheet: View {
                         .lineLimit(2...6)
                     if !parsed.isEmpty {
                         Text("読み取った日：" + parsed.map { "\($0.month)/\($0.day)" }.joined(separator: "、"))
-                            .font(.caption).foregroundStyle(.secondary)
+                            .appFont(.caption).foregroundStyle(.secondary)
                         Button("この日を選ぶ") { picked.formUnion(parsed) }
                     }
                 } header: {
@@ -225,14 +225,14 @@ struct OffRequestSheet: View {
         let lead = days[0].weekday
         let cols = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
         return LazyVGrid(columns: cols, spacing: 4) {
-            ForEach(["日", "月", "火", "水", "木", "金", "土"], id: \.self) { Text($0).font(.caption2).foregroundStyle(.secondary) }
+            ForEach(["日", "月", "火", "水", "木", "金", "土"], id: \.self) { Text($0).appFont(.caption2).foregroundStyle(.secondary) }
             ForEach(0..<lead, id: \.self) { _ in Color.clear.frame(height: 36) }
             ForEach(days, id: \.self) { d in
                 let on = picked.contains(d)
                 Button {
                     if on { picked.remove(d) } else { picked.insert(d) }
                 } label: {
-                    Text("\(d.day)").font(.subheadline.weight(on ? .bold : .regular)).monospacedDigit()
+                    Text("\(d.day)").appFont(.subheadline.weight(on ? .bold : .regular)).monospacedDigit()
                         .frame(maxWidth: .infinity, minHeight: 36)
                         .foregroundStyle(on ? Color.white : (d.weekday == 0 || JapaneseHolidays.isHoliday(d) ? Color.red : d.weekday == 6 ? Color.blue : Color.primary))
                         .background(on ? Color.purple : Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
@@ -318,12 +318,12 @@ struct LaborIssuesView: View {
                             let left = o.daysLeft(from: today)
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(m.name).font(.headline)
+                                    Text(m.name).appFont(.headline)
                                     Text("期限 \(String(o.deadline.year))/\(o.deadline.month)/\(o.deadline.day)（あと\(left)日）")
-                                        .font(.caption).foregroundStyle(.secondary)
+                                        .appFont(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                Text("取得 \(o.taken)/5日").font(.subheadline.weight(.bold)).monospacedDigit()
+                                Text("取得 \(o.taken)/5日").appFont(.subheadline.weight(.bold)).monospacedDigit()
                                     .foregroundStyle(left < 90 ? Color.red : Color.orange)
                             }
                         }
@@ -341,7 +341,7 @@ struct LaborIssuesView: View {
                                 Text("\(d.month)/\(d.day)（\(["日", "月", "火", "水", "木", "金", "土"][d.weekday])）")
                                     .monospacedDigit().frame(width: 80, alignment: .leading)
                                 Text(items.map(\.text).joined(separator: "・"))
-                                    .font(.subheadline)
+                                    .appFont(.subheadline)
                                     .foregroundStyle(items.contains(.requestedOff) ? Color.purple : Color.orange)
                             }
                         }

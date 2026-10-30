@@ -190,9 +190,9 @@ struct CellEditorSheet: View {
                   : CellEntry(inTime: b.inTime, outTime: b.outTime, blockID: b.id, isOff: false))
         } label: {
             VStack(spacing: 2) {
-                Text(b.short.isEmpty ? b.label : b.short).font(.headline)
+                Text(b.short.isEmpty ? b.label : b.short).appFont(.headline)
                 Text(b.isOff ? b.label : "\(b.inTime)〜\(b.outTime)")
-                    .font(.caption2).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+                    .appFont(.caption2).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
             }
             .foregroundStyle(PaletteColor.fg(b.colorIndex))
             .frame(maxWidth: .infinity, minHeight: 52)
