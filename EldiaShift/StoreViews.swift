@@ -229,13 +229,13 @@ struct StoreListView: View {
             Button("見本のデータを足す") {
                 do {
                     try store.addSampleData()
-                    sampleNote = "見本ホテル（本館・別館）と、スタッフ24人を足しました。左上の店舗の切り替えから見られます。試し終わったら、このメニューの「見本のデータを消す」で見本だけを消せます。"
+                    sampleNote = "見本ホテル（本館・別館・駅前・空港）と、スタッフ100人・3年分のシフト・希望休の申請を足しました。左上の店舗の切り替えから見られます。試し終わったら、このメニューの「見本のデータを消す」で見本だけを消せます。"
                 } catch {
                     self.error = error.localizedDescription
                 }
             }
         } message: {
-            Text("見本の店舗2つ・部門4つ・勤務のひな形3つ・スタッフ24人を足します。今の店舗・スタッフ・シフトはそのままです。iCloud 同期がオンなら、ほかの端末にも出ます。")
+            Text("見本の会社（会社の情報が空のとき）・店舗4つ・部門8つ・勤務のひな形3つ・スタッフ100人（1店舗25人）・去年から来年までの3年分のシフト・希望休の申請（1店舗30件）を足します。今の店舗・スタッフ・シフトはそのままです。iCloud 同期がオンなら、ほかの端末にも出ます。")
         }
         .confirmationDialog("見本のデータを消しますか？", isPresented: $askRemoveSample, titleVisibility: .visible) {
             Button("見本のデータを消す", role: .destructive) {
