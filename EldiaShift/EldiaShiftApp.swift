@@ -324,28 +324,16 @@ struct ShiftBoardView: View {
                     }
                 }
             }
-            .navigationTitle(mode.title(around: anchor))
+            // 年月・前後・月週日は、上のバーではなく表のすぐ上の帯に出す
+            // （上のバーに入れると、iPhone の縦では「…」にしまわれて何も見えず、iPad では年月が隠れていた）
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if !store.book.staff.isEmpty && !store.book.isEmpty { periodBar }
+            }
+            .navigationTitle("シフト表")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarLeading) {
                     if !store.book.isEmpty && storeInToolbar { StoreSwitcher() }
-                    Button { anchor = mode.step(anchor, by: -1) } label: { Image(systemName: "chevron.left") }
-                        .accessibilityLabel(mode.previousLabel)
-                    Button(mode.todayLabel) { anchor = .today }
-                        .disabled(mode.days(around: anchor).contains(.today))
-                    Button { anchor = mode.step(anchor, by: 1) } label: { Image(systemName: "chevron.right") }
-                        .accessibilityLabel(mode.nextLabel)
-                }
-                ToolbarItem(placement: .principal) {
-                    if !store.book.staff.isEmpty {
-                        Picker("表示", selection: $mode) {
-                            Text("月").tag(GridMode.month)
-                            Text("週").tag(GridMode.week)
-                            Text("日").tag(GridMode.day)
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(width: 168)
-                    }
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     if !store.book.staff.isEmpty && !inTabs {
@@ -374,6 +362,46 @@ struct ShiftBoardView: View {
         .onAppear {
             if ProcessInfo.processInfo.arguments.contains("-demoCoachEdit") { CoachCenter.shared.show(.edit(), after: 1.5) }
         }
+    }
+}
+
+extension ShiftBoardView {
+    /// 表のすぐ上の帯：‹ 2026年10月 ›・今月・月／週／日（狭いときは2段）
+    var periodBar: some View {
+        let nav = HStack(spacing: 6) {
+            Button { anchor = mode.step(anchor, by: -1) } label: { Image(systemName: "chevron.left").frame(width: 32, height: 32) }
+                .accessibilityLabel(mode.previousLabel)
+            // 週・日にも年を付ける（月は「2026年10月」のまま）
+            Text(mode == .month ? mode.title(around: anchor) : "\(String(anchor.year))年 \(mode.title(around: anchor))")
+                .appFont(.title3.weight(.bold)).monospacedDigit()
+                .lineLimit(1).minimumScaleFactor(0.7)
+            Button { anchor = mode.step(anchor, by: 1) } label: { Image(systemName: "chevron.right").frame(width: 32, height: 32) }
+                .accessibilityLabel(mode.nextLabel)
+            Button(mode.todayLabel) { anchor = .today }
+                .buttonStyle(.bordered).controlSize(.small)
+                .disabled(mode.days(around: anchor).contains(.today))
+        }
+        let picker = Picker("表示", selection: $mode) {
+            Text("月").tag(GridMode.month)
+            Text("週").tag(GridMode.week)
+            Text("日").tag(GridMode.day)
+        }
+        .segmented(3)
+        .labelsHidden()
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: DS.gap) {
+                nav
+                Spacer(minLength: DS.gap)
+                picker.fixedSize()
+            }
+            VStack(spacing: 8) {
+                nav.frame(maxWidth: .infinity)
+                picker
+            }
+        }
+        .padding(.horizontal, DS.page).padding(.vertical, 8)
+        .background(.bar)
+        .overlay(alignment: .bottom) { Divider() }
     }
 }
 
