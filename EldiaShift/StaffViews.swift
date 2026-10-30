@@ -77,12 +77,12 @@ struct StaffListView: View {
                     Button { showingMove = true } label: { Label("部門の一括移動…", systemImage: "arrow.left.arrow.right") }
                         .disabled(depts.count < 2)
                 } label: {
-                    Label("その他", systemImage: "ellipsis.circle")
+                    Label("その他", systemImage: "ellipsis.circle").labelStyle(ToolbarLabelStyle())
                 }
                 EditButton()
                 Button {
                     adding = store.newStaff(in: deptFilter.isEmpty ? (depts.first?.id ?? "") : deptFilter)
-                } label: { Label("新規登録", systemImage: "plus") }
+                } label: { Label("スタッフを追加", systemImage: "plus").labelStyle(ToolbarLabelStyle()) }
                     .buttonStyle(.borderedProminent)
                     .accessibilityLabel("スタッフを追加")
             }
