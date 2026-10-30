@@ -109,6 +109,9 @@ struct ShiftNoteTests {
         #expect(TimelineMath.snap(23, step: 15) == 30)
         #expect(TimelineMath.drag(.right, in0: 540, out0: 1080, delta: 15, step: 15) == (540, 1095))
         #expect(TimelineMath.drag(.right, in0: 540, out0: 1080, delta: -900, step: 15) == (540, 555))
+    }
+}
+
 @Suite("人件費の予算・明細")
 @MainActor
 struct LaborBudgetTests {

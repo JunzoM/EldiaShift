@@ -242,15 +242,20 @@ struct LaborCostView: View {
             if let totals = yearTotals, totals.contains(where: { $0 > 0 }) {
                 let budgetLine = LaborBudget.value(store: store.book.scopeStoreID, month: month, rules: store.book.pay)
                 Chart {
-                    ForEach(Array(totals.enumerated()), id: \.offset) { i, v in
-                        BarMark(x: .value("月", "\(i + 1)"), y: .value("人件費", v))
-                            .foregroundStyle(i + 1 == month.month ? Color.accentColor : Color.accentColor.opacity(0.35))
+                    ForEach(Array(totals.enumerated()), id: \.offset) { item in
+                        BarMark(x: .value("月", "\(item.offset + 1)"), y: .value("人件費", item.element))
+                            .foregroundStyle(item.offset + 1 == month.month ? Color.accentColor : Color.accentColor.opacity(0.35))
                     }
                     if let b = budgetLine, !LaborBudget.isMonthOnly(store: store.book.scopeStoreID, month: month, rules: store.book.pay) {
                         RuleMark(y: .value("予算", b)).foregroundStyle(.orange).lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
                     }
                 }
-                .chartYAxis { AxisMarks { v in AxisGridLine(); AxisValueLabel { if let n = v.as(Int.self) { Text(Self.short(n)) } } } }
+                .chartYAxis {
+                    AxisMarks { v in
+                        AxisGridLine()
+                        AxisValueLabel { if let n = v.as(Int.self) { Text(Self.short(n)) } }
+                    }
+                }
                 .frame(height: 160)
                 .accessibilityLabel("\(month.year)年の月ごとの人件費")
                 .accessibilityValue(totals.enumerated().map { "\($0.offset + 1)月 \(Self.yen($0.element))" }.joined(separator: "、"))
