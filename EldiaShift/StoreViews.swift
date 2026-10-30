@@ -325,6 +325,8 @@ struct StoreDetailPanel: View {
     let onEdit: () -> Void
 
     @Environment(\.shiftStore) private var store
+    /// 足す・直す部門
+    @State private var editingDepartment: Department?
 
     var body: some View {
         let book = store.book
@@ -361,10 +363,45 @@ struct StoreDetailPanel: View {
                 info("備考", st.note)
             }
 
-            if !depts.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
+            // 部門（押すと直せる。この店舗に部門を足せる）
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
                     Text("部門").appFont(.headline)
-                    FlowChips(items: depts.map { d in (d.name + " \(book.staff.filter { $0.departmentID == d.id && $0.active }.count)人", d.colorIndex) })
+                    Spacer()
+                    Button {
+                        var d = store.newDepartment()
+                        d.storeID = st.id
+                        editingDepartment = d
+                    } label: {
+                        Label("部門を追加", systemImage: "plus")
+                    }
+                    .appFont(.subheadline)
+                }
+                if depts.isEmpty {
+                    Text("部門がありません。「部門を追加」で作ると、スタッフをこの店舗に入れられます。")
+                        .appFont(.subheadline).foregroundStyle(.secondary)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(depts.enumerated()), id: \.element.id) { i, d in
+                            if i > 0 { Divider().padding(.leading, 12) }
+                            Button { editingDepartment = d } label: {
+                                HStack(spacing: 10) {
+                                    Circle().fill(PaletteColor.fg(d.colorIndex)).frame(width: 12, height: 12)
+                                    Text(d.name.isEmpty ? "（名前なし）" : d.name).foregroundStyle(.primary)
+                                    Spacer()
+                                    Text("\(book.staff.filter { $0.departmentID == d.id && $0.active }.count)人")
+                                        .foregroundStyle(.secondary).monospacedDigit()
+                                    Image(systemName: "chevron.right").appFont(.caption).foregroundStyle(.tertiary)
+                                }
+                                .appFont(.subheadline)
+                                .padding(.horizontal, 12).frame(minHeight: 44)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("\(d.name)を直す")
+                        }
+                    }
+                    .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: DS.controlRadius, style: .continuous))
                 }
             }
 
@@ -379,6 +416,7 @@ struct StoreDetailPanel: View {
             }
         }
         .padding(DS.page)
+        .shiftSheet(item: $editingDepartment) { d in DepartmentEditView(department: d) }
     }
 
     private func info(_ label: String, _ value: String) -> some View {
@@ -391,23 +429,6 @@ struct StoreDetailPanel: View {
             }
             .padding(.vertical, 10)
             Divider()
-        }
-    }
-}
-
-/// 折り返して並ぶ小さな札
-struct FlowChips: View {
-    let items: [(String, Int)]
-
-    var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 8)], alignment: .leading, spacing: 8) {
-            ForEach(Array(items.enumerated()), id: \.offset) { _, it in
-                Text(it.0).appFont(.caption.weight(.semibold))
-                    .foregroundStyle(PaletteColor.fg(it.1))
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .frame(maxWidth: .infinity)
-                    .background(PaletteColor.bg(it.1), in: Capsule())
-            }
         }
     }
 }

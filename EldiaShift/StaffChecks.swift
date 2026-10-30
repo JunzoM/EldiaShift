@@ -39,7 +39,7 @@ struct StaffDeletionImpact: Equatable, Sendable {
         if offRequests > 0 { parts.append("希望休 \(offRequests)日") }
         var text = parts.isEmpty ? "この人の記録はまだありません。"
                                  : "一緒に消えるもの：" + parts.joined(separator: "、") + "。"
-        text += "\n同じ部署の番号が繰り上がります。元には戻せません。"
+        text += "\n同じ部門の番号が繰り上がります。元には戻せません。"
         if enteredDays > 0 {
             text += "\n辞めた人は、削除せずに退職にすると、これまでのシフトが残ります。"
         }
