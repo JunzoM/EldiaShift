@@ -41,7 +41,7 @@ struct CompanyBanner: View {
                     }
                 }
                 .frame(width: compact ? 44 : 56, height: compact ? 44 : 56)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: DS.controlRadius, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(company.name.isEmpty ? "会社名を設定" : company.name)
@@ -58,7 +58,7 @@ struct CompanyBanner: View {
             .padding(.horizontal, compact ? 16 : 22).padding(.vertical, 14)
         }
         .frame(height: compact ? 124 : 150)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: DS.cardRadius, style: .continuous))
         .overlay(alignment: .topTrailing) {
             Button(action: edit) {
                 Image(systemName: "pencil").appFont(.subheadline.weight(.semibold))
@@ -147,10 +147,10 @@ struct StoreStrip: View {
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: DS.cardRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.cardRadius, style: .continuous)
                 .strokeBorder(selected ? Color.accentColor : Color.clear, lineWidth: 2))
-            .contentShape(RoundedRectangle(cornerRadius: 14))
+            .contentShape(RoundedRectangle(cornerRadius: DS.cardRadius))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(st.name)。今日の出勤\(s.working)人\(s.pending > 0 ? "、承認待ち\(s.pending)件" : "")\(selected ? "、表示中" : "")")

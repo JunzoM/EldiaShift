@@ -167,7 +167,7 @@ struct StoreListView: View {
                                 }
                             }
                             .padding(16)
-                            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: DS.cardRadius, style: .continuous))
                             detailPanel(shown)
                         }
                         .padding(16)
@@ -280,7 +280,7 @@ struct StoreListView: View {
         }
         .padding(16)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: DS.cardRadius, style: .continuous))
     }
 
     private func detailPanel(_ shown: Store) -> some View {
@@ -288,7 +288,7 @@ struct StoreListView: View {
             StoreDetailPanel(storeInfo: shown, onEdit: { editing = shown })
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: DS.cardRadius, style: .continuous))
     }
 
     /// 一覧の1店舗（写真・名前・住所・表示中の印）
@@ -312,8 +312,8 @@ struct StoreListView: View {
         }
         .padding(10)
         .background(highlighted ? Color.accentColor.opacity(0.08) : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    in: RoundedRectangle(cornerRadius: DS.controlRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.controlRadius, style: .continuous)
             .strokeBorder(highlighted ? Color.accentColor : Color.clear, lineWidth: 1.5))
         .contentShape(Rectangle())
     }
@@ -378,7 +378,7 @@ struct StoreDetailPanel: View {
                     .appFont(.subheadline).foregroundStyle(Color.accentColor)
             }
         }
-        .padding(20)
+        .padding(DS.page)
     }
 
     private func info(_ label: String, _ value: String) -> some View {

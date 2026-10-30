@@ -111,7 +111,7 @@ struct LaborCostView: View {
             Section {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("\(month.month)月の人件費（概算）").appFont(.subheadline).foregroundStyle(.secondary)
-                    Text(Self.yen(total.total)).appFont(.system(size: 34, weight: .bold)).monospacedDigit()
+                    Text(Self.yen(total.total)).appFont(.number).monospacedDigit()
                     Text("時給分 \(Self.yen(total.hourlyBase))・月給分 \(Self.yen(total.monthlyBase))・時間外 \(Self.yen(total.overtimePay))・深夜 \(Self.yen(total.nightPay))")
                         .appFont(.caption).foregroundStyle(.secondary).monospacedDigit()
                     Text("実働 \(Self.hours(total.netMinutes))・時間外 \(Self.hours(total.overtimeMinutes))・深夜 \(Self.hours(total.nightMinutes))")

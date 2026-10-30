@@ -193,7 +193,7 @@ struct TemplateListView: View {
                         Text(t.short.isEmpty ? "・" : t.short).appFont(.headline)
                             .foregroundStyle(PaletteColor.fg(t.colorIndex))
                             .frame(width: 44, height: 32)
-                            .background(PaletteColor.bg(t.colorIndex), in: RoundedRectangle(cornerRadius: 8))
+                            .background(PaletteColor.bg(t.colorIndex), in: RoundedRectangle(cornerRadius: DS.chipRadius))
                         Text(t.label).foregroundStyle(.primary)
                         Spacer()
                         if !t.isOff {

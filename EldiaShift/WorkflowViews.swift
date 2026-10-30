@@ -67,7 +67,7 @@ struct CandidatesSheet: View {
                                     }
                                     .foregroundStyle(.white)
                                     .padding(.horizontal, 8).padding(.vertical, 4)
-                                    .background(StaffingStyle.short, in: RoundedRectangle(cornerRadius: 6))
+                                    .background(StaffingStyle.short, in: RoundedRectangle(cornerRadius: DS.chipRadius))
                                 }
                             }
                         }
@@ -235,7 +235,7 @@ struct OffRequestSheet: View {
                     Text("\(d.day)").appFont(.subheadline.weight(on ? .bold : .regular)).monospacedDigit()
                         .frame(maxWidth: .infinity, minHeight: 36)
                         .foregroundStyle(on ? Color.white : (d.weekday == 0 || JapaneseHolidays.isHoliday(d) ? Color.red : d.weekday == 6 ? Color.blue : Color.primary))
-                        .background(on ? Color.purple : Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+                        .background(on ? Color.purple : Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: DS.chipRadius))
                 }
                 .buttonStyle(.plain)
                 .disabled(staffID.isEmpty)

@@ -83,8 +83,8 @@ struct ShiftChip: View {
             .foregroundStyle(PaletteColor.fg(colorIndex))
             .padding(.horizontal, 5)
             .frame(maxWidth: .infinity, minHeight: height)
-            .background(PaletteColor.bg(colorIndex), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .background(PaletteColor.bg(colorIndex), in: RoundedRectangle(cornerRadius: DS.chipRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.chipRadius, style: .continuous)
                 .strokeBorder(PaletteColor.fg(colorIndex).opacity(0.22), lineWidth: 1))
     }
 
@@ -128,11 +128,33 @@ extension BrandColor {
 
 // MARK: - iPad のサイドバー（会社の色の濃い帯）
 
+// MARK: - デザインの決まり（大きさ・余白・角の丸み）
+// 画面ごとにばらばらにしないため、数字はここから使う。HOTEL-SHIFT の Mac 版（角丸 14・外側の余白 16）に合わせる。
+// 印刷の中身・QR ポスター・似顔絵の絵は紙や画像の決まりがあるので使わない
+
+enum DS {
+    /// 画面の外側の余白
+    static let page: CGFloat = 16
+    /// カード同士・部品同士の間
+    static let gap: CGFloat = 12
+    /// 見出しのまとまり同士の間
+    static let section: CGFloat = 20
+    /// カードの内側の余白
+    static let cardPadding: CGFloat = 16
+    /// カード・面の角の丸み
+    static let cardRadius: CGFloat = 14
+    /// ボタン・入力・選ぶ部品の角の丸み
+    static let controlRadius: CGFloat = 10
+    /// 小さな印（勤務の記号・日付のマス）の角の丸み
+    static let chipRadius: CGFloat = 8
+}
+
 struct AppSidebar: View {
     @Binding var tab: AppTab
     @Environment(\.shiftStore) private var store
     /// アイコンだけの細いサイドバーにする（端末ごとに覚える）
     @AppStorage("sidebarCompact") private var compact = false
+    @Environment(\.appZoom) private var zoom
 
     static let main: [AppTab] = [.home, .schedule, .requests, .staff, .summary, .print, .stores]
     static let fullWidth: CGFloat = 240
@@ -145,7 +167,7 @@ struct AppSidebar: View {
                 if let data = store.book.company.logo, let img = StaffPhoto.image(data) {
                     Image(uiImage: img).resizable().scaledToFill()
                         .frame(width: 34, height: 34)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: DS.chipRadius, style: .continuous))
                 } else {
                     Image(systemName: "building.columns.fill").appFont(.title2)
                 }
@@ -172,7 +194,7 @@ struct AppSidebar: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, compact ? 0 : 12).padding(.vertical, 10)
                 .frame(maxWidth: .infinity, alignment: compact ? .center : .leading)
-                .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: DS.controlRadius, style: .continuous))
                 .padding(.horizontal, compact ? 10 : 12).padding(.bottom, 14)
 
             ScrollView {
@@ -188,7 +210,8 @@ struct AppSidebar: View {
             }
             .padding(.horizontal, compact ? 10 : 12).padding(.bottom, 16)
         }
-        .frame(width: compact ? Self.compactWidth : Self.fullWidth)
+        // 文字を大きくしたら幅も広げる（Mac の 表示 → 拡大）
+        .frame(width: (compact ? Self.compactWidth : Self.fullWidth) * zoom)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(BrandColor.sidebar(store.book.brandColor).ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
@@ -206,9 +229,9 @@ struct AppSidebar: View {
                     Spacer(minLength: 0)
                 }
             }
-            .appFont(.subheadline.weight(.medium))
+            .appFont(compact ? .title3 : .body.weight(.medium))
             .foregroundStyle(Color.white.opacity(0.6))
-            .padding(.horizontal, compact ? 0 : 14).padding(.vertical, 10)
+            .padding(.horizontal, compact ? 0 : 14).padding(.vertical, compact ? 12 : 11)
             .frame(maxWidth: .infinity, alignment: compact ? .center : .leading)
             .contentShape(Rectangle())
         }
@@ -230,7 +253,7 @@ struct AppSidebar: View {
             .foregroundStyle(on ? Color.white : Color.white.opacity(0.72))
             .padding(.horizontal, compact ? 0 : 14).padding(.vertical, compact ? 12 : 11)
             .frame(maxWidth: .infinity, alignment: compact ? .center : .leading)
-            .background(on ? Color.white.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background(on ? Color.white.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: DS.controlRadius, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -411,7 +434,7 @@ struct BackupView: View {
                                color: .red, icon: "exclamationmark.triangle")
                     }
                 }
-                .padding(20)
+                .padding(DS.page)
                 .frame(maxWidth: 760)
                 .frame(maxWidth: .infinity)
             }
@@ -455,7 +478,7 @@ struct BackupView: View {
             }
         }
         .padding(16)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: DS.cardRadius, style: .continuous))
     }
 
     private func loadAutoFiles() {
@@ -501,8 +524,8 @@ struct BackupView: View {
             Spacer(minLength: 0)
         }
         .padding(16)
-        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(color.opacity(0.25), lineWidth: 1))
+        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.cardRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DS.cardRadius, style: .continuous).strokeBorder(color.opacity(0.25), lineWidth: 1))
     }
 
     private func card(icon: String, title: String, detail: String, button: String?, disabled: Bool,
@@ -510,7 +533,7 @@ struct BackupView: View {
         HStack(alignment: .center, spacing: 14) {
             Image(systemName: icon).appFont(.title2).foregroundStyle(Color.accentColor)
                 .frame(width: 48, height: 48)
-                .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: DS.controlRadius, style: .continuous))
             VStack(alignment: .leading, spacing: 4) {
                 Text(title).appFont(.headline)
                 Text(detail).appFont(.subheadline).foregroundStyle(.secondary)
@@ -520,8 +543,8 @@ struct BackupView: View {
                 Button(button, action: action).buttonStyle(.borderedProminent).disabled(disabled)
             }
         }
-        .padding(18)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(DS.cardPadding)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: DS.cardRadius, style: .continuous))
     }
 
     /// 人件費を隠している端末では、給与も入るバックアップを書き出す前に本人の確認をする

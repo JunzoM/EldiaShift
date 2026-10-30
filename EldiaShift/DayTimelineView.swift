@@ -184,7 +184,7 @@ struct DayTimelineView: View {
         let color = block.map { PaletteColor.fg($0.colorIndex) } ?? Color.accentColor
         let dragging = drag?.staffID == m.id
         return ZStack {
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: DS.chipRadius)
                 .fill(color.opacity(dragging ? 0.95 : (r?.isAuto == true ? 0.55 : 0.85)))
             HStack(spacing: 4) {
                 Text("\(TimelineMath.label(s.inM))〜\(TimelineMath.label(s.outM))")
@@ -237,10 +237,10 @@ struct DayTimelineView: View {
                 Color(.secondarySystemBackground)
                 ElsewhereHatch().opacity(0.5)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: DS.chipRadius))
         }
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color(.separator), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: DS.chipRadius).strokeBorder(Color(.separator), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+        .clipShape(RoundedRectangle(cornerRadius: DS.chipRadius))
         .offset(x: x)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(book.store(r.storeID)?.name ?? "ほかの店舗")で勤務、\(TimelineMath.label(s.inM))から\(TimelineMath.label(s.outM))")
