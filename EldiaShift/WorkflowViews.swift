@@ -302,12 +302,18 @@ struct LaborIssuesView: View {
         }
 
         if leave.isEmpty && byMember.isEmpty {
-            ContentUnavailableView {
-                Label("注意はありません", systemImage: "checkmark.seal")
-            } description: {
-                Text("連勤・勤務の間隔・週の時間・希望休・有休の年5日を確かめています。")
-            } actions: {
-                NavigationLink("注意の決まりを変える") { LaborRulesView() }
+            // 何も無いときも、画面のまん中に浮かせず、上のカードの中に出す
+            List {
+                Section {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("注意はありません", systemImage: "checkmark.seal.fill")
+                            .appFont(.headline).foregroundStyle(StaffingStyle.ok)
+                        Text("連勤・勤務の間隔・週の時間・希望休・有休の年5日を確かめています。")
+                            .appFont(.subheadline).foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                    NavigationLink("注意の決まりを変える") { LaborRulesView() }
+                }
             }
         } else {
             List {

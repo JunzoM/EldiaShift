@@ -49,6 +49,20 @@ struct SummaryView: View {
         }
     }
 
+    /// 上の数字の札
+    private func stat(_ title: String, _ value: String, _ unit: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).appFont(.caption).foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(value).appFont(.title2.weight(.bold)).monospacedDigit()
+                Text(unit).appFont(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: DS.cardRadius, style: .continuous))
+    }
+
     @ViewBuilder
     private var hoursList: some View {
         let book = store.book
@@ -56,7 +70,22 @@ struct SummaryView: View {
         // 1人ずつの集計は一度だけ（見出しの合計と行で使い回す）
         let sums = Dictionary(groups.flatMap(\.members).map { ($0.id, MonthSummary.of($0, month: month, in: book)) },
                               uniquingKeysWith: { a, _ in a })
+        let all = groups.flatMap(\.members)
+        let totalHours = all.reduce(0.0) { $0 + (sums[$1.id]?.hours ?? 0) }
+        let totalDays = all.reduce(0) { $0 + (sums[$1.id]?.workDays ?? 0) }
         List {
+            // その月の数字（タブの下に横に並べる。上が空かないように）
+            Section {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: DS.gap), count: sizeClass == .compact ? 2 : 4),
+                          spacing: DS.gap) {
+                    stat("在籍", "\(all.count)", "人")
+                    stat("出勤（のべ）", "\(totalDays)", "日")
+                    stat("実働の合計", String(format: "%.0f", totalHours), "時間")
+                    stat("1人あたり", all.isEmpty ? "—" : String(format: "%.1f", totalHours / Double(all.count)), "時間")
+                }
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
+            }
             ForEach(groups) { g in
                 Section {
                     if sizeClass != .compact { header }
