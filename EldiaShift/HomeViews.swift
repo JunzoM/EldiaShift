@@ -179,7 +179,10 @@ struct HomeView: View {
     @State private var showStaff = false
     @State private var showCompany = false
     @State private var adding: StaffMember?
+    @State private var showBackup = false
     @AppStorage("summaryTab") private var summaryTab = 0
+    /// 最後にバックアップを作った日時（BackupReminder が書く）
+    @AppStorage(BackupReminder.key) private var lastBackup: Double = 0
     /// ホームの数字（シフトの中身か日付が変わったときだけ数え直す）
     @State private var memo = HomeMemo()
 
@@ -194,13 +197,20 @@ struct HomeView: View {
                               storeCount: store.book.allStores.count, compact: sizeClass == .compact) { showCompany = true }
                 StoreStrip(stats: StoreTodayStat.all(store.book, today: today), compact: sizeClass == .compact) { showStores = true }
                 header(today)
+                // 見本の画面（スクショ）には出さない
+                if !DemoMode.enabled, !store.book.isEmpty, BackupReminder.isDue(last: lastBackup, now: Date()) { backupNotice }
                 cards(info)
                 if sizeClass == .compact {
                     todayList(info)
+                    monthCalendar(info, today: today)
                     shortList(info)
                 } else {
                     HStack(alignment: .top, spacing: 16) {
-                        todayList(info).frame(maxWidth: .infinity)
+                        VStack(spacing: 16) {
+                            todayList(info)
+                            monthCalendar(info, today: today)
+                        }
+                        .frame(maxWidth: .infinity)
                         VStack(spacing: 16) {
                             shortList(info)
                             quickMenu
@@ -229,6 +239,46 @@ struct HomeView: View {
             }
         }
         .sheet(item: $adding) { s in StaffEditView(member: s, isNew: true) }
+        .sheet(isPresented: $showBackup) {
+            NavigationStack {
+                BackupView()
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { showBackup = false } } }
+            }
+        }
+    }
+
+    // MARK: バックアップのお知らせ
+
+    private var backupNotice: some View {
+        let headline = lastBackup > 0
+            ? "最後のバックアップから\(BackupReminder.days(since: lastBackup, now: Date()))日たちました"
+            : "まだバックアップを作っていません"
+        return Button { showBackup = true } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "externaldrive.badge.exclamationmark").font(.title3).foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(headline)
+                        .font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                    Text("iCloud 同期とは別に、ファイルにも残しておくと安心です。押してバックアップを作ります。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+            }
+            .padding(12)
+            .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: 今月のカレンダー（毎日の出勤人数）
+
+    private func monthCalendar(_ info: HomeInfo, today: DayKey) -> some View {
+        HomeSection(title: "\(today.month)月の出勤人数", trailing: "シフト表", action: { openTab(.schedule) }) {
+            HomeMonthCalendar(month: MonthKey(today), today: today, counts: info.dayCounts) { openDay($0) }
+                .padding(.vertical, 6)
+        }
     }
 
     // MARK: 見出し
@@ -249,7 +299,7 @@ struct HomeView: View {
     private func cards(_ info: HomeInfo) -> some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: sizeClass == .compact ? 150 : 200), spacing: 12)], spacing: 12) {
             HomeCard(title: "今日の出勤", systemImage: "person.2.fill", tint: .accentColor,
-                     value: "\(info.working.count)", unit: "人",
+                     value: "\(info.working.count)", unit: "/ 在籍\(info.enrolled)人",
                      note: info.helpers > 0 ? "うち掛け持ち \(info.helpers)人・休み \(info.off)人" : "休み \(info.off)人") {
                 openDay(store.today)
             }
@@ -273,12 +323,34 @@ struct HomeView: View {
                      note: info.unpublished == nil ? "\(store.today.month)月分はまだ公開していません" : "\(store.today.month)月分・前回の公開から") {
                 showPrint = true
             }
+            HomeCard(title: "承認待ちの申請", systemImage: "tray.and.arrow.down.fill",
+                     tint: info.pendingRequests > 0 ? .orange : StaffingStyle.ok,
+                     value: "\(info.pendingRequests)", unit: "件",
+                     note: info.pendingRequests > 0 ? "希望休の画面で承認・却下します" : "承認待ちはありません") {
+                openTab(.requests)
+            }
+            laborCard(info)
             HomeCard(title: "労務の注意", systemImage: "hand.raised.fill",
                      tint: info.laborIssues > 0 ? .orange : StaffingStyle.ok,
                      value: "\(info.laborIssues)", unit: "件", note: "\(store.today.month)月の連勤・間隔・希望休など") {
                 summaryTab = 2
                 openTab(.summary)
             }
+        }
+    }
+
+    /// 今月の人件費の見込み（人件費を隠しているときは金額を出さない）
+    private func laborCard(_ info: HomeInfo) -> some View {
+        let visible = LaborCostLock.shared.canView
+        let usage = info.laborBudget.flatMap { LaborBudget.usage(info.laborCost, budget: $0) }
+        let tint: Color = !visible ? .secondary : (usage ?? 0) > 100 ? .red : (usage ?? 0) >= 90 ? .orange : .accentColor
+        let note: String = !visible ? "隠しています。押して確かめると見られます"
+            : usage.map { "予算の\(LaborCostView.percent($0))（\(store.today.month)月の見込み）" }
+            ?? "\(store.today.month)月の見込み・予算は未設定"
+        return HomeCard(title: "今月の人件費", systemImage: "yensign.circle.fill", tint: tint,
+                        value: visible ? LaborCostView.short(info.laborCost) : "••••", unit: visible ? "円" : "", note: note) {
+            summaryTab = 3
+            openTab(.summary)
         }
     }
 
@@ -412,6 +484,15 @@ struct HomeInfo {
     /// 前回の公開からの変更（まだ公開していなければ nil）
     var unpublished: Int?
     var laborIssues = 0
+    /// 在籍の人数（今日の時点で辞めていない人。掛け持ちで来る人を含む）
+    var enrolled = 0
+    /// 承認待ちの希望休の申請
+    var pendingRequests = 0
+    /// 今月の人件費の見込み（円）と月予算（未設定は nil）
+    var laborCost = 0
+    var laborBudget: Int?
+    /// 今月の毎日の出勤人数（ほかの店舗での勤務・休みは数えない）
+    var dayCounts: [DayKey: Int] = [:]
 
     init(book: ShiftBook, today: DayKey) {
         let month = MonthKey(today)
@@ -450,6 +531,17 @@ struct HomeInfo {
 
         unpublished = PublishDiff.changes(book, month: month)?.changes.count
         laborIssues = LaborCheck.issues(book, members: members, days: month.days).count
+
+        enrolled = members.filter { !$0.hasLeft(on: today) }.count
+        pendingRequests = members.reduce(0) { n, m in n + m.leaveRequests.filter { $0.status == .pending }.count }
+        laborCost = Payroll.total(month: month, in: book)
+        laborBudget = LaborBudget.value(store: book.scopeStoreID, month: month, rules: book.pay)
+        for d in month.days {
+            dayCounts[d] = members.filter { m in
+                guard !m.hasLeft(on: d), let r = Schedule.resolve(m, on: d, in: book) else { return false }
+                return !r.isOff && !r.elsewhere && ClockTime.parse(r.inTime) != nil
+            }.count
+        }
     }
 }
 
@@ -533,5 +625,65 @@ struct QuickButton: View {
             .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// ホームの月のカレンダー（日ごとの出勤人数。押すとその日のタイムライン）
+struct HomeMonthCalendar: View {
+    let month: MonthKey
+    let today: DayKey
+    let counts: [DayKey: Int]
+    var open: (DayKey) -> Void
+
+    var body: some View {
+        let days = month.days
+        let lead = days[0].weekday
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7), spacing: 4) {
+            ForEach(["日", "月", "火", "水", "木", "金", "土"], id: \.self) { Text($0).font(.caption2).foregroundStyle(.secondary) }
+            ForEach(0..<lead, id: \.self) { _ in Color.clear.frame(height: 40) }
+            ForEach(days, id: \.self) { d in dayCell(d) }
+        }
+    }
+
+    private func dayCell(_ d: DayKey) -> some View {
+        let n = counts[d] ?? 0
+        let isToday = d == today
+        let red = d.weekday == 0 || JapaneseHolidays.isHoliday(d)
+        let ink: Color = red ? .red : d.weekday == 6 ? .blue : .primary
+        return Button { open(d) } label: {
+            VStack(spacing: 1) {
+                Text("\(d.day)").font(.subheadline.weight(isToday ? .bold : .regular)).monospacedDigit().foregroundStyle(ink)
+                Text(n > 0 ? "\(n)人" : " ").font(.caption2.weight(.semibold)).monospacedDigit().foregroundStyle(Color.accentColor)
+            }
+            .frame(maxWidth: .infinity, minHeight: 40)
+            .background(isToday ? Color.accentColor.opacity(0.12) : Color(.tertiarySystemFill).opacity(0.5),
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                if isToday { RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.accentColor, lineWidth: 1.5) }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(d.month)月\(d.day)日、出勤\(n)人\(isToday ? "、今日" : "")")
+    }
+}
+
+/// バックアップを作った日を覚え、しばらく作っていなければホームで知らせる
+enum BackupReminder {
+    static let key = "lastBackupAt"
+    /// これだけの日数バックアップを作っていなければ知らせる
+    static let interval = 30
+
+    /// 作った日時を残す（バックアップのファイルを作ったとき）
+    static func record(_ now: Date = Date(), defaults: UserDefaults = .standard) {
+        defaults.set(now.timeIntervalSinceReferenceDate, forKey: key)
+    }
+
+    /// last：最後に作った日時（timeIntervalSinceReferenceDate。0 はまだ作っていない）
+    static func days(since last: Double, now: Date) -> Int {
+        max(0, Int((now.timeIntervalSinceReferenceDate - last) / 86_400))
+    }
+
+    static func isDue(last: Double, now: Date) -> Bool {
+        last <= 0 || days(since: last, now: now) >= interval
     }
 }
