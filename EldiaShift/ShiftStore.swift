@@ -425,7 +425,14 @@ enum ShiftRecords {
         req.predicate = NSPredicate(format: "key == %@", staffID)
         let rows = try ctx.fetch(req)
         if rows.isEmpty && wages.isEmpty { return nil }
-        let r = rows.first ?? NSEntityDescription.insertNewObject(forEntityName: ShiftModel.Entity.pay, into: ctx)
+        let r: NSManagedObject
+        if let first = rows.first {
+            r = first
+        } else {
+            // 給与は必ず自分のデータの入れ物へ（共有されない）
+            r = NSEntityDescription.insertNewObject(forEntityName: ShiftModel.Entity.pay, into: ctx)
+            if let store = privateStore(ctx) { ctx.assign(r, to: store) }
+        }
         rows.dropFirst().forEach(ctx.delete)
         r.setValue(staffID, forKey: "key")
         r.setValue(try JSONEncoder().encode(wages), forKey: "wages")
@@ -629,6 +636,8 @@ enum ShiftRecords {
     static func currentTeam(_ ctx: NSManagedObjectContext) throws -> NSManagedObject {
         if let t = try existingCurrentTeam(ctx) { return t }
         let t = NSEntityDescription.insertNewObject(forEntityName: ShiftModel.Entity.team, into: ctx)
+        // 自分のチームは自分のデータの入れ物へ
+        if let store = privateStore(ctx) { ctx.assign(t, to: store) }
         t.setValue(UUID(), forKey: "id")
         t.setValue("シフト表", forKey: "name")
         t.setValue(Date(), forKey: "createdAt")
@@ -636,6 +645,11 @@ enum ShiftRecords {
     }
 
     // MARK: 部品
+
+    /// 自分のデータの入れ物
+    static func privateStore(_ ctx: NSManagedObjectContext) -> NSPersistentStore? {
+        ctx.persistentStoreCoordinator?.persistentStores.first { !ShiftDatabase.isShared($0) }
+    }
 
     /// そのチームの記録（自分のチームなら、チームにつながっていない古い記録も含める）
     static func fetch(_ name: String, _ ctx: NSManagedObjectContext, team: NSManagedObject) throws -> [NSManagedObject] {
@@ -666,8 +680,10 @@ enum ShiftRecords {
 
     static func insert(_ name: String, _ ctx: NSManagedObjectContext, team: NSManagedObject, now: Date) -> NSManagedObject {
         let r = NSEntityDescription.insertNewObject(forEntityName: name, into: ctx)
-        // 共有されたシフト表の記録は、共有の入れ物に入れる（チームと同じ入れ物でないと保存できない）
-        if !team.objectID.isTemporaryID, let store = team.objectID.persistentStore { ctx.assign(r, to: store) }
+        // チームと同じ入れ物に入れる（共有されたシフト表なら共有の入れ物。違う入れ物だと保存できない）。
+        // 作った時点で入れ物を決めておくと、保存する前でも入れ物ごとの検索に出る
+        let store = team.objectID.isTemporaryID ? nil : team.objectID.persistentStore
+        if let target = store ?? privateStore(ctx) { ctx.assign(r, to: target) }
         r.setValue(team, forKey: "team")
         r.setValue(now, forKey: "updatedAt")
         return r
