@@ -74,6 +74,8 @@ struct SharingTests {
         r.setValue(Date(), forKey: "updatedAt")
         r.setValue(Data(#"{"timeBlocks":[],"patterns":[],"periodPatterns":[],"wages":[{"id":"w","from":"2026-01-01","kind":"monthly","amount":250000}]}"#.utf8),
                    forKey: "detail")
+        // 共有を作るときと同じく、保存してから消す
+        try db.save()
         try ShiftRecords.stripWagesFromStaff(in: ctx)
         try db.save()
         #expect(try detail(of: "1", ctx)?.wages == nil)
