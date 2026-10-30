@@ -141,6 +141,9 @@ struct AppFont {
         AppFont(base: .size(size), weight: weight, design: design)
     }
 
+    /// 大きな数字（ホームのカード・人件費の合計など）。数字はどの画面でもこの字体にそろえる
+    static var number: AppFont { .system(size: 32, weight: .bold, design: .rounded) }
+
     func weight(_ weight: Font.Weight) -> AppFont {
         var f = self
         f.weight = weight

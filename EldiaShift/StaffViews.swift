@@ -841,7 +841,7 @@ struct BlockRow: View {
             Text(block.short.isEmpty ? "・" : block.short).appFont(.headline)
                 .foregroundStyle(PaletteColor.fg(block.colorIndex))
                 .frame(width: 44, height: 32)
-                .background(PaletteColor.bg(block.colorIndex), in: RoundedRectangle(cornerRadius: 8))
+                .background(PaletteColor.bg(block.colorIndex), in: RoundedRectangle(cornerRadius: DS.chipRadius))
             Text(block.label).foregroundStyle(.primary)
             Spacer()
             if !block.isOff {
@@ -866,8 +866,8 @@ struct BlockChip: View {
         }
         .foregroundStyle(PaletteColor.fg(block.colorIndex))
         .frame(maxWidth: .infinity, minHeight: 50)
-        .background(count > 0 ? PaletteColor.bg(block.colorIndex) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8)
+        .background(count > 0 ? PaletteColor.bg(block.colorIndex) : Color.clear, in: RoundedRectangle(cornerRadius: DS.chipRadius))
+        .overlay(RoundedRectangle(cornerRadius: DS.chipRadius)
             .strokeBorder(PaletteColor.fg(block.colorIndex), style: StrokeStyle(lineWidth: 1.5, dash: count > 0 ? [] : [4])))
     }
 }

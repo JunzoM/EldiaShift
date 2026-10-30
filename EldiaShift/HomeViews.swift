@@ -176,9 +176,9 @@ struct MainTabsView: View {
 // MARK: - ホーム
 
 struct HomeView: View {
-    /// 中身の幅の上限。Mac はウインドウを広げて使うので、広めにして左右の余白を減らす
+    /// 中身の幅の上限。Mac はほかの画面と同じく幅いっぱいに使う（HOTEL-SHIFT の Mac 版と同じ）
     #if targetEnvironment(macCatalyst)
-    static let contentWidth: CGFloat = 1500
+    static let contentWidth: CGFloat = .infinity
     #else
     static let contentWidth: CGFloat = 1100
     #endif
@@ -207,7 +207,7 @@ struct HomeView: View {
         let info = memo.get(store.book, revision: store.revision, today: today)
 
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: DS.section) {
                 // 会社 → その下に店舗 → 選んでいる店舗の今日
                 CompanyBanner(company: store.book.company, brandHex: store.book.brandColor,
                               storeCount: store.book.allStores.count, compact: sizeClass == .compact) { showCompany = true }
@@ -221,13 +221,13 @@ struct HomeView: View {
                     monthCalendar(info, today: today)
                     shortList(info)
                 } else {
-                    HStack(alignment: .top, spacing: 16) {
-                        VStack(spacing: 16) {
+                    HStack(alignment: .top, spacing: DS.gap) {
+                        VStack(spacing: DS.section) {
                             todayList(info)
                             monthCalendar(info, today: today)
                         }
                         .frame(maxWidth: .infinity)
-                        VStack(spacing: 16) {
+                        VStack(spacing: DS.section) {
                             shortList(info)
                             quickMenu
                         }
@@ -236,7 +236,7 @@ struct HomeView: View {
                 }
                 if sizeClass == .compact { quickMenu }
             }
-            .padding(16)
+            .padding(DS.page)
             .frame(maxWidth: Self.contentWidth)
             .frame(maxWidth: .infinity)
         }
@@ -281,8 +281,8 @@ struct HomeView: View {
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right").appFont(.caption).foregroundStyle(.tertiary)
             }
-            .padding(12)
-            .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .padding(DS.cardPadding)
+            .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: DS.cardRadius, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -313,7 +313,7 @@ struct HomeView: View {
     // MARK: 数字のカード
 
     private func cards(_ info: HomeInfo) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: sizeClass == .compact ? 150 : 200), spacing: 12)], spacing: 12) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: sizeClass == .compact ? 150 : 200), spacing: DS.gap)], spacing: DS.gap) {
             HomeCard(title: "今日の出勤", systemImage: "person.2.fill", tint: .accentColor,
                      value: "\(info.working.count)", unit: "/ 在籍\(info.enrolled)人",
                      note: info.helpers > 0 ? "うち掛け持ち \(info.helpers)人・休み \(info.off)人" : "休み \(info.off)人") {
@@ -587,15 +587,15 @@ struct HomeCard: View {
                         .background(tint.opacity(0.14), in: Circle())
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    Text(value).appFont(.system(size: 32, weight: .bold, design: .rounded)).monospacedDigit()
+                    Text(value).appFont(.number).monospacedDigit()
                     Text(unit).appFont(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
                 }
                 Text(note).appFont(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 16))
+            .padding(DS.cardPadding)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: DS.cardRadius, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: DS.cardRadius))
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
@@ -619,9 +619,9 @@ struct HomeSection<Content: View>: View {
                 }
             }
             VStack(alignment: .leading, spacing: 0) { content }
-                .padding(.horizontal, 14).padding(.vertical, 6)
+                .padding(.horizontal, DS.cardPadding).padding(.vertical, 6)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: DS.cardRadius, style: .continuous))
         }
     }
 }
@@ -638,7 +638,7 @@ struct QuickButton: View {
                 Text(title).appFont(.caption.weight(.semibold)).foregroundStyle(.primary).lineLimit(1).minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity, minHeight: 64)
-            .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: DS.controlRadius, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -673,9 +673,9 @@ struct HomeMonthCalendar: View {
             }
             .frame(maxWidth: .infinity, minHeight: 40)
             .background(isToday ? Color.accentColor.opacity(0.12) : Color(.tertiarySystemFill).opacity(0.5),
-                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        in: RoundedRectangle(cornerRadius: DS.chipRadius, style: .continuous))
             .overlay {
-                if isToday { RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.accentColor, lineWidth: 1.5) }
+                if isToday { RoundedRectangle(cornerRadius: DS.chipRadius, style: .continuous).strokeBorder(Color.accentColor, lineWidth: 1.5) }
             }
         }
         .buttonStyle(.plain)

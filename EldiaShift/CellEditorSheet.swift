@@ -196,8 +196,8 @@ struct CellEditorSheet: View {
             }
             .foregroundStyle(PaletteColor.fg(b.colorIndex))
             .frame(maxWidth: .infinity, minHeight: 52)
-            .background(PaletteColor.bg(b.colorIndex), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(PaletteColor.fg(b.colorIndex), lineWidth: selected ? 2.5 : 0))
+            .background(PaletteColor.bg(b.colorIndex), in: RoundedRectangle(cornerRadius: DS.controlRadius))
+            .overlay(RoundedRectangle(cornerRadius: DS.controlRadius).strokeBorder(PaletteColor.fg(b.colorIndex), lineWidth: selected ? 2.5 : 0))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(b.isOff ? b.label : "\(b.label)、\(b.inTime)から\(b.outTime)")

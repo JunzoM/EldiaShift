@@ -347,7 +347,7 @@ struct LeaveRequestImportSheet: View {
                                     Text(HomeView.dayLabel(d)).appFont(.subheadline.weight(.semibold)).monospacedDigit()
                                         .frame(maxWidth: .infinity, minHeight: 34)
                                         .foregroundStyle(on ? Color.white : Color.secondary)
-                                        .background(on ? Color.purple : Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+                                        .background(on ? Color.purple : Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: DS.chipRadius))
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityLabel("\(d.month)月\(d.day)日\(on ? "、申請に入れる" : "、外す")")
@@ -590,7 +590,7 @@ struct LeaveDayCalendar: View {
             Text("\(d.day)").appFont(.subheadline.weight(on ? .bold : .regular)).monospacedDigit()
                 .frame(maxWidth: .infinity, minHeight: 36)
                 .foregroundStyle(ink)
-                .background(on ? Color.purple : Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+                .background(on ? Color.purple : Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: DS.chipRadius))
                 .opacity(isTaken ? 0.35 : 1)
         }
         .buttonStyle(.plain)

@@ -762,7 +762,7 @@ struct PrintSheet: View {
         }
         .padding(16)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: DS.cardRadius, style: .continuous))
     }
 
     private func outputCard(_ k: OutputKind) -> some View {
@@ -771,7 +771,7 @@ struct PrintSheet: View {
             HStack(spacing: 12) {
                 Image(systemName: k.systemImage).appFont(.title2).foregroundStyle(k.color)
                     .frame(width: 40, height: 40)
-                    .background(k.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .background(k.color.opacity(0.12), in: RoundedRectangle(cornerRadius: DS.controlRadius, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(k.title).appFont(.subheadline.weight(.bold)).foregroundStyle(.primary)
                     Text(k.detail).appFont(.caption2).foregroundStyle(.secondary).lineLimit(2)
@@ -780,8 +780,8 @@ struct PrintSheet: View {
             }
             .padding(12)
             .background(on ? Color.accentColor.opacity(0.07) : Color(.systemBackground),
-                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        in: RoundedRectangle(cornerRadius: DS.controlRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.controlRadius, style: .continuous)
                 .strokeBorder(on ? Color.accentColor : Color(.separator), lineWidth: on ? 2 : 0.5))
         }
         .buttonStyle(.plain)
@@ -813,8 +813,8 @@ struct PrintSheet: View {
                 .accessibilityLabel("次の月")
             }
             .padding(.horizontal, 12).padding(.vertical, 9)
-            .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color(.separator), lineWidth: 0.5))
+            .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: DS.controlRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.controlRadius, style: .continuous).strokeBorder(Color(.separator), lineWidth: 0.5))
         }
     }
 

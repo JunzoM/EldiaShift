@@ -253,7 +253,7 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("設定")
-            .navigationBarTitleDisplayMode(inTab ? .large : .inline)
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if !inTab {
                     ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dismiss() } }
