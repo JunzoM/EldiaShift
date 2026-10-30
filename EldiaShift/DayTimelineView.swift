@@ -111,8 +111,8 @@ struct DayTimelineView: View {
         }
         .onAppear { if store.editing { CoachCenter.shared.show(.timeline("timelineBar")) } }
         .onChange(of: store.editing) { if store.editing { CoachCenter.shared.show(.timeline("timelineBar"), after: 0.6) } }
-        .sheet(item: $shortage) { t in CandidatesSheet(target: t).presentationDetents([.medium, .large]) }
-        .sheet(item: $editing) { e in
+        .shiftSheet(item: $shortage) { t in CandidatesSheet(target: t).presentationDetents([.medium, .large]) }
+        .shiftSheet(item: $editing) { e in
             CellEditorSheet(member: e.member, day: day).presentationDetents([.medium, .large])
         }
         .sensoryFeedback(.selection, trigger: drag.map { $0.inM * 10_000 + $0.outM })

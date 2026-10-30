@@ -97,7 +97,7 @@ struct StaffListView: View {
             let b = depts.first { $0.id == moveTo }?.name ?? ""
             Text("\(a)の全員を\(b)へ移します。")
         }
-        .sheet(item: $adding) { s in StaffEditView(member: s, isNew: true) }
+        .shiftSheet(item: $adding) { s in StaffEditView(member: s, isNew: true) }
         .errorAlert($error)
     }
 
@@ -449,7 +449,7 @@ struct StaffEditView: View {
                     pickedPhoto = nil
                 }
             }
-            .sheet(isPresented: $makingAvatar) {
+            .shiftSheet(isPresented: $makingAvatar) {
                 // 似顔絵は選んだ内容を中に残した PNG のまま入れる（あとで直せるように。240px で十数KB）
                 StaffAvatarCreator(initial: StaffAvatarConfiguration(), sourcePhoto: member.photo) { _, data in member.photo = data }
             }
@@ -463,11 +463,11 @@ struct StaffEditView: View {
                     error = "画像を読み込めませんでした"
                 }
             }
-            .sheet(item: $editingBlock) { b in TemplateEditView(template: b, personal: $member.timeBlocks) }
-            .sheet(item: $editingPattern) { p in
+            .shiftSheet(item: $editingBlock) { b in TemplateEditView(template: b, personal: $member.timeBlocks) }
+            .shiftSheet(item: $editingPattern) { p in
                 PatternEditView(pattern: p, member: member, patterns: $member.patterns, activeID: $member.activePatternID)
             }
-            .sheet(item: $editingPeriod) { p in
+            .shiftSheet(item: $editingPeriod) { p in
                 PeriodPatternEditView(pattern: p, member: member, periods: $member.periodPatterns)
             }
             .confirmationDialog("\(member.name)さんを削除しますか？", isPresented: $confirmDelete, titleVisibility: .visible) {

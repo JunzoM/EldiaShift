@@ -71,7 +71,7 @@ struct StoreSwitcher: View {
             }
         }
         .accessibilityLabel("店舗：\(current.name)。押すと切り替え")
-        .sheet(isPresented: $managing) { NavigationStack { StoreListView(inSheet: true) } }
+        .shiftSheet(isPresented: $managing) { NavigationStack { StoreListView(inSheet: true) } }
     }
 }
 
@@ -224,7 +224,7 @@ struct StoreListView: View {
                 .accessibilityLabel("店舗管理のメニュー")
             }
         }
-        .sheet(item: $editing) { st in StoreEditView(storeInfo: st) }
+        .shiftSheet(item: $editing) { st in StoreEditView(storeInfo: st) }
         .confirmationDialog("見本のデータを足しますか？", isPresented: $askAddSample, titleVisibility: .visible) {
             Button("見本のデータを足す") {
                 do {
@@ -614,6 +614,49 @@ struct BrandTint: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+// MARK: - シート（Mac で画面のデータが渡らないことがあるため、毎回わたす）
+// Mac（Catalyst）では、シートの中身にアプリのデータ（ShiftStore・ShiftDatabase）が届かず落ちることがある。
+// シートは .sheet ではなく .shiftSheet で出し、出す側の画面のデータと色をそのまま中身にわたす。
+
+extension View {
+    func shiftSheet<Sheet: View>(isPresented: Binding<Bool>, @ViewBuilder content: @escaping () -> Sheet) -> some View {
+        modifier(ShiftSheetFlag(isPresented: isPresented, sheet: content))
+    }
+
+    func shiftSheet<Item: Identifiable, Sheet: View>(item: Binding<Item?>, @ViewBuilder content: @escaping (Item) -> Sheet) -> some View {
+        modifier(ShiftSheetItem(item: item, sheet: content))
+    }
+}
+
+private struct ShiftSheetFlag<Sheet: View>: ViewModifier {
+    @Environment(ShiftStore.self) private var store
+    @Binding var isPresented: Bool
+    let sheet: () -> Sheet
+
+    func body(content: Content) -> some View {
+        content.sheet(isPresented: $isPresented) { sheet().shiftEnvironment(store) }
+    }
+}
+
+private struct ShiftSheetItem<Item: Identifiable, Sheet: View>: ViewModifier {
+    @Environment(ShiftStore.self) private var store
+    @Binding var item: Item?
+    let sheet: (Item) -> Sheet
+
+    func body(content: Content) -> some View {
+        content.sheet(item: $item) { sheet($0).shiftEnvironment(store) }
+    }
+}
+
+extension View {
+    /// アプリのデータと色をわたす（RootView と同じもの）
+    func shiftEnvironment(_ store: ShiftStore) -> some View {
+        environment(store)
+            .environment(store.db)
+            .modifier(BrandTint(hex: store.book.brandColor))
     }
 }
 

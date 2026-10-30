@@ -552,13 +552,13 @@ struct PrintSheet: View {
             .safeAreaInset(edge: .bottom) {
                 if sizeClass != .regular { bottomBar(pages: pages, book: book) }
             }
-            .sheet(item: $csvFile) { f in ShareSheet(items: [f.url]) }
+            .shiftSheet(item: $csvFile) { f in ShareSheet(items: [f.url]) }
             .coachOverlay(.sheet)
-            .sheet(item: $shareFile) { f in
+            .shiftSheet(item: $shareFile) { f in
                 ShareSheet(items: shareItems(f.url, book: book)) { done in if done { publish() } }
             }
-            .sheet(item: $images) { f in ShareSheet(items: f.urls) }
-            .sheet(isPresented: $previewAll) {
+            .shiftSheet(item: $images) { f in ShareSheet(items: f.urls) }
+            .shiftSheet(isPresented: $previewAll) {
                 PrintPreviewSheet(pages: pages, book: book, title: effectiveTitle, options: options)
             }
             .alert("公開済みにしました", isPresented: Binding(get: { publishedNote != nil }, set: { if !$0 { publishedNote = nil } })) {

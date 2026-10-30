@@ -89,7 +89,7 @@ struct RootView: View {
         .onOpenURL { url in
             if let link = LeaveRequestLink.decode(url) { incomingRequest = link }
         }
-        .sheet(item: $incomingRequest) { link in
+        .shiftSheet(item: $incomingRequest) { link in
             LeaveRequestImportSheet(month: link.month, initialText: link.formText)
         }
         // iCloud 共有の招待を受け取った結果
@@ -210,8 +210,8 @@ struct ShiftBoardView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showSettings) { SettingsView() }
-            .sheet(isPresented: $showPrint) { PrintSheet(anchor: anchor) }
+            .shiftSheet(isPresented: $showSettings) { SettingsView() }
+            .shiftSheet(isPresented: $showPrint) { PrintSheet(anchor: anchor) }
             .backupImporter(isPresented: $importing)
         }
         .overlay(alignment: .bottom) { UndoBar() }

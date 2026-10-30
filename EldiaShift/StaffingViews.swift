@@ -62,7 +62,7 @@ struct StaffingSettingsView: View {
             }
         }
         .navigationTitle("適正人員")
-        .sheet(item: $editing) { b in
+        .shiftSheet(item: $editing) { b in
             NavigationStack {
                 StaffingBandEditView(band: b, isNew: isNew) { saved in
                     var p = store.book.staffing

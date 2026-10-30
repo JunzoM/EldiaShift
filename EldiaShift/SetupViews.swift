@@ -53,7 +53,7 @@ struct NoStaffView: View {
             }
             .buttonStyle(.borderedProminent)
         }
-        .sheet(item: $adding) { s in StaffEditView(member: s, isNew: true) }
+        .shiftSheet(item: $adding) { s in StaffEditView(member: s, isNew: true) }
     }
 }
 
@@ -107,7 +107,7 @@ struct DepartmentListView: View {
                     .accessibilityLabel("部門を追加")
             }
         }
-        .sheet(item: $editing) { d in DepartmentEditView(department: d) }
+        .shiftSheet(item: $editing) { d in DepartmentEditView(department: d) }
         .errorAlert($error)
     }
 }
@@ -181,7 +181,7 @@ struct TemplateListView: View {
                     .accessibilityLabel("ひな形を追加")
             }
         }
-        .sheet(item: $editing) { t in TemplateEditView(template: t) }
+        .shiftSheet(item: $editing) { t in TemplateEditView(template: t) }
         .errorAlert($error)
     }
 

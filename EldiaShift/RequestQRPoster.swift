@@ -128,7 +128,7 @@ struct RequestQRSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dismiss() } } }
             .onAppear { if storeID.isEmpty { storeID = store.currentStore.id } }
-            .sheet(item: $file) { f in ShareSheet(items: [f.url]) }
+            .shiftSheet(item: $file) { f in ShareSheet(items: [f.url]) }
             .errorAlert($error)
         }
     }

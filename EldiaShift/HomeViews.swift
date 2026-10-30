@@ -237,18 +237,18 @@ struct HomeView: View {
         .navigationTitle("ホーム")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { if storeInToolbar { ToolbarItem(placement: .topBarLeading) { StoreSwitcher() } } }
-        .sheet(isPresented: $showPrint) { PrintSheet(anchor: today) }
-        .sheet(isPresented: $showStores) { NavigationStack { StoreListView(inSheet: true) } }
-        .sheet(isPresented: $showCompany) { NavigationStack { CompanyInfoView(inSheet: true) } }
+        .shiftSheet(isPresented: $showPrint) { PrintSheet(anchor: today) }
+        .shiftSheet(isPresented: $showStores) { NavigationStack { StoreListView(inSheet: true) } }
+        .shiftSheet(isPresented: $showCompany) { NavigationStack { CompanyInfoView(inSheet: true) } }
         // iPhone（下のタブにスタッフが無い）では、ホームからスタッフの一覧を開く
-        .sheet(isPresented: $showStaff) {
+        .shiftSheet(isPresented: $showStaff) {
             NavigationStack {
                 StaffListView()
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { showStaff = false } } }
             }
         }
-        .sheet(item: $adding) { s in StaffEditView(member: s, isNew: true) }
-        .sheet(isPresented: $showBackup) {
+        .shiftSheet(item: $adding) { s in StaffEditView(member: s, isNew: true) }
+        .shiftSheet(isPresented: $showBackup) {
             NavigationStack {
                 BackupView()
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { showBackup = false } } }
