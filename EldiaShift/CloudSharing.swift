@@ -30,6 +30,10 @@ final class ShareInbox {
 /// 招待のリンクを押したときに呼ばれる（アプリが開いているとき・閉じていたとき）
 final class ShareSceneDelegate: NSObject, UIWindowSceneDelegate {
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
+        #if targetEnvironment(macCatalyst)
+        // Mac：ウインドウを小さくしすぎて表が崩れないように
+        (scene as? UIWindowScene)?.sizeRestrictions?.minimumSize = CGSize(width: 960, height: 640)
+        #endif
         if let metadata = connectionOptions.cloudKitShareMetadata {
             Task { @MainActor in ShareInbox.shared.accept(metadata) }
         }

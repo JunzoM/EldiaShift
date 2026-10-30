@@ -18,6 +18,6 @@ PC版シフト表の「設定」→「💾 データ管理」→「バックア�
 ## 開発
 
 - Xcode で `EldiaShift.xcodeproj` を開く（ファイルはフォルダに置くだけで自動でプロジェクトに入る）
-- 対応 OS：iOS / iPadOS 17 以降
+- 対応 OS：iOS / iPadOS 17 以降、macOS 14 以降（Mac Catalyst。iPad と同じ画面）
 - iCloud コンテナ：`iCloud.com.bestdelight.eldiashift`（Signing & Capabilities で登録）
 - GitHub Actions でビルド・テスト（Swift Testing）を確認する

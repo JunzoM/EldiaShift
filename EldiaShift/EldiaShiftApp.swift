@@ -31,8 +31,34 @@ struct EldiaShiftApp: App {
                 .environment(store)
                 .modifier(BrandTint(hex: store.book.brandColor))
         }
+        #if targetEnvironment(macCatalyst)
+        .defaultSize(width: 1280, height: 820)
+        .commands { MacCommands() }
+        #endif
     }
 }
+
+#if targetEnvironment(macCatalyst)
+/// Mac のメニュー（表示 → 各画面、⌘P で印刷・出力、⌘, で設定）
+struct MacCommands: Commands {
+    var body: some Commands {
+        CommandGroup(replacing: .appSettings) {
+            Button("設定…") { AppTab.open(.settings) }.keyboardShortcut(",", modifiers: .command)
+        }
+        CommandGroup(replacing: .printItem) {
+            Button("印刷・出力…") { AppTab.open(.print) }.keyboardShortcut("p", modifiers: .command)
+        }
+        CommandMenu("表示") {
+            Button("ホーム") { AppTab.open(.home) }.keyboardShortcut("1", modifiers: .command)
+            Button("シフト表") { AppTab.open(.schedule) }.keyboardShortcut("2", modifiers: .command)
+            Button("希望休") { AppTab.open(.requests) }.keyboardShortcut("3", modifiers: .command)
+            Button("スタッフ") { AppTab.open(.staff) }.keyboardShortcut("4", modifiers: .command)
+            Button("集計") { AppTab.open(.summary) }.keyboardShortcut("5", modifiers: .command)
+            Button("店舗") { AppTab.open(.stores) }.keyboardShortcut("6", modifiers: .command)
+        }
+    }
+}
+#endif
 
 /// いちばん外側。サイドバー（iPad）・タブ（iPhone）。iOS 17 の iPad でも出す
 struct RootView: View {

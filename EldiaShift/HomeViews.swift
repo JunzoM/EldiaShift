@@ -8,6 +8,10 @@ enum AppTab: String, Hashable, Identifiable {
 }
 
 extension AppTab {
+    /// メニュー（Mac）などから画面を開く。MainTabsView が受け取る
+    static let openNotification = Notification.Name("EldiaShift.openTab")
+    static func open(_ tab: AppTab) { NotificationCenter.default.post(name: openNotification, object: tab.rawValue) }
+
     var title: String {
         switch self {
         case .home: "ホーム"
@@ -65,6 +69,11 @@ struct MainTabsView: View {
             fitTabToLayout()
         }
         .onChange(of: tab) { if !DemoMode.enabled { savedTab = tab } }
+        .onReceive(NotificationCenter.default.publisher(for: AppTab.openNotification)) { n in
+            guard let raw = n.object as? String, let t = AppTab(rawValue: raw) else { return }
+            tab = t
+            fitTabToLayout()
+        }
         // 折りたたみの iPhone（Duo）を閉じた・iPad を分割表示にしたなどで下のタブに変わったとき、
         // タブに無い項目（スタッフ・印刷・店舗）を開いていたら、近い項目へ移す（何も出ない画面にしない）
         .onChange(of: sizeClass) { fitTabToLayout() }
