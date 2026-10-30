@@ -688,6 +688,7 @@ extension View {
         environment(\.shiftStore, store)
             .environment(\.shiftDatabase, store.db)
             .modifier(BrandTint(hex: store.book.brandColor))
+            .modifier(MacZoom())
     }
 }
 
