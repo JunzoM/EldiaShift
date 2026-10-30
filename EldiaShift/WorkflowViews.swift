@@ -393,6 +393,7 @@ struct LaborRulesView: View {
             }
         }
         .navigationTitle("労務の注意")
+        .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             if !loaded { rules = store.book.labor; loaded = true }
         }

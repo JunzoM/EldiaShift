@@ -22,6 +22,8 @@ struct EldiaShiftApp: App {
             s.editing = args.contains("-demoEdit")
         }
         ShiftStore.current = s
+        // 画面の題名（真ん中・18pt 太字）。Mac は 表示 → 拡大・縮小 の倍率もかける（MacZoom）
+        MacZoom.applyTitle(1)
         _db = State(initialValue: d)
         _store = State(initialValue: s)
     }
@@ -83,6 +85,11 @@ struct MacZoom: ViewModifier {
 
     @AppStorage(key) private var zoom = standard
 
+    /// 画面の上の真ん中に出す題名：18pt 太字（どの画面も同じ）
+    static func applyTitle(_ scale: CGFloat) {
+        UINavigationBar.appearance().titleTextAttributes = [.font: UIFont.systemFont(ofSize: 18 * scale, weight: .bold)]
+    }
+
     #if targetEnvironment(macCatalyst)
     /// 切り替え（セグメント）と画面の題名の文字。これから作る部品に効く
     private static func applyAppearance(_ scale: CGFloat) {
@@ -90,7 +97,7 @@ struct MacZoom: ViewModifier {
         let segmentOn = UIFont.systemFont(ofSize: 13 * scale, weight: .semibold)
         UISegmentedControl.appearance().setTitleTextAttributes([.font: segment], for: .normal)
         UISegmentedControl.appearance().setTitleTextAttributes([.font: segmentOn], for: .selected)
-        UINavigationBar.appearance().titleTextAttributes = [.font: UIFont.systemFont(ofSize: 17 * scale, weight: .semibold)]
+        applyTitle(scale)
         UINavigationBar.appearance().largeTitleTextAttributes = [.font: UIFont.systemFont(ofSize: 34 * scale, weight: .bold)]
     }
     #endif

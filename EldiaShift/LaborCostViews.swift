@@ -441,6 +441,7 @@ struct PayRulesView: View {
             }
         }
         .navigationTitle("人件費")
+        .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             if !loaded { rules = store.book.pay; loaded = true }
         }

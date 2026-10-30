@@ -62,6 +62,7 @@ struct StaffingSettingsView: View {
             }
         }
         .navigationTitle("適正人員")
+        .navigationBarTitleDisplayMode(.inline)
         .shiftSheet(item: $editing) { b in
             NavigationStack {
                 StaffingBandEditView(band: b, isNew: isNew) { saved in

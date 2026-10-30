@@ -80,6 +80,7 @@ struct StaffListView: View {
         .safeAreaInset(edge: .top, spacing: 0) { filterBar(book) }
         .searchable(text: $search, prompt: "名前で検索")
         .navigationTitle("スタッフ")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 EditButton()
