@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import Combine
 
 @main
@@ -82,13 +83,28 @@ struct MacZoom: ViewModifier {
 
     @AppStorage(key) private var zoom = standard
 
+    #if targetEnvironment(macCatalyst)
+    /// 切り替え（セグメント）と画面の題名の文字。これから作る部品に効く
+    private static func applyAppearance(_ scale: CGFloat) {
+        let segment = UIFont.systemFont(ofSize: 13 * scale)
+        let segmentOn = UIFont.systemFont(ofSize: 13 * scale, weight: .semibold)
+        UISegmentedControl.appearance().setTitleTextAttributes([.font: segment], for: .normal)
+        UISegmentedControl.appearance().setTitleTextAttributes([.font: segmentOn], for: .selected)
+        UINavigationBar.appearance().titleTextAttributes = [.font: UIFont.systemFont(ofSize: 17 * scale, weight: .semibold)]
+        UINavigationBar.appearance().largeTitleTextAttributes = [.font: UIFont.systemFont(ofSize: 34 * scale, weight: .bold)]
+    }
+    #endif
+
     func body(content: Content) -> some View {
         #if targetEnvironment(macCatalyst)
         let scale = Self.steps[min(max(zoom, 0), Self.steps.count - 1)]
+        let _ = Self.applyAppearance(scale)
         // 大きさを決めていない文字（一覧の行・ボタンなど）も、本文の大きさに合わせる
         content
             .environment(\.appZoom, scale)
             .font(.system(size: AppFont.size(of: .body) * scale))
+            // 切り替え（セグメント）・画面の題名は UIKit が描くので、大きさを変えたら作り直す
+            .id(zoom)
         #else
         content
         #endif

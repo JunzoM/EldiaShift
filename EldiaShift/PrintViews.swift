@@ -669,7 +669,7 @@ struct PrintSheet: View {
             if busy {
                 HStack(spacing: 10) {
                     ProgressView()
-                    Text("作成中… \(progress)枚目").font(.subheadline).monospacedDigit()
+                    Text("作成中… \(progress)枚目").appFont(.subheadline).monospacedDigit()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(.bar)
@@ -717,7 +717,7 @@ struct PrintSheet: View {
                     panel("一人ずつのシフト画像") {
                         VStack(alignment: .leading, spacing: 14) {
                             Text("選んだ部門の全員分、\(MonthKey(day).month)月の自分のシフトだけの縦長の画像を作ります。LINE で本人に送れます。")
-                                .font(.subheadline).foregroundStyle(.secondary)
+                                .appFont(.subheadline).foregroundStyle(.secondary)
                             if let m = book.staffByDepartment(visibleIn: MonthKey(day))
                                 .first(where: { g in chosen.contains { $0.id == g.department.id } })?.members.first {
                                 ScrollView {
@@ -744,7 +744,7 @@ struct PrintSheet: View {
         let on = wideTab == tag
         return Button { wideTab = tag } label: {
             Text(title)
-                .font(.subheadline.weight(on ? .bold : .medium))
+                .appFont(.subheadline.weight(on ? .bold : .medium))
                 .foregroundStyle(on ? Color.accentColor : Color.secondary)
                 .padding(.vertical, 10)
                 .overlay(alignment: .bottom) {
@@ -757,7 +757,7 @@ struct PrintSheet: View {
 
     private func panel<C: View>(_ title: String, @ViewBuilder content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(title).font(.headline)
+            Text(title).appFont(.headline)
             content()
         }
         .padding(16)
@@ -769,12 +769,12 @@ struct PrintSheet: View {
         let on = output == k
         return Button { output = k } label: {
             HStack(spacing: 12) {
-                Image(systemName: k.systemImage).font(.title2).foregroundStyle(k.color)
+                Image(systemName: k.systemImage).appFont(.title2).foregroundStyle(k.color)
                     .frame(width: 40, height: 40)
                     .background(k.color.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(k.title).font(.subheadline.weight(.bold)).foregroundStyle(.primary)
-                    Text(k.detail).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                    Text(k.title).appFont(.subheadline.weight(.bold)).foregroundStyle(.primary)
+                    Text(k.detail).appFont(.caption2).foregroundStyle(.secondary).lineLimit(2)
                 }
                 Spacer(minLength: 0)
             }
@@ -798,14 +798,14 @@ struct PrintSheet: View {
 
     private var monthRow: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("対象期間").font(.subheadline.weight(.semibold))
+            Text("対象期間").appFont(.subheadline.weight(.semibold))
             HStack {
                 Button { target = DayKey(MonthKey(day).adding(months: -1).year, MonthKey(day).adding(months: -1).month, 1) } label: {
                     Image(systemName: "chevron.left")
                 }
                 .accessibilityLabel("前の月")
                 Spacer()
-                Text(MonthKey(day).description).font(.body.weight(.semibold)).monospacedDigit()
+                Text(MonthKey(day).description).appFont(.body.weight(.semibold)).monospacedDigit()
                 Spacer()
                 Button { target = DayKey(MonthKey(day).adding(months: 1).year, MonthKey(day).adding(months: 1).month, 1) } label: {
                     Image(systemName: "chevron.right")
@@ -820,7 +820,7 @@ struct PrintSheet: View {
 
     private func departmentChecks(_ depts: [Department]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("対象部門").font(.subheadline.weight(.semibold))
+            Text("対象部門").appFont(.subheadline.weight(.semibold))
             ForEach(depts) { d in
                 let on = selected.contains(d.id)
                 Button {
@@ -843,7 +843,7 @@ struct PrintSheet: View {
             monthRow
             if output != .csv {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("レイアウト").font(.subheadline.weight(.semibold))
+                    Text("レイアウト").appFont(.subheadline.weight(.semibold))
                     Picker("レイアウト", selection: $format) {
                         ForEach(PrintFormat.allCases) { Text($0.title).tag($0) }
                     }
@@ -860,26 +860,26 @@ struct PrintSheet: View {
                     }
                     .pickerStyle(.segmented)
                     Text("A3 は A4 と同じ割り付けを大きくします。人数が多くて1枚に入らないときは、自動で次のページに分けます。")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .appFont(.caption).foregroundStyle(.secondary)
                 }
             }
             departmentChecks(depts)
             VStack(alignment: .leading, spacing: 6) {
-                Text("表示オプション").font(.subheadline.weight(.semibold))
+                Text("表示オプション").appFont(.subheadline.weight(.semibold))
                 TextField("表の上に出す名前（例：店名）", text: $title)
                     .textFieldStyle(.roundedBorder)
-                if output != .csv { displayToggles.font(.subheadline) }
+                if output != .csv { displayToggles.appFont(.subheadline) }
                 if output == .pdf {
-                    Toggle("変更点の文章も一緒に送る", isOn: $withChanges).font(.subheadline)
+                    Toggle("変更点の文章も一緒に送る", isOn: $withChanges).appFont(.subheadline)
                 }
             }
             let month = MonthKey(day)
             if let diff = PublishDiff.changes(book, month: month) {
                 Label(diff.changes.isEmpty ? "前回の公開から変更はありません" : "前回の公開から \(diff.changes.count)件の変更",
-                      systemImage: "paperplane").font(.caption).foregroundStyle(.secondary)
+                      systemImage: "paperplane").appFont(.caption).foregroundStyle(.secondary)
             } else {
                 Label("\(month.month)月分はまだ公開していません（送るか印刷すると公開済みになります）", systemImage: "paperplane")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .appFont(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -888,10 +888,10 @@ struct PrintSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             if output == .csv {
                 VStack(spacing: 8) {
-                    Image(systemName: "tablecells").font(.system(size: 44)).foregroundStyle(OutputKind.csv.color)
+                    Image(systemName: "tablecells").appFont(.system(size: 44)).foregroundStyle(OutputKind.csv.color)
                     Text("\(MonthKey(day).description)・\(chosen.map(\.name).joined(separator: "・"))")
-                        .font(.subheadline.weight(.semibold))
-                    Text("1行が1人、1列が1日。Excel・Numbers で開けます。").font(.caption).foregroundStyle(.secondary)
+                        .appFont(.subheadline.weight(.semibold))
+                    Text("1行が1人、1列が1日。Excel・Numbers で開けます。").appFont(.caption).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let first = pages.first {
@@ -904,7 +904,7 @@ struct PrintSheet: View {
                         .frame(maxWidth: .infinity)
                 }
                 Button { previewAll = true } label: {
-                    Label("全ページを見る（\(pages.count)枚）", systemImage: "doc.on.doc").font(.caption)
+                    Label("全ページを見る（\(pages.count)枚）", systemImage: "doc.on.doc").appFont(.caption)
                 }
                 .frame(maxWidth: .infinity)
             } else {
@@ -933,7 +933,7 @@ struct PrintSheet: View {
                     Label(title, systemImage: systemImage)
                 }
             }
-            .font(.headline)
+            .appFont(.headline)
             .frame(maxWidth: .infinity, minHeight: 30)
         }
         .buttonStyle(.borderedProminent)
@@ -1015,11 +1015,11 @@ struct PrintSheet: View {
                             Text("\(c.day.month)/\(c.day.day)").monospacedDigit().frame(width: 44, alignment: .leading)
                             Text(c.staffName).bold()
                             Text("\(c.before.isEmpty ? "なし" : c.before) → \(c.after.isEmpty ? "なし" : c.after)")
-                                .font(.subheadline).foregroundStyle(.secondary)
+                                .appFont(.subheadline).foregroundStyle(.secondary)
                         }
                     }
                     if diff.changes.count > 8 {
-                        Text("ほか \(diff.changes.count - 8)件").font(.caption).foregroundStyle(.secondary)
+                        Text("ほか \(diff.changes.count - 8)件").appFont(.caption).foregroundStyle(.secondary)
                     }
                 }
                 Toggle("PDFと一緒に変更点の文章も送る", isOn: $withChanges)
