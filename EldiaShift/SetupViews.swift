@@ -92,6 +92,14 @@ struct DepartmentListView: View {
                     if depts.isEmpty {
                         Text("部門がありません").foregroundStyle(.secondary)
                     }
+                    // 店舗ごとに、ここからも足せる（右上の＋と同じ）
+                    Button {
+                        var d = store.newDepartment()
+                        d.storeID = st.id
+                        editing = d
+                    } label: {
+                        Label("部門を追加", systemImage: "plus.circle")
+                    }
                 } header: {
                     if stores.count > 1 { StoreBadgeLabel(store: st) }
                 } footer: {

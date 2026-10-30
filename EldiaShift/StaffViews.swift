@@ -54,7 +54,7 @@ struct StaffListView: View {
             Section {
                 Toggle("退職者も表示", isOn: $showInactive)
             } footer: {
-                Text("並べ替えは右上の「編集」でドラッグ、または行を右にスワイプして↑↓。同じ部署の中で並び、番号は自動で振り直します。")
+                Text("並べ替えは右上の「編集」でドラッグ、または行を右にスワイプして↑↓。同じ部門の中で並び、番号は自動で振り直します。")
             }
 
             if depts.count >= 2 {
@@ -71,9 +71,9 @@ struct StaffListView: View {
                         .disabled(moveFrom.isEmpty || moveTo.isEmpty || moveFrom == moveTo
                                   || !book.staff.contains { $0.departmentID == moveFrom })
                 } header: {
-                    Text("部署の一括移動")
+                    Text("部門の一括移動")
                 } footer: {
-                    Text("移動元の全員を、移動先の末尾に（並び順を保って）移します。1人ずつ変えるときは、各スタッフを開いて「部署」を変えてください。")
+                    Text("移動元の全員を、移動先の末尾に（並び順を保って）移します。1人ずつ変えるときは、各スタッフを開いて「部門」を変えてください。")
                 }
             }
         }
@@ -255,6 +255,8 @@ struct StaffEditView: View {
     /// 似顔絵を作る画面・ファイルから写真を選ぶ画面
     @State private var makingAvatar = false
     @State private var importingPhoto = false
+    /// 部門の一覧（足す・直す）
+    @State private var managingDepartments = false
     /// 保存すると表が変わる日（確認してから保存する）
     @State private var pendingPreview: PatternChecks.Preview?
 
@@ -298,7 +300,7 @@ struct StaffEditView: View {
                     Text("同じ名前の人がいます（\(other)）。表で見分けやすい名前にすると迷いません。")
                         .appFont(.footnote).foregroundStyle(.orange)
                 }
-                Picker("部署", selection: Binding(get: { member.departmentID }, set: { id in
+                Picker("部門", selection: Binding(get: { member.departmentID }, set: { id in
                     member.departmentID = id
                     // 自分の店舗は掛け持ち先に入れない
                     let home = book.storeID(ofDepartment: id)
@@ -313,6 +315,10 @@ struct StaffEditView: View {
                             Text(multi ? "\(st.name)・\(d.name)" : d.name).tag(d.id)
                         }
                     }
+                }
+                // 選びたい部門が無いときは、ここから足せる
+                Button { managingDepartments = true } label: {
+                    Label("部門を追加・直す", systemImage: "square.grid.2x2")
                 }
                 Picker("在職", selection: $member.active) {
                     Text("在職").tag(true)
@@ -464,6 +470,12 @@ struct StaffEditView: View {
                 }
             }
             .shiftSheet(item: $editingBlock) { b in TemplateEditView(template: b, personal: $member.timeBlocks) }
+            .shiftSheet(isPresented: $managingDepartments) {
+                NavigationStack {
+                    DepartmentListView()
+                        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { managingDepartments = false } } }
+                }
+            }
             .shiftSheet(item: $editingPattern) { p in
                 PatternEditView(pattern: p, member: member, patterns: $member.patterns, activeID: $member.activePatternID)
             }
@@ -523,7 +535,7 @@ struct StaffEditView: View {
         return "退職日が入社日より前になっています。"
     }
 
-    /// 同じ名前のほかの人（部署名。いなければ nil）
+    /// 同じ名前のほかの人（部門名。いなければ nil）
     private func duplicateName(_ book: ShiftBook) -> String? {
         let name = member.name.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty,
