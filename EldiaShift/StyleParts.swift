@@ -541,6 +541,7 @@ struct BackupView: View {
             f.dateFormat = "yyyyMMdd-HHmm"
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("shift-\(f.string(from: Date())).json")
             try data.write(to: url, options: .atomic)
+            BackupReminder.record()
             exportFile = ExportFile(url: url)
         } catch {
             self.error = error.localizedDescription
