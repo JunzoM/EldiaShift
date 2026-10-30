@@ -22,6 +22,8 @@ struct EldiaShiftApp: App {
             s.editing = args.contains("-demoEdit")
         }
         ShiftStore.current = s
+        // 画面の題名（真ん中・18pt 太字）。Mac は 表示 → 拡大・縮小 の倍率もかける（MacZoom）
+        MacZoom.applyTitle(1)
         _db = State(initialValue: d)
         _store = State(initialValue: s)
     }
@@ -42,7 +44,7 @@ struct EldiaShiftApp: App {
 }
 
 #if targetEnvironment(macCatalyst)
-/// Mac のメニュー（表示 → 各画面、⌘P で印刷・出力、⌘, で設定）
+/// Mac のメニュー（表示 → 各画面・拡大縮小・フルスクリーン、⌘P で印刷・出力、⌘, で設定）
 struct MacCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .appSettings) {
@@ -51,7 +53,8 @@ struct MacCommands: Commands {
         CommandGroup(replacing: .printItem) {
             Button("印刷・出力…") { AppTab.open(.print) }.keyboardShortcut("p", modifiers: .command)
         }
-        CommandMenu("表示") {
+        // Mac の「表示」メニューに入れる（同じ名前のメニューを2つにしない。「フルスクリーンにする ⌃⌘F」も同じメニューに出る）
+        CommandGroup(after: .toolbar) {
             Button("ホーム") { AppTab.open(.home) }.keyboardShortcut("1", modifiers: .command)
             Button("シフト表") { AppTab.open(.schedule) }.keyboardShortcut("2", modifiers: .command)
             Button("希望休") { AppTab.open(.requests) }.keyboardShortcut("3", modifiers: .command)
@@ -83,6 +86,11 @@ struct MacZoom: ViewModifier {
 
     @AppStorage(key) private var zoom = standard
 
+    /// 画面の上の真ん中に出す題名：18pt 太字（どの画面も同じ）
+    static func applyTitle(_ scale: CGFloat) {
+        UINavigationBar.appearance().titleTextAttributes = [.font: UIFont.systemFont(ofSize: 18 * scale, weight: .bold)]
+    }
+
     #if targetEnvironment(macCatalyst)
     /// 切り替え（セグメント）と画面の題名の文字。これから作る部品に効く
     private static func applyAppearance(_ scale: CGFloat) {
@@ -90,7 +98,7 @@ struct MacZoom: ViewModifier {
         let segmentOn = UIFont.systemFont(ofSize: 13 * scale, weight: .semibold)
         UISegmentedControl.appearance().setTitleTextAttributes([.font: segment], for: .normal)
         UISegmentedControl.appearance().setTitleTextAttributes([.font: segmentOn], for: .selected)
-        UINavigationBar.appearance().titleTextAttributes = [.font: UIFont.systemFont(ofSize: 17 * scale, weight: .semibold)]
+        applyTitle(scale)
         UINavigationBar.appearance().largeTitleTextAttributes = [.font: UIFont.systemFont(ofSize: 34 * scale, weight: .bold)]
     }
     #endif

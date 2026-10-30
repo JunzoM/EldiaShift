@@ -147,6 +147,27 @@ enum DS {
     static let controlRadius: CGFloat = 10
     /// 小さな印（勤務の記号・日付のマス）の角の丸み
     static let chipRadius: CGFloat = 8
+    /// 切り替え（セグメント）の1つあたりの最小の幅。広い場所では幅いっぱいに伸びる
+    static let segmentMin: CGFloat = 88
+}
+
+/// 切り替え（セグメント）：1つあたりの最小の幅を決め、それより広い場所では伸びる（文字の倍率に合わせる）
+private struct SegmentWidth: ViewModifier {
+    let count: Int
+    @Environment(\.appZoom) private var zoom
+
+    func body(content: Content) -> some View {
+        content
+            .pickerStyle(.segmented)
+            .frame(minWidth: CGFloat(max(count, 1)) * DS.segmentMin * zoom)
+    }
+}
+
+extension View {
+    /// count：選べるものの数
+    func segmented(_ count: Int) -> some View {
+        modifier(SegmentWidth(count: count))
+    }
 }
 
 struct AppSidebar: View {
@@ -323,7 +344,7 @@ struct OffRequestListView: View {
                     Text("勤務と重なる \(conflicts)").tag(1)
                     Text("問題なし \(rows.count - conflicts)").tag(2)
                 }
-                .pickerStyle(.segmented)
+                .segmented(3)
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets())
             }

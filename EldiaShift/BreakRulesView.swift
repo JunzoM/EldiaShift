@@ -67,7 +67,7 @@ struct BreakRulesView: View {
                         Text("〜以上なら").tag(true)
                         Text("〜を超えたら").tag(false)
                     }
-                    .pickerStyle(.segmented)
+                    .segmented(2)
                     ForEach($rules.tiers) { $t in
                         HStack {
                             Text("勤務").foregroundStyle(.secondary)
