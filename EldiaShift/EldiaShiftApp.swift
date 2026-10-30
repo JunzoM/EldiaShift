@@ -44,7 +44,7 @@ struct EldiaShiftApp: App {
 }
 
 #if targetEnvironment(macCatalyst)
-/// Mac のメニュー（表示 → 各画面、⌘P で印刷・出力、⌘, で設定）
+/// Mac のメニュー（表示 → 各画面・拡大縮小・フルスクリーン、⌘P で印刷・出力、⌘, で設定）
 struct MacCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .appSettings) {
@@ -53,7 +53,8 @@ struct MacCommands: Commands {
         CommandGroup(replacing: .printItem) {
             Button("印刷・出力…") { AppTab.open(.print) }.keyboardShortcut("p", modifiers: .command)
         }
-        CommandMenu("表示") {
+        // Mac の「表示」メニューに入れる（同じ名前のメニューを2つにしない。「フルスクリーンにする ⌃⌘F」も同じメニューに出る）
+        CommandGroup(after: .toolbar) {
             Button("ホーム") { AppTab.open(.home) }.keyboardShortcut("1", modifiers: .command)
             Button("シフト表") { AppTab.open(.schedule) }.keyboardShortcut("2", modifiers: .command)
             Button("希望休") { AppTab.open(.requests) }.keyboardShortcut("3", modifiers: .command)

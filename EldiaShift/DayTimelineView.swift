@@ -69,7 +69,7 @@ struct DayTimelineView: View {
                     Text("30分").tag(30)
                     Text("15分").tag(15)
                 }
-                .pickerStyle(.segmented)
+                .segmented(2)
                 .frame(width: 130)
                 .accessibilityLabel("ドラッグの時間の刻み")
                 EditingChip()

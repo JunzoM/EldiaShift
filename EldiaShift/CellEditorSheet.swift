@@ -55,7 +55,7 @@ struct CellEditorSheet: View {
                         })) {
                             ForEach(storeIDs, id: \.self) { id in Text(book.store(id)?.name ?? id).tag(id) }
                         }
-                        .pickerStyle(.segmented)
+                        .segmented(storeIDs.count)
                     } header: {
                         Text("勤務する店舗")
                     } footer: {

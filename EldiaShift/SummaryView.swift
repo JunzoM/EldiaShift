@@ -20,7 +20,7 @@ struct SummaryView: View {
                 Text("注意").tag(2)
                 Text("人件費").tag(3)
             }
-            .pickerStyle(.segmented)
+            .segmented(4)
             .padding(.horizontal, 16).padding(.vertical, 8)
             .background(.bar)
         }

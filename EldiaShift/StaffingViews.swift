@@ -257,7 +257,7 @@ struct StaffingAnalysisView: View {
                     Picker("部門", selection: Binding(get: { g.department.id }, set: { departmentID = $0 })) {
                         ForEach(groups) { Text($0.department.name).tag($0.department.id) }
                     }
-                    .pickerStyle(.segmented)
+                    .segmented(groups.count)
                     .listRowBackground(Color.clear)
                 }
                 Section {

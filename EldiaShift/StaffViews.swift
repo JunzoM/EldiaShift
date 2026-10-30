@@ -325,7 +325,7 @@ struct StaffEditView: View {
                     Text("在職").tag(true)
                     Text("退職").tag(false)
                 }
-                .pickerStyle(.segmented)
+                .segmented(2)
                 Picker("雇用形態", selection: $member.employment) {
                     Text("未設定").tag("")
                     ForEach(StaffMember.employmentChoices, id: \.self) { Text($0).tag($0) }

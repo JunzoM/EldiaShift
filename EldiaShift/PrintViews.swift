@@ -599,14 +599,14 @@ struct PrintSheet: View {
                     Picker("印刷範囲", selection: $half) {
                         ForEach(HalfSelection.allCases) { Text($0.title).tag($0) }
                     }
-                    .pickerStyle(.segmented)
+                    .segmented(HalfSelection.allCases.count)
                 }
             }
             Section {
                 Picker("用紙", selection: $paper) {
                     ForEach(PaperSize.allCases) { Text($0.title).tag($0) }
                 }
-                .pickerStyle(.segmented)
+                .segmented(PaperSize.allCases.count)
                 displayToggles
             } header: {
                 Text("用紙・表に出すもの")
@@ -895,7 +895,7 @@ struct PrintSheet: View {
                             Picker("印刷範囲", selection: $half) {
                                 ForEach(HalfSelection.allCases) { Text($0.title).tag($0) }
                             }
-                            .pickerStyle(.segmented).labelsHidden().fixedSize()
+                            .segmented(HalfSelection.allCases.count).labelsHidden().fixedSize()
                         }
                     }
                     rowDivider
@@ -905,7 +905,7 @@ struct PrintSheet: View {
                         Picker("用紙", selection: $paper) {
                             ForEach(PaperSize.allCases) { Text($0.title).tag($0) }
                         }
-                        .pickerStyle(.segmented).labelsHidden().fixedSize()
+                        .segmented(PaperSize.allCases.count).labelsHidden().fixedSize()
                     }
                 }
             }

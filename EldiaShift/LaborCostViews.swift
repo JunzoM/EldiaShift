@@ -540,7 +540,7 @@ struct WageEditView: View {
                     Picker("種類", selection: $entry.kind) {
                         ForEach(WageEntry.Kind.allCases) { Text($0.label).tag($0) }
                     }
-                    .pickerStyle(.segmented)
+                    .segmented(WageEntry.Kind.allCases.count)
                     HStack {
                         Text(entry.kind == .hourly ? "時給" : "月給")
                         TextField("金額", value: $entry.amount, format: .number)
