@@ -226,7 +226,7 @@ struct AppSidebar: View {
                     Spacer(minLength: 0)
                 }
             }
-            .font(compact ? .title3.weight(on ? .bold : .regular) : .body.weight(on ? .bold : .medium))
+            .appFont(compact ? .title3.weight(on ? .bold : .regular) : .body.weight(on ? .bold : .medium))
             .foregroundStyle(on ? Color.white : Color.white.opacity(0.72))
             .padding(.horizontal, compact ? 0 : 14).padding(.vertical, compact ? 12 : 11)
             .frame(maxWidth: .infinity, alignment: compact ? .center : .leading)

@@ -45,7 +45,7 @@ struct CompanyBanner: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(company.name.isEmpty ? "会社名を設定" : company.name)
-                        .font(compact ? .title3.weight(.bold) : .title2.weight(.bold))
+                        .appFont(compact ? .title3.weight(.bold) : .title2.weight(.bold))
                         .lineLimit(1).minimumScaleFactor(0.7)
                     if !company.tagline.isEmpty {
                         Text(company.tagline).appFont(.footnote.weight(.medium)).lineLimit(2).opacity(0.92)

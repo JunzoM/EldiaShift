@@ -121,7 +121,7 @@ struct RequestQRSheet: View {
                     ShareLink(item: url) { Label("申請のリンクを送る（LINE グループなど）", systemImage: "link") }
                     Button { UIPasteboard.general.url = url } label: { Label("リンクをコピー", systemImage: "doc.on.doc") }
                 } footer: {
-                    Text(url.absoluteString).font(.caption2).textSelection(.enabled)
+                    Text(url.absoluteString).appFont(.caption2).textSelection(.enabled)
                 }
             }
             .navigationTitle("申請用QRコード")

@@ -535,7 +535,7 @@ struct MonthGridView: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(m.name)
-                    .font(compact ? .footnote.weight(.bold) : .subheadline.weight(.bold))
+                    .appFont(compact ? .footnote.weight(.bold) : .subheadline.weight(.bold))
                     .lineLimit(1).minimumScaleFactor(0.6)
                     .foregroundStyle(m.active && m.leaveDate.isEmpty ? Color.primary : Color.secondary)
                 if m.active {
