@@ -9,7 +9,12 @@ struct CompanyBanner: View {
     let brandHex: UInt32?
     let storeCount: Int
     var compact = false
+    /// iPad・Mac のホーム：帯の右に店舗の切り替えを入れる（押すとその店舗に切り替わる）
+    var stats: [String: StoreTodayStat]? = nil
+    var manageStores: () -> Void = {}
     var edit: () -> Void
+
+    @Environment(\.shiftStore) private var store
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
@@ -40,24 +45,26 @@ struct CompanyBanner: View {
                             .background(.white.opacity(0.18))
                     }
                 }
-                .frame(width: compact ? 44 : 56, height: compact ? 44 : 56)
+                .frame(width: compact || stats != nil ? 44 : 56, height: compact || stats != nil ? 44 : 56)
                 .clipShape(RoundedRectangle(cornerRadius: DS.controlRadius, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(company.name.isEmpty ? "会社名を設定" : company.name)
                         .appFont(compact ? .title3.weight(.bold) : .title2.weight(.bold))
                         .lineLimit(1).minimumScaleFactor(0.7)
-                    if !company.tagline.isEmpty {
+                    if !company.tagline.isEmpty && stats == nil {
                         Text(company.tagline).appFont(.footnote.weight(.medium)).lineLimit(2).opacity(0.92)
                     }
                     Text("\(storeCount)店舗のシフト管理").appFont(.caption2.weight(.semibold)).opacity(0.8)
                 }
                 .foregroundStyle(.white)
                 Spacer(minLength: 0)
+                if let stats { storeChips(stats) }
             }
-            .padding(.horizontal, compact ? 16 : 22).padding(.vertical, 14)
+            .padding(.leading, compact ? 16 : 22).padding(.trailing, stats != nil ? 52 : (compact ? 16 : 22)).padding(.vertical, 14)
         }
-        .frame(height: compact ? 124 : 150)
+        // 店舗を帯に入れるときは低くする（画面の上を広く使う）
+        .frame(height: stats != nil ? 84 : (compact ? 124 : 150))
         .clipShape(RoundedRectangle(cornerRadius: DS.cardRadius, style: .continuous))
         .overlay(alignment: .topTrailing) {
             Button(action: edit) {
@@ -68,6 +75,45 @@ struct CompanyBanner: View {
             .accessibilityLabel("会社の情報を変える")
         }
         .accessibilityElement(children: .contain)
+    }
+
+    /// 帯の右の店舗の切り替え（略称・今日の出勤・承認待ち）
+    private func storeChips(_ stats: [String: StoreTodayStat]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(store.book.allStores) { st in
+                    let on = st.id == store.currentStore.id
+                    let s = stats[st.id] ?? StoreTodayStat()
+                    Button { store.currentStoreID = st.id } label: {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(store.book.shortName(of: st)).appFont(.subheadline.weight(.bold)).lineLimit(1)
+                            HStack(spacing: 4) {
+                                Text("出勤 \(s.working)人").monospacedDigit()
+                                if s.pending > 0 { Text("申請 \(s.pending)").foregroundStyle(.orange) }
+                            }
+                            .appFont(.caption2.weight(.semibold))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(.white.opacity(on ? 0.28 : 0.12), in: RoundedRectangle(cornerRadius: DS.controlRadius, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: DS.controlRadius, style: .continuous)
+                            .strokeBorder(.white.opacity(on ? 0.9 : 0), lineWidth: 1.5))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(st.name)。今日の出勤\(s.working)人\(on ? "、表示中" : "")")
+                    .accessibilityAddTraits(on ? .isSelected : [])
+                }
+                Button(action: manageStores) {
+                    Image(systemName: "ellipsis").appFont(.subheadline.weight(.bold)).foregroundStyle(.white)
+                        .frame(width: 32, height: 32)
+                        .background(.white.opacity(0.12), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("店舗を管理")
+            }
+        }
+        .frame(maxWidth: 560)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
