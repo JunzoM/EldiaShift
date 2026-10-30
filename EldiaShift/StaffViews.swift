@@ -16,18 +16,32 @@ struct StaffListView: View {
     @State private var moveTo = ""
     @State private var confirmMove = false
     @State private var error: String?
+    /// iPad・Mac：右に詳細を出している人
+    @State private var selectedID: String?
+    @Environment(\.appZoom) private var zoom
+    /// 部門の一括移動の画面
+    @State private var showingMove = false
 
     var body: some View {
         let book = store.book
         let depts = book.scopedDepartments
-        List {
+        let list = List {
             ForEach(sections(book)) { group in
                 Section {
                     ForEach(group.members) { m in
-                        NavigationLink {
-                            StaffEditView(member: m, isNew: false)
-                        } label: {
-                            row(m)
+                        Group {
+                            if sizeClass == .compact {
+                                NavigationLink {
+                                    StaffEditView(member: m, isNew: false)
+                                } label: {
+                                    row(m)
+                                }
+                            } else {
+                                // iPad・Mac：押すと右の詳細だけが切り替わる
+                                Button { selectedID = m.id } label: { pickRow(m) }
+                                    .buttonStyle(.plain)
+                                    .listRowBackground(selectedID == m.id ? Color.accentColor.opacity(0.14) : nil)
+                            }
                         }
                         .swipeActions(edge: .leading) {
                             Button { run { try store.moveStaff(m, by: -1) } } label: { Label("上へ", systemImage: "arrow.up") }
@@ -38,9 +52,9 @@ struct StaffListView: View {
                     }
                     .onMove { from, to in
                         guard search.isEmpty, group.department.id != "support" else { return }
-                        var list = group.members
-                        list.move(fromOffsets: from, toOffset: to)
-                        run { try store.reorderStaff(list) }
+                        var ordered = group.members
+                        ordered.move(fromOffsets: from, toOffset: to)
+                        run { try store.reorderStaff(ordered) }
                     }
                 } header: {
                     HStack {
@@ -50,14 +64,61 @@ struct StaffListView: View {
                     }
                 }
             }
-
-            Section {
-                Toggle("退職者も表示", isOn: $showInactive)
-            } footer: {
-                Text("並べ替えは右上の「編集」でドラッグ、または行を右にスワイプして↑↓。同じ部門の中で並び、番号は自動で振り直します。")
+        }
+        .safeAreaInset(edge: .top, spacing: 0) { filterBar(book) }
+        .searchable(text: $search, prompt: "名前で検索")
+        .navigationTitle("スタッフ")
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                // 退職者の表示・部門の一括移動はここにまとめる
+                Menu {
+                    Toggle("退職者も表示", isOn: $showInactive)
+                    Button { showingMove = true } label: { Label("部門の一括移動…", systemImage: "arrow.left.arrow.right") }
+                        .disabled(depts.count < 2)
+                } label: {
+                    Label("その他", systemImage: "ellipsis.circle")
+                }
+                EditButton()
+                Button {
+                    adding = store.newStaff(in: deptFilter.isEmpty ? (depts.first?.id ?? "") : deptFilter)
+                } label: { Label("新規登録", systemImage: "plus") }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityLabel("スタッフを追加")
             }
+        }
+        .shiftSheet(isPresented: $showingMove) { moveSheet(book, depts: depts) }
+        .shiftSheet(item: $adding) { s in StaffEditView(member: s, isNew: true) }
+        .errorAlert($error)
 
-            if depts.count >= 2 {
+        if sizeClass == .compact {
+            list
+        } else {
+            // iPad・Mac：左に一覧、右に選んだ人の詳細
+            let shown = sections(book).flatMap(\.members)
+            // 選んだ人が一覧に無い（店舗を切り替えた・検索した）ときは、一覧の最初の人
+            let current = selectedID.flatMap { id in shown.first { $0.id == id } } ?? shown.first
+            HStack(spacing: 0) {
+                list.frame(width: 340 * zoom)
+                Divider()
+                Group {
+                    if let current {
+                        StaffDetailPanel(member: current).id(current.id)
+                    } else {
+                        ContentUnavailableView("スタッフがいません", systemImage: "person.2",
+                                               description: Text("右上の「＋」でスタッフを追加します。"))
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(.systemGroupedBackground))
+            }
+            .onAppear { if selectedID == nil { selectedID = current?.id } }
+        }
+    }
+
+    /// 部門の一括移動（その他のメニューから）
+    private func moveSheet(_ book: ShiftBook, depts: [Department]) -> some View {
+        NavigationStack {
+            Form {
                 Section {
                     Picker("移動元", selection: $moveFrom) {
                         Text("選ぶ").tag("")
@@ -70,35 +131,44 @@ struct StaffListView: View {
                     Button("全員を移動する") { confirmMove = true }
                         .disabled(moveFrom.isEmpty || moveTo.isEmpty || moveFrom == moveTo
                                   || !book.staff.contains { $0.departmentID == moveFrom })
-                } header: {
-                    Text("部門の一括移動")
                 } footer: {
                     Text("移動元の全員を、移動先の末尾に（並び順を保って）移します。1人ずつ変えるときは、各スタッフを開いて「部門」を変えてください。")
                 }
             }
-        }
-        .safeAreaInset(edge: .top, spacing: 0) { filterBar(book) }
-        .searchable(text: $search, prompt: "名前で検索")
-        .navigationTitle("スタッフ")
-        .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                EditButton()
-                Button {
-                    adding = store.newStaff(in: deptFilter.isEmpty ? (depts.first?.id ?? "") : deptFilter)
-                } label: { Label("新規登録", systemImage: "plus") }
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityLabel("スタッフを追加")
+            .navigationTitle("部門の一括移動")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { showingMove = false } } }
+            .confirmationDialog("一括移動しますか？", isPresented: $confirmMove, titleVisibility: .visible) {
+                Button("移動する") {
+                    run { try store.moveAllStaff(from: moveFrom, to: moveTo) }
+                    showingMove = false
+                }
+            } message: {
+                let a = depts.first { $0.id == moveFrom }?.name ?? ""
+                let b = depts.first { $0.id == moveTo }?.name ?? ""
+                Text("\(a)の全員を\(b)へ移します。")
             }
         }
-        .confirmationDialog("一括移動しますか？", isPresented: $confirmMove, titleVisibility: .visible) {
-            Button("移動する") { run { try store.moveAllStaff(from: moveFrom, to: moveTo) } }
-        } message: {
-            let a = depts.first { $0.id == moveFrom }?.name ?? ""
-            let b = depts.first { $0.id == moveTo }?.name ?? ""
-            Text("\(a)の全員を\(b)へ移します。")
+    }
+
+    /// iPad・Mac の左の一覧の行（顔・名前・番号・雇用形態だけ）
+    private func pickRow(_ m: StaffMember) -> some View {
+        let book = store.book
+        let dept = book.departments.first { $0.id == m.departmentID }
+        let short = LaborCostLock.shared.canView ? MinimumWage.shortfall(of: m, on: store.today, in: book) : nil
+        let sub = ["No.\(m.number)", m.employment.isEmpty ? nil : m.employment].compactMap { $0 }.joined(separator: " ・ ")
+        return HStack(spacing: 10) {
+            InitialAvatar(name: m.name, colorIndex: dept?.colorIndex ?? 8, size: 32, photo: m.photo)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(m.name).appFont(.subheadline.weight(.semibold)).lineLimit(1)
+                Text(sub).appFont(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            if short != nil { StatusPill(text: "最低賃金未満", color: .red).fixedSize() }
+            if !(m.active && m.leaveDate.isEmpty) { status(m).fixedSize() }
         }
-        .shiftSheet(item: $adding) { s in StaffEditView(member: s, isNew: true) }
-        .errorAlert($error)
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
     }
 
     /// 部門のタブ（すべて・部門ごと、人数つき）
@@ -233,6 +303,257 @@ struct StaffListView: View {
     }
 }
 
+// MARK: - スタッフの詳細（iPad・Mac の右側）
+// 見るときはそのまま読める。「編集」を押すと、同じ場所が入力の画面になる（別の画面に移らない）
+
+struct StaffDetailPanel: View {
+    let member: StaffMember
+    @Environment(\.shiftStore) private var store
+    @State private var tab = 0
+    @State private var editing = false
+
+    private static let tabs = ["基本", "勤務パターン", "給与", "希望休・申請", "今月のシフト"]
+
+    var body: some View {
+        if editing {
+            StaffEditView(member: member, isNew: false, inSheet: true, onClose: { editing = false })
+        } else {
+            let book = store.book
+            ScrollView {
+                VStack(alignment: .leading, spacing: DS.gap) {
+                    header(book)
+                    Picker("見るもの", selection: $tab) {
+                        ForEach(Self.tabs.indices, id: \.self) { Text(Self.tabs[$0]).tag($0) }
+                    }
+                    .segmented(Self.tabs.count)
+                    .labelsHidden()
+                    switch tab {
+                    case 0: basics(book)
+                    case 1: patterns(book)
+                    case 2: pay(book)
+                    case 3: requests
+                    default: month(book)
+                    }
+                }
+                .padding(DS.page)
+            }
+        }
+    }
+
+    // MARK: 上の見出し（顔・名前・部門・在職・編集）
+
+    private func header(_ book: ShiftBook) -> some View {
+        let dept = book.departments.first { $0.id == member.departmentID }
+        let sub = [dept?.name, "No.\(member.number)", member.employment.isEmpty ? nil : member.employment,
+                   Self.date(member.joinDate).map { "入社 \($0)" }].compactMap { $0 }.joined(separator: " ・ ")
+        return HStack(spacing: 14) {
+            InitialAvatar(name: member.name, colorIndex: dept?.colorIndex ?? 8, size: 56, photo: member.photo)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(member.name.isEmpty ? "（名前なし）" : member.name).appFont(.title2.weight(.bold)).lineLimit(1)
+                Text(sub).appFont(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+            }
+            Spacer(minLength: 8)
+            statusPill.fixedSize()
+            Button { editing = true } label: { Label("編集", systemImage: "pencil") }
+                .buttonStyle(.borderedProminent)
+        }
+        .padding(DS.cardPadding)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: DS.cardRadius, style: .continuous))
+    }
+
+    private var statusPill: StatusPill {
+        if let leave = DayKey(member.leaveDate) {
+            return leave >= store.today ? StatusPill(text: "退職予定", color: .orange) : StatusPill(text: "退職", color: .gray)
+        }
+        return member.active ? StatusPill(text: "在籍", color: .green) : StatusPill(text: "退職", color: .gray)
+    }
+
+    // MARK: 基本
+
+    private func basics(_ book: ShiftBook) -> some View {
+        let dept = book.departments.first { $0.id == member.departmentID }
+        let extras = member.extraStoreIDs.compactMap { book.store($0)?.name }
+        return card("基本") {
+            line("部門", dept?.name ?? "なし")
+            line("番号", "No.\(member.number)")
+            line("雇用形態", member.employment.isEmpty ? "未設定" : member.employment)
+            line("入社日", Self.date(member.joinDate) ?? "—")
+            line("退職日", Self.date(member.leaveDate) ?? "—")
+            line("掛け持ち", extras.isEmpty ? "なし" : extras.joined(separator: "・"))
+            line("いつもの勤務", StaffListView.usualHours(member, book: book), last: true)
+        }
+    }
+
+    // MARK: 勤務パターン
+
+    @ViewBuilder
+    private func patterns(_ book: ShiftBook) -> some View {
+        if member.patterns.isEmpty && member.periodPatterns.isEmpty {
+            card("勤務パターン") {
+                Text("まだありません。「編集」から週間パターンを作ると、毎週の勤務が自動で入ります。")
+                    .appFont(.subheadline).foregroundStyle(.secondary)
+            }
+        }
+        ForEach(member.patterns) { p in
+            card(p.label.isEmpty ? "週間パターン" : p.label, trailing: p.id == member.activePatternID ? "標準" : nil) {
+                if let from = Self.date(p.activeFrom ?? "") {
+                    Text("\(from) から").appFont(.caption).foregroundStyle(.secondary)
+                }
+                HStack(spacing: 6) {
+                    ForEach(0..<7, id: \.self) { w in
+                        let b = p.days.indices.contains(w) ? book.block(p.days[w], for: member) : nil
+                        VStack(spacing: 4) {
+                            Text(["日", "月", "火", "水", "木", "金", "土"][w]).appFont(.caption2)
+                                .foregroundStyle(w == 0 ? Color.red : w == 6 ? Color.blue : Color.secondary)
+                            Text(b?.short.isEmpty == false ? b!.short : (b.map { String($0.label.prefix(2)) } ?? "—"))
+                                .appFont(.subheadline.weight(.bold))
+                                .foregroundStyle(b.map { PaletteColor.fg($0.colorIndex) } ?? Color.secondary)
+                                .frame(maxWidth: .infinity, minHeight: 36)
+                                .background(b.map { PaletteColor.bg($0.colorIndex) } ?? Color(.tertiarySystemFill),
+                                            in: RoundedRectangle(cornerRadius: DS.chipRadius, style: .continuous))
+                        }
+                    }
+                }
+            }
+        }
+        if !member.periodPatterns.isEmpty {
+            card("期間を決めた予定") {
+                ForEach(Array(member.periodPatterns.enumerated()), id: \.element.id) { i, p in
+                    line(p.label.isEmpty ? "期間の予定" : p.label,
+                         "\(Self.date(p.startDate ?? "") ?? "—") 〜 \(Self.date(p.endDate ?? "") ?? "—")（\(p.days.count)日）",
+                         last: i == member.periodPatterns.count - 1)
+                }
+            }
+        }
+    }
+
+    // MARK: 給与（人件費を隠している端末では出さない）
+
+    @ViewBuilder
+    private func pay(_ book: ShiftBook) -> some View {
+        if !LaborCostLock.shared.canView {
+            card("給与") {
+                Text("この端末では人件費を隠しています。設定 → 人件費 で表示できます。")
+                    .appFont(.subheadline).foregroundStyle(.secondary)
+            }
+        } else {
+            let wages = member.wages.sorted { $0.from > $1.from }
+            let short = MinimumWage.shortfall(of: member, on: store.today, in: book)
+            card("給与", trailing: short != nil ? "最低賃金未満" : nil) {
+                if wages.isEmpty {
+                    Text("まだありません。「編集」の給与から入れます。").appFont(.subheadline).foregroundStyle(.secondary)
+                }
+                ForEach(Array(wages.enumerated()), id: \.element.id) { i, w in
+                    line("\(Self.date(w.from) ?? w.from) から", "\(w.kind.label) \(LaborCostView.yen(w.amount))", last: i == wages.count - 1)
+                }
+                if let short {
+                    Text("店舗の最低賃金より \(LaborCostView.yen(short)) 低くなっています。").appFont(.caption).foregroundStyle(.red)
+                }
+            }
+        }
+    }
+
+    // MARK: 希望休・申請
+
+    private var requests: some View {
+        let today = store.today.description
+        let upcoming = member.offRequests.filter { $0 >= today }
+        let reqs = member.leaveRequests.sorted { $0.day > $1.day }
+        return VStack(alignment: .leading, spacing: DS.gap) {
+            card("これからの希望休（\(upcoming.count)日）") {
+                if upcoming.isEmpty { Text("ありません").appFont(.subheadline).foregroundStyle(.secondary) }
+                ForEach(Array(upcoming.enumerated()), id: \.element) { i, d in
+                    line(DayKey(d).map { HomeView.dayLabel($0) } ?? d, "", last: i == upcoming.count - 1)
+                }
+            }
+            card("申請（\(reqs.count)件）") {
+                if reqs.isEmpty { Text("ありません").appFont(.subheadline).foregroundStyle(.secondary) }
+                ForEach(Array(reqs.enumerated()), id: \.element.id) { i, r in
+                    HStack(spacing: 12) {
+                        Text(DayKey(r.day).map { HomeView.dayLabel($0) } ?? r.day).appFont(.subheadline.weight(.semibold)).monospacedDigit()
+                            .frame(width: 110, alignment: .leading)
+                        Text(r.note.isEmpty ? "理由なし" : r.note).appFont(.subheadline)
+                            .foregroundStyle(r.note.isEmpty ? HierarchicalShapeStyle.tertiary : HierarchicalShapeStyle.secondary)
+                            .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                        StatusPill(text: r.status.label, color: r.status == .approved ? .green : r.status == .pending ? .orange : .gray)
+                    }
+                    .padding(.vertical, 8)
+                    if i < reqs.count - 1 { Divider() }
+                }
+            }
+        }
+    }
+
+    // MARK: 今月のシフト
+
+    private func month(_ book: ShiftBook) -> some View {
+        let m = MonthKey(store.today)
+        let days = m.days
+        let shifts = days.map { Schedule.resolve(member, on: $0, in: book) }
+        let work = shifts.filter { $0 != nil && $0?.isOff == false }.count
+        return card("\(m.month)月のシフト", trailing: "出勤 \(work)日") {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7), spacing: 4) {
+                ForEach(["日", "月", "火", "水", "木", "金", "土"], id: \.self) { Text($0).appFont(.caption2).foregroundStyle(.secondary) }
+                ForEach(0..<(days.first?.weekday ?? 0), id: \.self) { _ in Color.clear.frame(height: 44) }
+                ForEach(Array(days.enumerated()), id: \.offset) { i, d in
+                    let r = shifts[i]
+                    let b = r.flatMap { book.block($0.blockID, for: member) }
+                    VStack(spacing: 2) {
+                        Text("\(d.day)").appFont(.caption.weight(d == store.today ? .bold : .regular)).monospacedDigit()
+                        Text(r == nil ? " " : (r!.isOff ? "休" : (b?.short.isEmpty == false ? b!.short : "勤")))
+                            .appFont(.caption2.weight(.bold))
+                            .foregroundStyle(b.map { PaletteColor.fg($0.colorIndex) } ?? Color.secondary)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(b.map { PaletteColor.bg($0.colorIndex) } ?? Color(.tertiarySystemFill).opacity(0.5),
+                                in: RoundedRectangle(cornerRadius: DS.chipRadius, style: .continuous))
+                    .overlay {
+                        if d == store.today {
+                            RoundedRectangle(cornerRadius: DS.chipRadius, style: .continuous).strokeBorder(Color.accentColor, lineWidth: 1.5)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: 部品
+
+    private func card<C: View>(_ title: String, trailing: String? = nil, @ViewBuilder _ content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(title).appFont(.headline)
+                Spacer()
+                if let trailing {
+                    Text(trailing).appFont(.caption.weight(.bold)).foregroundStyle(.secondary)
+                }
+            }
+            content()
+        }
+        .padding(DS.cardPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: DS.cardRadius, style: .continuous))
+    }
+
+    private func line(_ label: String, _ value: String, last: Bool = false) -> some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(label).appFont(.subheadline).foregroundStyle(.secondary)
+                Spacer(minLength: 12)
+                Text(value).appFont(.subheadline).multilineTextAlignment(.trailing)
+            }
+            .padding(.vertical, 8)
+            if !last { Divider() }
+        }
+    }
+
+    /// "2021-04-01" → "2021/4/1"（空・読めないときは nil）
+    static func date(_ s: String) -> String? {
+        guard let d = DayKey(s) else { return nil }
+        return "\(d.year)/\(d.month)/\(d.day)"
+    }
+}
+
 // MARK: - スタッフ1人の設定（基本・個人の時間・週間パターン・期間限定パターン）
 
 struct StaffEditView: View {
@@ -240,6 +561,8 @@ struct StaffEditView: View {
     let isNew: Bool
     /// シートで開いたとき（表の名前から）。「閉じる」を出す
     var inSheet = false
+    /// iPad・Mac のスタッフ画面の右で直すとき：閉じたら詳細に戻す（nil はふつうに閉じる）
+    var onClose: (() -> Void)? = nil
 
     @Environment(\.shiftStore) private var store
     @Environment(\.dismiss) private var dismiss
@@ -423,7 +746,7 @@ struct StaffEditView: View {
                 }
                 if isNew || inSheet {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button(isNew ? "やめる" : "閉じる") { if dirty { askDiscard = true } else { dismiss() } }
+                        Button(isNew ? "やめる" : "閉じる") { if dirty { askDiscard = true } else { close() } }
                     }
                 } else if dirty {
                     // 一覧から開いたとき：変更があれば「戻る」で確かめる
@@ -434,7 +757,7 @@ struct StaffEditView: View {
                 }
             }
             .navigationBarBackButtonHidden(dirty && !isNew && !inSheet)
-            .discardGuard(dirty: dirty, asking: $askDiscard) { dismiss() }
+            .discardGuard(dirty: dirty, asking: $askDiscard) { close() }
             .confirmationDialog("表が変わります。保存しますか？",
                                 isPresented: Binding(get: { pendingPreview != nil }, set: { if !$0 { pendingPreview = nil } }),
                                 titleVisibility: .visible) {
@@ -490,7 +813,7 @@ struct StaffEditView: View {
                     }
                 }
                 Button("削除する", role: .destructive) {
-                    do { try store.deleteStaff(member); dismiss() } catch { self.error = error.localizedDescription }
+                    do { try store.deleteStaff(member); close() } catch { self.error = error.localizedDescription }
                 }
             } message: {
                 Text(impact?.message ?? "元には戻せません。")
@@ -558,6 +881,10 @@ struct StaffEditView: View {
         }
     }
 
+    private func close() {
+        if let onClose { onClose() } else { dismiss() }
+    }
+
     private func save(confirmed: Bool = false) {
         member.name = member.name.trimmingCharacters(in: .whitespaces)
         if let leave = DayKey(member.leaveDate), leave < DayKey.today { member.active = false }
@@ -573,7 +900,7 @@ struct StaffEditView: View {
         }
         do {
             try store.save(member)
-            dismiss()
+            close()
         } catch {
             self.error = error.localizedDescription
         }
