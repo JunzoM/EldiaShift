@@ -59,7 +59,10 @@ enum StaffPhoto {
         let origin = CGPoint(x: (side - drawn.width) / 2, y: (side - drawn.height) / 2)
         let fmt = UIGraphicsImageRendererFormat()
         fmt.scale = 1
-        let out = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: fmt).image { _ in
+        let out = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: fmt).image { ctx in
+            // 透明な背景（ミー文字など）は白にする（JPEG は透明を持てない）
+            UIColor.white.setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: side, height: side))
             img.draw(in: CGRect(origin: origin, size: drawn))
         }
         return out.jpegData(compressionQuality: 0.7)

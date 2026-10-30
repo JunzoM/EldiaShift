@@ -25,6 +25,9 @@ struct Store: Identifiable, Hashable, Codable, Sendable {
     /// 客室数・フロア数（ホテル向け。nil は未登録）
     var roomCount: Int? = nil
     var floorCount: Int? = nil
+    /// 都道府県（最低賃金の表を引く。空は未設定）と、表と違うときに手で入れる最低賃金（円）
+    var prefecture: String = ""
+    var minimumWageOverride: Int? = nil
 
     /// 「〇〇 SHIFT」の〇〇（空なら HOTEL）
     var displayPrefix: String {
@@ -68,6 +71,8 @@ struct Store: Identifiable, Hashable, Codable, Sendable {
         brandPrefix = try c.decodeIfPresent(String.self, forKey: .brandPrefix) ?? ""
         roomCount = try c.decodeIfPresent(Int.self, forKey: .roomCount)
         floorCount = try c.decodeIfPresent(Int.self, forKey: .floorCount)
+        prefecture = try c.decodeIfPresent(String.self, forKey: .prefecture) ?? ""
+        minimumWageOverride = try c.decodeIfPresent(Int.self, forKey: .minimumWageOverride)
     }
 
     /// 一覧に出す「客室 120・8階」（どちらも未登録なら空）

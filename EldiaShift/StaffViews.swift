@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import UniformTypeIdentifiers
 
 // MARK: - スタッフの一覧（PC版の 設定 → スタッフ）
 
@@ -140,6 +141,10 @@ struct StaffListView: View {
         let dept = book.departments.first { $0.id == m.departmentID }
         let p = m.patterns.first { $0.id == m.activePatternID } ?? m.patterns.first
         let wide = sizeClass != .compact
+        // 給与は人件費を隠しているときは出さない
+        let showPay = LaborCostLock.shared.canView
+        let wage = showPay ? m.wage(on: store.today) : nil
+        let short = showPay ? MinimumWage.shortfall(of: m, on: store.today, in: book) : nil
         return HStack(spacing: 12) {
             InitialAvatar(name: m.name, colorIndex: dept?.colorIndex ?? 8, size: 36, photo: m.photo)
             VStack(alignment: .leading, spacing: 2) {
@@ -156,6 +161,15 @@ struct StaffListView: View {
                 Text(p?.label ?? "—").font(.subheadline).foregroundStyle(.secondary).lineLimit(1).frame(width: 72, alignment: .leading)
                 Text(Self.usualHours(m, book: book)).font(.subheadline).monospacedDigit().lineLimit(1)
                     .minimumScaleFactor(0.8).frame(width: 112, alignment: .leading)
+                if showPay {
+                    Text(wage.map { "\($0.kind == .hourly ? "時給" : "月給") \(LaborCostView.yen($0.amount))" } ?? "—")
+                        .font(.subheadline).monospacedDigit().foregroundStyle(short == nil ? Color.secondary : Color.red)
+                        .lineLimit(1).minimumScaleFactor(0.7).frame(width: 104, alignment: .trailing)
+                }
+            }
+            if short != nil {
+                StatusPill(text: "最低賃金未満", color: .red).fixedSize()
+                    .accessibilityLabel("時給が最低賃金より低い")
             }
             status(m).fixedSize()
         }
@@ -238,6 +252,9 @@ struct StaffEditView: View {
     @State private var initial: StaffMember?
     @State private var askDiscard = false
     @State private var pickedPhoto: PhotosPickerItem?
+    /// 似顔絵を作る画面・ファイルから写真を選ぶ画面
+    @State private var makingAvatar = false
+    @State private var importingPhoto = false
     /// 保存すると表が変わる日（確認してから保存する）
     @State private var pendingPreview: PatternChecks.Preview?
 
@@ -256,8 +273,19 @@ struct StaffEditView: View {
                         PhotosPicker(selection: $pickedPhoto, matching: .images) {
                             Label(pickTitle, systemImage: "person.crop.circle.badge.plus")
                         }
+                        Menu {
+                            Button { makingAvatar = true } label: {
+                                Label(StaffAvatarDrawing.restored(from: member.photo) == nil ? "似顔絵を作る" : "似顔絵を直す", systemImage: "face.smiling")
+                            }
+                            Button { pastePhoto() } label: { Label("画像を貼り付け（ミー文字など）", systemImage: "doc.on.clipboard") }
+                            Button { importingPhoto = true } label: { Label("ファイルから選ぶ", systemImage: "folder") }
+                        } label: {
+                            Label("似顔絵・ほかの画像", systemImage: "face.smiling")
+                        }
+                        .buttonStyle(.borderless)
                         if member.photo != nil {
                             Button("写真を外す", role: .destructive) { member.photo = nil }
+                                .buttonStyle(.borderless)
                         }
                     }
                     // 1行に2つのボタンがあるので、行全体ではなくボタンだけが反応するように
@@ -421,6 +449,20 @@ struct StaffEditView: View {
                     pickedPhoto = nil
                 }
             }
+            .sheet(isPresented: $makingAvatar) {
+                // 似顔絵は選んだ内容を中に残した PNG のまま入れる（あとで直せるように。240px で十数KB）
+                StaffAvatarCreator(initial: StaffAvatarConfiguration(), sourcePhoto: member.photo) { _, data in member.photo = data }
+            }
+            .fileImporter(isPresented: $importingPhoto, allowedContentTypes: [.image]) { result in
+                guard case .success(let url) = result else { return }
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                if let data = try? Data(contentsOf: url), let small = StaffPhoto.shrink(data) {
+                    member.photo = small
+                } else {
+                    error = "画像を読み込めませんでした"
+                }
+            }
             .sheet(item: $editingBlock) { b in TemplateEditView(template: b, personal: $member.timeBlocks) }
             .sheet(item: $editingPattern) { p in
                 PatternEditView(pattern: p, member: member, patterns: $member.patterns, activeID: $member.activePatternID)
@@ -493,6 +535,17 @@ struct StaffEditView: View {
     }
 
     /// confirmed：表が変わる日の確認を済ませた（または不要）
+    /// コピーした画像（メッセージのミー文字のステッカーなど）を写真にする
+    private func pastePhoto() {
+        let board = UIPasteboard.general
+        let data = board.data(forPasteboardType: UTType.png.identifier) ?? board.image?.pngData()
+        if let data, let small = StaffPhoto.shrink(data) {
+            member.photo = small
+        } else {
+            error = "貼り付けられる画像がありません。メッセージなどで画像やミー文字をコピーしてから押してください。"
+        }
+    }
+
     private func save(confirmed: Bool = false) {
         member.name = member.name.trimmingCharacters(in: .whitespaces)
         if let leave = DayKey(member.leaveDate), leave < DayKey.today { member.active = false }

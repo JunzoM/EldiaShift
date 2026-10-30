@@ -475,6 +475,20 @@ struct StoreEditView: View {
                     Text("入れると、店舗の一覧と店舗の情報に出ます。")
                 }
                 Section {
+                    Picker("都道府県", selection: $storeInfo.prefecture) {
+                        Text("未設定").tag("")
+                        ForEach(MinimumWage.prefectures, id: \.self) { Text($0).tag($0) }
+                    }
+                    if let v = MinimumWage.table[storeInfo.prefecture] {
+                        LabeledContent("表の最低賃金", value: LaborCostView.yen(v))
+                    }
+                    numberField("手で入れる（表と違うとき）", value: $storeInfo.minimumWageOverride, unit: "円")
+                } header: {
+                    Text("最低賃金")
+                } footer: {
+                    Text("この店舗のスタッフの時給が最低賃金より低いと、給与とスタッフの一覧に注意が出ます。最低賃金は毎年10月ごろに変わります。アプリの表と違うときは、金額を手で入れてください（手で入れた金額を使います）。")
+                }
+                Section {
                     TextField("略称（例：本館）", text: $storeInfo.short)
                 } footer: {
                     Text("掛け持ちの人がこの店舗で勤務する日に、ほかの店舗の表のマスへ小さく出します。空なら店舗名から自動で作ります（いまは「\(book.shortName(of: storeInfo))」）。")

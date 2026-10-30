@@ -449,6 +449,7 @@ struct PayRulesView: View {
 
 struct WageSection: View {
     @Binding var member: StaffMember
+    @Environment(ShiftStore.self) private var store
     @State private var editing: WageEntry?
 
     var body: some View {
@@ -456,11 +457,13 @@ struct WageSection: View {
             if LaborCostLock.shared.canView {
                 let today = DayKey.today
                 let current = member.wage(on: today)
+                let minimum = MinimumWage.value(for: member, in: store.book)
                 ForEach(member.wages.sorted { $0.from > $1.from }) { w in
                     Button { editing = w } label: {
                         HStack {
                             Text("\(Self.date(w.from))〜").monospacedDigit().foregroundStyle(.primary)
                             if w.id == current?.id { StatusPill(text: "いま", color: .green) }
+                            if MinimumWage.shortfall(w, minimum: minimum) != nil { StatusPill(text: "最低賃金未満", color: .red) }
                             Spacer()
                             Text("\(w.kind.label) \(LaborCostView.yen(w.amount))").monospacedDigit().foregroundStyle(.secondary)
                         }
@@ -471,6 +474,9 @@ struct WageSection: View {
                     let start = member.joinDate.isEmpty || last != nil ? today.description : member.joinDate
                     editing = WageEntry(id: UUID().uuidString, from: start, kind: last?.kind ?? .hourly, amount: last?.amount ?? 0)
                 } label: { Label(member.wages.isEmpty ? "給与を入れる" : "給与の変更を追加", systemImage: "plus") }
+                if let minimum {
+                    LabeledContent("店舗の最低賃金", value: LaborCostView.yen(minimum)).font(.subheadline)
+                }
             } else {
                 LaborCostLockedView(compact: true)
             }
@@ -481,7 +487,9 @@ struct WageSection: View {
                 Text("「この日から時給〇円（月給〇円）」を入れます。昇給したら、変える日から新しい金額を追加してください。その日より前のシフトは前の金額で計算します。人件費の集計にだけ使います。")
             }
         }
-        .sheet(item: $editing) { w in WageEditView(entry: w, wages: $member.wages) }
+        .sheet(item: $editing) { w in
+            WageEditView(entry: w, wages: $member.wages, minimumWage: MinimumWage.value(for: member, in: store.book))
+        }
     }
 
     static func date(_ s: String) -> String {
@@ -493,7 +501,11 @@ struct WageSection: View {
 struct WageEditView: View {
     @State var entry: WageEntry
     @Binding var wages: [WageEntry]
+    /// その人の店舗の最低賃金（決まっていなければ nil）
+    var minimumWage: Int? = nil
     @Environment(\.dismiss) private var dismiss
+    /// 決定するとき、時給を10円単位に切り上げる（端末ごとに覚える）
+    @AppStorage("wageRoundUp10") private var roundUp10 = false
     @State private var initial: WageEntry?
     @State private var askDiscard = false
     @State private var confirmDelete = false
@@ -502,6 +514,12 @@ struct WageEditView: View {
     /// 同じ日から始まるほかの決まり（どちらを使うか決まらないので保存させない）
     private var sameDay: Bool { wages.contains { $0.id != entry.id && $0.from == entry.from } }
     private var dirty: Bool { initial.map { $0 != entry } ?? false }
+    /// 決定したときに入る内容（10円単位の切り上げを入れたもの）
+    private var saved: WageEntry {
+        var e = entry
+        if roundUp10, e.kind == .hourly { e.amount = MinimumWage.roundUp10(e.amount) }
+        return e
+    }
 
     var body: some View {
         NavigationStack {
@@ -525,6 +543,18 @@ struct WageEditView: View {
                     if sameDay {
                         Text("同じ日から始まる給与がもう入っています。日付を変えてください。").font(.footnote).foregroundStyle(.red)
                     }
+                    if entry.kind == .hourly {
+                        if let minimumWage {
+                            LabeledContent("店舗の最低賃金", value: LaborCostView.yen(minimumWage))
+                        }
+                        Toggle("10円単位に切り上げる", isOn: $roundUp10)
+                        if roundUp10, MinimumWage.roundUp10(entry.amount) != entry.amount {
+                            Text("決定すると \(LaborCostView.yen(MinimumWage.roundUp10(entry.amount))) にします。").font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                    if let short = MinimumWage.shortfall(saved, minimum: minimumWage) {
+                        Text("最低賃金より \(LaborCostView.yen(short)) 低い時給です。都道府県の最低賃金を確かめてください。").font(.footnote).foregroundStyle(.red)
+                    }
                     if entry.amount <= 0 {
                         Text("金額を入れてください。").font(.footnote).foregroundStyle(.red)
                     } else if entry.kind == .hourly && entry.amount > 20_000 || entry.kind == .monthly && entry.amount < 10_000 {
@@ -547,7 +577,8 @@ struct WageEditView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("決定") {
-                        if let i = wages.firstIndex(where: { $0.id == entry.id }) { wages[i] = entry } else { wages.append(entry) }
+                        let e = saved
+                        if let i = wages.firstIndex(where: { $0.id == e.id }) { wages[i] = e } else { wages.append(e) }
                         dismiss()
                     }
                     .disabled(entry.amount <= 0 || sameDay)
