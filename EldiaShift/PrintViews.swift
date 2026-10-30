@@ -487,6 +487,8 @@ struct PrintSheet: View {
     @Environment(\.shiftStore) private var store
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var sizeClass
+    /// Mac の文字の倍率（列の幅も合わせて広げる）
+    @Environment(\.appZoom) private var zoom
     /// 画面で選び直した月（nil は開いたときの月）
     @State private var target: DayKey?
     private var day: DayKey { target ?? anchor }
@@ -687,17 +689,17 @@ struct PrintSheet: View {
                 underlineTab("一人ずつの画像", 1)
                 Spacer()
             }
-            .padding(.horizontal, 20).padding(.top, 8)
+            .padding(.horizontal, DS.page).padding(.top, 8)
             .overlay(alignment: .bottom) { Divider() }
 
             if wideTab == 0 {
-                HStack(alignment: .top, spacing: 16) {
+                HStack(alignment: .top, spacing: DS.gap) {
                     panel("出力形式") {
                         VStack(spacing: 10) {
                             ForEach(OutputKind.allCases) { outputCard($0) }
                         }
                     }
-                    .frame(width: 240)
+                    .frame(width: 260 * zoom)
                     panel("出力設定") {
                         ScrollView { settingsColumn(book: book, depts: depts) }
                     }
@@ -707,13 +709,13 @@ struct PrintSheet: View {
                     }
                     .frame(maxWidth: .infinity)
                 }
-                .padding(16)
+                .padding(DS.page)
             } else {
-                HStack(alignment: .top, spacing: 16) {
+                HStack(alignment: .top, spacing: DS.gap) {
                     panel("対象") {
-                        ScrollView { VStack(alignment: .leading, spacing: 18) { monthRow; departmentChecks(depts) } }
+                        ScrollView { VStack(alignment: .leading, spacing: DS.section) { monthRow; departmentChecks(depts) } }
                     }
-                    .frame(width: 300)
+                    .frame(width: 300 * zoom)
                     panel("一人ずつのシフト画像") {
                         VStack(alignment: .leading, spacing: 14) {
                             Text("選んだ部門の全員分、\(MonthKey(day).month)月の自分のシフトだけの縦長の画像を作ります。LINE で本人に送れます。")
@@ -734,7 +736,7 @@ struct PrintSheet: View {
                     }
                     .frame(maxWidth: .infinity)
                 }
-                .padding(16)
+                .padding(DS.page)
             }
         }
         .background(Color(.systemGroupedBackground))
@@ -760,7 +762,7 @@ struct PrintSheet: View {
             Text(title).appFont(.headline)
             content()
         }
-        .padding(16)
+        .padding(DS.cardPadding)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: DS.cardRadius, style: .continuous))
     }
@@ -797,7 +799,7 @@ struct PrintSheet: View {
     }
 
     private var monthRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("対象期間").appFont(.subheadline.weight(.semibold))
             HStack {
                 Button { target = DayKey(MonthKey(day).adding(months: -1).year, MonthKey(day).adding(months: -1).month, 1) } label: {
@@ -812,15 +814,17 @@ struct PrintSheet: View {
                 }
                 .accessibilityLabel("次の月")
             }
-            .padding(.horizontal, 12).padding(.vertical, 9)
-            .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: DS.controlRadius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: DS.controlRadius, style: .continuous).strokeBorder(Color(.separator), lineWidth: 0.5))
+            .fieldBox()
         }
     }
 
     private func departmentChecks(_ depts: [Department]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("対象部門").appFont(.subheadline.weight(.semibold))
+            if depts.isEmpty {
+                Text("この店舗には部門がありません。設定 →「部門」で作ると、ここで選べます。")
+                    .appFont(.caption).foregroundStyle(.secondary)
+            }
             ForEach(depts) { d in
                 let on = selected.contains(d.id)
                 Button {
@@ -831,6 +835,7 @@ struct PrintSheet: View {
                             .foregroundStyle(on ? Color.accentColor : Color.secondary)
                         Text(d.name).foregroundStyle(.primary)
                     }
+                    .appFont(.subheadline)
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(on ? .isSelected : [])
@@ -839,16 +844,28 @@ struct PrintSheet: View {
     }
 
     private func settingsColumn(book: ShiftBook, depts: [Department]) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: DS.section) {
             monthRow
             if output != .csv {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 8) {
                     Text("レイアウト").appFont(.subheadline.weight(.semibold))
-                    Picker("レイアウト", selection: $format) {
-                        ForEach(PrintFormat.allCases) { Text($0.title).tag($0) }
+                    // 対象期間と同じ枠で、選んでいるレイアウトを出す
+                    Menu {
+                        Picker("レイアウト", selection: $format) {
+                            ForEach(PrintFormat.allCases) { Text($0.title).tag($0) }
+                        }
+                    } label: {
+                        HStack {
+                            Text(format.title).appFont(.body.weight(.semibold)).foregroundStyle(.primary)
+                                .lineLimit(1).minimumScaleFactor(0.8)
+                            Spacer(minLength: 8)
+                            Image(systemName: "chevron.up.chevron.down").appFont(.caption).foregroundStyle(.secondary)
+                        }
+                        .fieldBox()
+                        .contentShape(Rectangle())
                     }
-                    .pickerStyle(.menu)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("レイアウト：\(format.title)")
                     if format.usesHalf {
                         Picker("印刷範囲", selection: $half) {
                             ForEach(HalfSelection.allCases) { Text($0.title).tag($0) }
@@ -864,10 +881,12 @@ struct PrintSheet: View {
                 }
             }
             departmentChecks(depts)
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text("表示オプション").appFont(.subheadline.weight(.semibold))
                 TextField("表の上に出す名前（例：店名）", text: $title)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
+                    .appFont(.body)
+                    .fieldBox()
                 if output != .csv { displayToggles.appFont(.subheadline) }
                 if output == .pdf {
                     Toggle("変更点の文章も一緒に送る", isOn: $withChanges).appFont(.subheadline)
@@ -1180,5 +1199,15 @@ struct PrintPreviewSheet: View {
             Text("\(number) / \(pages.count)　\(spec.paper.title)\(spec.landscape ? "横" : "縦")")
                 .font(.caption).foregroundStyle(.secondary).monospacedDigit()
         }
+    }
+}
+
+/// 対象期間・レイアウト・名前の入力を同じ枠にそろえる
+private extension View {
+    func fieldBox() -> some View {
+        padding(.horizontal, 12).padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: DS.controlRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DS.controlRadius, style: .continuous).strokeBorder(Color(.separator), lineWidth: 0.5))
     }
 }
