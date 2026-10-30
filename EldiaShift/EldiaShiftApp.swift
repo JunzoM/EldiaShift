@@ -20,6 +20,7 @@ struct EldiaShiftApp: App {
             UserDefaults.standard.set(m.rawValue, forKey: "viewMode")
             s.editing = args.contains("-demoEdit")
         }
+        ShiftStore.current = s
         _db = State(initialValue: d)
         _store = State(initialValue: s)
     }
@@ -27,8 +28,8 @@ struct EldiaShiftApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
-                .environment(db)
-                .environment(store)
+                .environment(\.shiftDatabase, db)
+                .environment(\.shiftStore, store)
                 .modifier(BrandTint(hex: store.book.brandColor))
         }
         #if targetEnvironment(macCatalyst)
@@ -62,8 +63,8 @@ struct MacCommands: Commands {
 
 /// いちばん外側。サイドバー（iPad）・タブ（iPhone）。iOS 17 の iPad でも出す
 struct RootView: View {
-    @Environment(ShiftDatabase.self) private var db
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftDatabase) private var db
+    @Environment(\.shiftStore) private var store
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var anchor = DayKey.today
@@ -116,8 +117,8 @@ struct RootView: View {
 
 /// シフト表の画面（月・週・日）。見本の表示や、はじめて開いたときの画面もここで出す
 struct ShiftBoardView: View {
-    @Environment(ShiftDatabase.self) private var db
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftDatabase) private var db
+    @Environment(\.shiftStore) private var store
     /// 表示している日（ホームから「その日を開く」ときに外から変える）
     @Binding var anchor: DayKey
     /// サイドバー・タブの中で使うとき（設定は別のタブにあるので、歯車を出さない）
@@ -264,7 +265,7 @@ enum GridMode: String {
 
 /// 変えた直後に下に出る「元に戻す」（数秒で消える）
 struct UndoBar: View {
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @State private var error: String?
 
     var body: some View {

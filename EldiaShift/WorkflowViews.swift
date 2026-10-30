@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - 元に戻す・やり直す（表の上と、タイムラインの上に置く）
 
 struct UndoRedoButtons: View {
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @State private var error: String?
 
     var body: some View {
@@ -37,7 +37,7 @@ struct ShortageTarget: Identifiable {
 
 struct CandidatesSheet: View {
     let target: ShortageTarget
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var includeOthers = false
     @State private var error: String?
@@ -145,7 +145,7 @@ struct CandidatesSheet: View {
 /// 希望休を入れる：スタッフを選び、LINE などの文章を貼ると日付を読み取る
 struct OffRequestSheet: View {
     let month: MonthKey
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var staffID = ""
     @State private var text = ""
@@ -268,7 +268,7 @@ struct OffRequestSheet: View {
 
 struct LaborIssuesView: View {
     let month: MonthKey
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
 
     private struct LeaveRow: Identifiable {
         let member: StaffMember
@@ -353,7 +353,7 @@ struct LaborIssuesView: View {
 }
 
 struct LaborRulesView: View {
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @State private var rules = LaborRules()
     @State private var loaded = false
     @State private var error: String?

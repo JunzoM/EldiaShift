@@ -130,7 +130,7 @@ extension BrandColor {
 
 struct AppSidebar: View {
     @Binding var tab: AppTab
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     /// アイコンだけの細いサイドバーにする（端末ごとに覚える）
     @AppStorage("sidebarCompact") private var compact = false
 
@@ -243,7 +243,7 @@ struct AppSidebar: View {
 // MARK: - 希望休の一覧
 
 struct OffRequestListView: View {
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @State private var month = MonthKey.current
     @State private var filter = 0
     @State private var adding = false
@@ -372,7 +372,7 @@ struct OffRequestListView: View {
 // MARK: - バックアップ・復元
 
 struct BackupView: View {
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @State private var tab = 0
     @State private var importing = false
     @State private var restoreFile: URL?

@@ -96,7 +96,7 @@ struct StoreStrip: View {
     var compact = false
     var manage: () -> Void
 
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
 
     var body: some View {
         let stores = store.book.allStores
@@ -161,7 +161,7 @@ struct StoreStrip: View {
 /// 設定 → 会社の情報（名前・ひとこと・ロゴ・ホームの写真）
 struct CompanyInfoView: View {
     var inSheet = false
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var info = CompanyInfo()
     @State private var initial: CompanyInfo?

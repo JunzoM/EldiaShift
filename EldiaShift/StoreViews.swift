@@ -36,7 +36,7 @@ struct StoreSwitcher: View {
     /// サイドバーをたたんだとき：店舗の略称だけ
     var iconOnly = false
 
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @State private var managing = false
 
     var body: some View {
@@ -124,7 +124,7 @@ struct StorePhoto: View {
 struct StoreListView: View {
     var inSheet = false
 
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var editing: Store?
@@ -324,7 +324,7 @@ struct StoreDetailPanel: View {
     let storeInfo: Store
     let onEdit: () -> Void
 
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
 
     var body: some View {
         let book = store.book
@@ -417,7 +417,7 @@ struct FlowChips: View {
 struct StoreEditView: View {
     @State var storeInfo: Store
 
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var error: String?
     @State private var confirmDelete = false
@@ -617,6 +617,37 @@ struct BrandTint: ViewModifier {
     }
 }
 
+// MARK: - 画面がアプリのデータを受け取る口
+// Mac（Catalyst）では、シートを作るときに中身を先に読むことがあり、そのときはデータがまだ届いていない。
+// .environment(ShiftStore) だと届いていないときに落ちるので、届いていなければアプリの入れ物を使う。
+
+private struct ShiftStoreKey: EnvironmentKey {
+    static var defaultValue: ShiftStore {
+        guard let store = ShiftStore.current else { fatalError("ShiftStore がまだ作られていません") }
+        return store
+    }
+}
+
+private struct ShiftDatabaseKey: EnvironmentKey {
+    static var defaultValue: ShiftDatabase {
+        guard let store = ShiftStore.current else { fatalError("ShiftStore がまだ作られていません") }
+        // 画面は main で作られる
+        return MainActor.assumeIsolated { store.db }
+    }
+}
+
+extension EnvironmentValues {
+    var shiftStore: ShiftStore {
+        get { self[ShiftStoreKey.self] }
+        set { self[ShiftStoreKey.self] = newValue }
+    }
+
+    var shiftDatabase: ShiftDatabase {
+        get { self[ShiftDatabaseKey.self] }
+        set { self[ShiftDatabaseKey.self] = newValue }
+    }
+}
+
 // MARK: - シート（Mac で画面のデータが渡らないことがあるため、毎回わたす）
 // Mac（Catalyst）では、シートの中身にアプリのデータ（ShiftStore・ShiftDatabase）が届かず落ちることがある。
 // シートは .sheet ではなく .shiftSheet で出し、出す側の画面のデータと色をそのまま中身にわたす。
@@ -632,7 +663,7 @@ extension View {
 }
 
 private struct ShiftSheetFlag<Sheet: View>: ViewModifier {
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Binding var isPresented: Bool
     let sheet: () -> Sheet
 
@@ -642,7 +673,7 @@ private struct ShiftSheetFlag<Sheet: View>: ViewModifier {
 }
 
 private struct ShiftSheetItem<Item: Identifiable, Sheet: View>: ViewModifier {
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Binding var item: Item?
     let sheet: (Item) -> Sheet
 
@@ -654,14 +685,14 @@ private struct ShiftSheetItem<Item: Identifiable, Sheet: View>: ViewModifier {
 extension View {
     /// アプリのデータと色をわたす（RootView と同じもの）
     func shiftEnvironment(_ store: ShiftStore) -> some View {
-        environment(store)
-            .environment(store.db)
+        environment(\.shiftStore, store)
+            .environment(\.shiftDatabase, store.db)
             .modifier(BrandTint(hex: store.book.brandColor))
     }
 }
 
 struct BrandColorView: View {
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @State private var custom: Color = .blue
     @State private var error: String?
 

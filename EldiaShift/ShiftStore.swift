@@ -47,6 +47,9 @@ final class ShiftStore {
         var after: CellEntry? { changes.first?.after }
     }
 
+    /// アプリで使っている入れ物（画面がデータを受け取れなかったときの予備。EldiaShiftApp で決める）
+    nonisolated(unsafe) static weak var current: ShiftStore?
+
     @ObservationIgnored let db: ShiftDatabase
     @ObservationIgnored private var loadedToken = -1
 

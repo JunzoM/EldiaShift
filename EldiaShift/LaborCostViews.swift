@@ -78,8 +78,8 @@ struct LaborCostLockedView: View {
 
 struct LaborCostView: View {
     let month: MonthKey
-    @Environment(ShiftStore.self) private var store
-    @Environment(ShiftDatabase.self) private var db
+    @Environment(\.shiftStore) private var store
+    @Environment(\.shiftDatabase) private var db
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var csvFile: ExportFile?
     @State private var failure: String?
@@ -318,7 +318,7 @@ struct LaborCostView: View {
 
 struct BudgetEditView: View {
     let month: MonthKey
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
     @State private var monthOnly = false
@@ -387,7 +387,7 @@ struct BudgetEditView: View {
 // MARK: - 設定 → 人件費
 
 struct PayRulesView: View {
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @State private var rules = PayRules()
     @State private var loaded = false
     @State private var error: String?
@@ -456,7 +456,7 @@ struct PayRulesView: View {
 
 struct WageSection: View {
     @Binding var member: StaffMember
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @State private var editing: WageEntry?
 
     var body: some View {

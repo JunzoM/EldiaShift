@@ -5,7 +5,7 @@ struct CellEditorSheet: View {
     let member: StaffMember
     let day: DayKey
 
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var inM = 9 * 60
     @State private var outM = 18 * 60

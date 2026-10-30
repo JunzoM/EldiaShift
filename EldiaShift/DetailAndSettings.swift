@@ -6,7 +6,7 @@ struct CellDetailSheet: View {
     let member: StaffMember
     let day: DayKey
 
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -71,7 +71,7 @@ extension View {
 private struct BackupImporter: ViewModifier {
     @Binding var isPresented: Bool
     @Binding var file: URL?
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @State private var pending: (ShiftBook, BackupFile.Summary)?
     @State private var message: String?
 
@@ -142,8 +142,8 @@ struct SettingsView: View {
     /// サイドバー・タブの中で開いたとき（「閉じる」を出さない）
     var inTab = false
 
-    @Environment(ShiftDatabase.self) private var db
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftDatabase) private var db
+    @Environment(\.shiftStore) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var importing = false
     @State private var exportFile: ExportFile?

@@ -18,7 +18,7 @@ enum StaffingStyle {
 // MARK: - 設定：部門ごとの時間帯と必要人数
 
 struct StaffingSettingsView: View {
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @State private var editing: StaffingBand?
     @State private var isNew = false
     @State private var error: String?
@@ -198,7 +198,7 @@ struct StaffingBandEditView: View {
 
 struct StaffingAnalysisView: View {
     let month: MonthKey
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var departmentID: String = ""
     @State private var error: String?

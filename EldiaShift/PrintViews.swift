@@ -484,7 +484,7 @@ struct PrintSheet: View {
     /// サイドバーの項目として開いたとき（「閉じる」を出さない）
     var inTab = false
 
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var sizeClass
     /// 画面で選び直した月（nil は開いたときの月）

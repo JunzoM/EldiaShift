@@ -26,7 +26,7 @@ struct LeaveRequestSections: View {
     let month: MonthKey
     /// 部門で絞り込むとき（nil はすべての部門）
     var departmentID: String? = nil
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @AppStorage("requestAlsoOff") private var alsoOff = true
     /// 返事・エラーの画面は一覧（親）に出す
     @Binding var reply: LeaveReply?
@@ -270,7 +270,7 @@ struct LeaveRequestImportSheet: View {
     @State var month: MonthKey
     /// 取り込み用リンクから開いたときの文章
     var initialText: String = ""
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
     @State private var staffID = ""
@@ -401,7 +401,7 @@ struct LeaveRequestImportSheet: View {
 
 /// 希望休の画面のいちばん上に出す「申請の受け取り方」（たためる。iCloud 同期がオフなら注意）
 struct LeaveRequestGuide: View {
-    @Environment(ShiftDatabase.self) private var db
+    @Environment(\.shiftDatabase) private var db
     @AppStorage("leaveGuideOpen") private var open = true
     var showQR: () -> Void
     var receive: () -> Void
@@ -469,7 +469,7 @@ struct LeaveRequestGuide: View {
 /// 電話・口頭で聞いた申請を、管理者が代わりに登録する（承認待ちになる）
 struct LeaveRequestProxySheet: View {
     @State var month: MonthKey
-    @Environment(ShiftStore.self) private var store
+    @Environment(\.shiftStore) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var staffID = ""
     @State private var picked: Set<DayKey> = []
