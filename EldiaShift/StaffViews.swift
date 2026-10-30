@@ -68,6 +68,7 @@ struct StaffListView: View {
         .safeAreaInset(edge: .top, spacing: 0) { filterBar(book) }
         .searchable(text: $search, prompt: "名前で検索")
         .navigationTitle("スタッフ")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 // 退職者の表示・部門の一括移動はここにまとめる
@@ -647,7 +648,7 @@ struct StaffEditView: View {
                     Text("在職").tag(true)
                     Text("退職").tag(false)
                 }
-                .pickerStyle(.segmented)
+                .segmented(2)
                 Picker("雇用形態", selection: $member.employment) {
                     Text("未設定").tag("")
                     ForEach(StaffMember.employmentChoices, id: \.self) { Text($0).tag($0) }

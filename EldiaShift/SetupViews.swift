@@ -108,6 +108,7 @@ struct DepartmentListView: View {
             }
         }
         .navigationTitle("部門")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 EditButton()
@@ -179,6 +180,7 @@ struct TemplateListView: View {
             section("休み", all.filter(\.isOff), all: all)
         }
         .navigationTitle("時間のひな形")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 EditButton()
