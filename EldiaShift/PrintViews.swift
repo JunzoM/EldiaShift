@@ -4,23 +4,25 @@ import UIKit
 // MARK: - 印刷・PDF（PC版の「印刷 / PDF」と同じ4つの形式。白黒で印刷しても見分けられる）
 
 enum PrintFormat: String, CaseIterable, Identifiable {
-    case weekByDepartment       // ① 週表示A4縦（部門ごとに1枚）
-    case monthByDepartment      // ② 月表示A4縦（部門ごと × 前半／後半）
-    case monthCombined          // ③ 月表示A4縦（選んだ部門を1枚にまとめる × 前半／後半）
-    case monthLandscape         // ④ 月表示A4横（前半を上・後半を下に1枚）
+    case weekByDepartment       // ① 週表示・縦（部門ごとに1枚）
+    case monthByDepartment      // ② 月表示・縦（部門ごと × 前半／後半）
+    case monthCombined          // ③ 月表示・縦（選んだ部門を1枚にまとめる × 前半／後半）
+    case monthLandscape         // ④ 月表示・横（前半を上・後半を下に1枚）
+    case monthSingle            // ⑤ 月表示・横（1か月を1つの表）
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .weekByDepartment: "① 週表示 A4縦（部門ごと）"
-        case .monthByDepartment: "② 月表示 A4縦（部門ごと）"
-        case .monthCombined: "③ 月表示 A4縦（部門をまとめて）"
-        case .monthLandscape: "④ 月表示 A4横（前半・後半を1枚に）"
+        case .weekByDepartment: "① 週表示・縦（部門ごと）"
+        case .monthByDepartment: "② 月表示・縦（部門ごと）"
+        case .monthCombined: "③ 月表示・縦（部門をまとめて）"
+        case .monthLandscape: "④ 月表示・横（前半・後半を1枚に）"
+        case .monthSingle: "⑤ 月表示・横（1か月を1つの表）"
         }
     }
 
-    var landscape: Bool { self == .monthLandscape }
+    var landscape: Bool { self == .monthLandscape || self == .monthSingle }
     var usesHalf: Bool { self == .monthByDepartment || self == .monthCombined }
 }
 
@@ -28,6 +30,26 @@ enum HalfSelection: String, CaseIterable, Identifiable {
     case first, second, both
     var id: String { rawValue }
     var title: String { self == .first ? "前半のみ" : self == .second ? "後半のみ" : "両方" }
+}
+
+/// 用紙。A3 は A4 と同じ割り付けを √2 倍に大きくする（文字が大きくなる。壁に貼るとき用）
+enum PaperSize: String, CaseIterable, Identifiable, Sendable {
+    case a4, a3
+    var id: String { rawValue }
+    var title: String { self == .a4 ? "A4" : "A3" }
+    /// A4 に対する倍率
+    var scale: CGFloat { self == .a4 ? 1 : 841.89 / 595.28 }
+}
+
+/// 表に出すもの
+struct PrintOptions: Equatable, Sendable {
+    var paper: PaperSize = .a4
+    /// 名前を出す（オフは番号だけ。掲示するとき用）
+    var showNames = true
+    /// 出勤・退勤の時刻を出す（オフは勤務の記号だけ）
+    var showTimes = true
+    /// マスのメモを表の下に一覧で出す
+    var showNotes = false
 }
 
 /// 1枚分の内容
@@ -38,11 +60,66 @@ struct PrintPageSpec: Identifiable {
     var tables: [(caption: String?, days: [DayKey])]
     var departmentIDs: [String]
     var landscape: Bool
+    var paper: PaperSize = .a4
+    /// 人数が多くて分けたとき、この枚に載せる人（「部門ID|スタッフID」。nil は全員）
+    var memberKeys: Set<String>? = nil
+
+    /// 用紙の大きさ（pt）
+    var size: CGSize {
+        let base = PrintLayout.base(landscape)
+        return CGSize(width: base.width * paper.scale, height: base.height * paper.scale)
+    }
+}
+
+/// 1枚の割り付け（A4 の pt で考える。A3 はこれを拡大する）
+enum PrintLayout {
+    static let a4 = CGSize(width: 595.28, height: 841.89)
+    static func base(_ landscape: Bool) -> CGSize { landscape ? CGSize(width: a4.height, height: a4.width) : a4 }
+    static func margin(_ landscape: Bool) -> CGFloat { landscape ? 17 : 20 }
+    /// 表の見出し（日付）の高さ
+    static let headerHeight: CGFloat = 26
+    /// これより行が低くなるなら、次のページに分ける
+    static let minRowHeight: CGFloat = 12
+    static let maxRowHeight: CGFloat = 26
+    /// メモの一覧に出す行の数（それより多いと「ほか◯件」）
+    static let maxNotes = 10
+    static let notesHeight: CGFloat = 16 + CGFloat(maxNotes + 1) * 9
+
+    /// 表の行（部門の見出し・人）に使える高さ（表が2つなら1つ分）
+    static func rowsHeight(_ spec: PrintPageSpec, notes: Bool) -> CGFloat {
+        let page = Self.base(spec.landscape)
+        let tables = CGFloat(spec.tables.count)
+        // 上下の余白・見出しの行・表と表のあいだ・日付の見出し・メモの一覧
+        let fixed: CGFloat = margin(spec.landscape) * 2 + 24 + (tables - 1) * 18 + tables * headerHeight
+        let h: CGFloat = page.height - fixed - (notes ? notesHeight : 0)
+        return max(0, h / tables)
+    }
+
+    /// 部門の見出しと人の行の数
+    static func rowCount(_ groups: [DepartmentGroup]) -> Int {
+        groups.reduce(0) { $0 + 1 + $1.members.count }
+    }
+
+    static func rowHeight(_ spec: PrintPageSpec, groups: [DepartmentGroup], notes: Bool) -> CGFloat {
+        min(maxRowHeight, max(minRowHeight, rowsHeight(spec, notes: notes) / CGFloat(max(1, rowCount(groups)))))
+    }
+
+    /// 1枚に載る行の数（部門の見出しを含む）
+    static func capacity(_ spec: PrintPageSpec, notes: Bool) -> Int {
+        max(2, Int(rowsHeight(spec, notes: notes) / minRowHeight))
+    }
+}
+
+/// マスのメモ（印刷の一覧用）
+struct PrintNote: Hashable {
+    var day: DayKey
+    var who: String
+    var text: String
 }
 
 enum PrintPlanner {
     static func pages(format: PrintFormat, half: HalfSelection, departments: [Department],
-                      anchor: DayKey) -> [PrintPageSpec] {
+                      anchor: DayKey, paper: PaperSize = .a4) -> [PrintPageSpec] {
         let month = MonthKey(anchor)
         let all = month.days
         let h1 = Array(all.prefix(15)), h2 = Array(all.dropFirst(15))
@@ -54,40 +131,113 @@ enum PrintPlanner {
             let w = GridMode.week.days(around: anchor)
             let label = "\(w[0].year)年 シフト表　%@　\(w[0].month)月\(w[0].day)日（月）〜 \(w[6].month)月\(w[6].day)日（日）"
             return departments.map { d in
-                PrintPageSpec(label: String(format: label, d.name), tables: [(nil, w)], departmentIDs: [d.id], landscape: false)
+                PrintPageSpec(label: String(format: label, d.name), tables: [(nil, w)], departmentIDs: [d.id], landscape: false, paper: paper)
             }
         case .monthByDepartment:
             return departments.flatMap { d in
                 chunks.map { c in
-                    PrintPageSpec(label: "\(ym)　\(d.name)　\(range(c))", tables: [(nil, c)], departmentIDs: [d.id], landscape: false)
+                    PrintPageSpec(label: "\(ym)　\(d.name)　\(range(c))", tables: [(nil, c)], departmentIDs: [d.id], landscape: false,
+                                  paper: paper)
                 }
             }
         case .monthCombined:
             let names = departments.map(\.name).joined(separator: "・")
             return chunks.map { c in
                 PrintPageSpec(label: "\(ym)　\(names)　\(range(c))", tables: [(nil, c)], departmentIDs: departments.map(\.id),
-                              landscape: false)
+                              landscape: false, paper: paper)
             }
         case .monthLandscape:
             let names = departments.map(\.name).joined(separator: "・")
             return [PrintPageSpec(label: "\(ym)　\(names)",
                                   tables: [("前半（1〜\(h1.last!.day)日）", h1), ("後半（\(h2.first!.day)〜\(h2.last!.day)日）", h2)],
-                                  departmentIDs: departments.map(\.id), landscape: true)]
+                                  departmentIDs: departments.map(\.id), landscape: true, paper: paper)]
+        case .monthSingle:
+            let names = departments.map(\.name).joined(separator: "・")
+            return [PrintPageSpec(label: "\(ym)　\(names)", tables: [(nil, all)], departmentIDs: departments.map(\.id),
+                                  landscape: true, paper: paper)]
         }
+    }
+
+    /// 人数が多くて行が低くなりすぎる枚を、部門・人の順に何枚かに分ける（見出しに「（1/2）」を付ける）
+    static func paginate(_ specs: [PrintPageSpec], book: ShiftBook, options: PrintOptions) -> [PrintPageSpec] {
+        specs.flatMap { spec -> [PrintPageSpec] in
+            let groups = Self.groups(for: spec, book: book)
+            let notes = options.showNotes && !Self.notes(for: spec, groups: groups, book: book, showNames: options.showNames).isEmpty
+            let capacity = PrintLayout.capacity(spec, notes: notes)
+            guard PrintLayout.rowCount(groups) > capacity else { return [spec] }
+            var chunks: [Set<String>] = []
+            var current: Set<String> = [], used = 0
+            for g in groups {
+                var headed = false
+                for m in g.members {
+                    var cost = headed ? 1 : 2
+                    if used + cost > capacity, !current.isEmpty {
+                        chunks.append(current)
+                        current = []; used = 0; headed = false; cost = 2
+                    }
+                    current.insert(memberKey(g, m))
+                    used += cost
+                    headed = true
+                }
+            }
+            if !current.isEmpty { chunks.append(current) }
+            guard chunks.count > 1 else { return [spec] }
+            return chunks.enumerated().map { i, keys in
+                PrintPageSpec(label: spec.label + "（\(i + 1)/\(chunks.count)）", tables: spec.tables, departmentIDs: spec.departmentIDs,
+                              landscape: spec.landscape, paper: spec.paper, memberKeys: keys)
+            }
+        }
+    }
+
+    static func memberKey(_ g: DepartmentGroup, _ m: StaffMember) -> String { g.department.id + "|" + m.id }
+
+    /// その枚に載せる部門と人
+    static func groups(for spec: PrintPageSpec, book: ShiftBook) -> [DepartmentGroup] {
+        let month = MonthKey(spec.tables.first?.days.first ?? .today)
+        let groups = book.staffByDepartment(visibleIn: month).filter { spec.departmentIDs.contains($0.department.id) }
+        guard let keys = spec.memberKeys else { return groups }
+        return groups.compactMap { g -> DepartmentGroup? in
+            let members = g.members.filter { keys.contains(memberKey(g, $0)) }
+            guard !members.isEmpty else { return nil }
+            var next = g
+            next.members = members
+            return next
+        }
+    }
+
+    /// その枚の人・日のマスのメモ（日付の順）
+    static func notes(for spec: PrintPageSpec, groups: [DepartmentGroup], book: ShiftBook, showNames: Bool) -> [PrintNote] {
+        let days = Set(spec.tables.flatMap { $0.days }).sorted()
+        var result: [PrintNote] = []
+        for g in groups {
+            for m in g.members {
+                for d in days where !m.hasLeft(on: d) {
+                    guard let note = Schedule.resolve(m, on: d, in: book)?.note?.trimmingCharacters(in: .whitespacesAndNewlines),
+                          !note.isEmpty else { continue }
+                    result.append(PrintNote(day: d, who: showNames ? m.name : "No.\(m.number)", text: note))
+                }
+            }
+        }
+        return result.sorted { ($0.day, $0.who) < ($1.day, $1.who) }
     }
 }
 
-/// A4 1枚（72dpi の pt。A4 は 595×842）
+/// 1枚（A4 の pt で割り付け、A3 なら拡大する）
 struct PrintPageView: View {
     let spec: PrintPageSpec
     let book: ShiftBook
     let title: String
+    var options = PrintOptions()
 
-    static let a4 = CGSize(width: 595.28, height: 841.89)
-    var size: CGSize { spec.landscape ? CGSize(width: Self.a4.height, height: Self.a4.width) : Self.a4 }
+    static let a4 = PrintLayout.a4
+    var size: CGSize { spec.size }
 
     var body: some View {
-        let margin: CGFloat = spec.landscape ? 17 : 20
+        let base = PrintLayout.base(spec.landscape)
+        let margin = PrintLayout.margin(spec.landscape)
+        let groups = PrintPlanner.groups(for: spec, book: book)
+        let notes = options.showNotes ? PrintPlanner.notes(for: spec, groups: groups, book: book, showNames: options.showNames) : []
+        let rowH = PrintLayout.rowHeight(spec, groups: groups, notes: !notes.isEmpty)
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(spec.label).font(.system(size: 9.5, weight: .bold)).frame(maxWidth: .infinity, alignment: .leading)
@@ -99,28 +249,39 @@ struct PrintPageView: View {
             .padding(.bottom, 3)
             .overlay(alignment: .bottom) { Rectangle().fill(Color(white: 0.8)).frame(height: 0.5) }
 
-            let rowsTotal = spec.tables.reduce(0) { n, _ in n + 1 + groups.reduce(0) { $0 + 1 + $1.members.count } }
-            let available = size.height - margin * 2 - 24 - CGFloat(spec.tables.count - 1) * 18
-            let rowH = min(26, max(11, available / CGFloat(max(1, rowsTotal))))
             ForEach(Array(spec.tables.enumerated()), id: \.offset) { _, t in
                 if let c = t.caption {
                     Text(c).font(.system(size: 7, weight: .bold)).foregroundStyle(Color(white: 0.33)).padding(.top, 2)
                 }
                 PrintTable(days: t.days, groups: groups, book: book, landscape: spec.landscape,
-                           width: size.width - margin * 2, rowHeight: rowH)
+                           width: base.width - margin * 2, rowHeight: rowH, options: options)
             }
+            if !notes.isEmpty { notesList(notes) }
             Spacer(minLength: 0)
         }
         .padding(margin)
+        .frame(width: base.width, height: base.height, alignment: .topLeading)
+        .scaleEffect(spec.paper.scale, anchor: .topLeading)
         .frame(width: size.width, height: size.height, alignment: .topLeading)
         .background(Color.white)
         .foregroundStyle(Color.black)
         .environment(\.colorScheme, .light)
     }
 
-    private var groups: [DepartmentGroup] {
-        let month = MonthKey(spec.tables.first?.days.first ?? .today)
-        return book.staffByDepartment(visibleIn: month).filter { spec.departmentIDs.contains($0.department.id) }
+    private func notesList(_ notes: [PrintNote]) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text("■ マスのメモ").font(.system(size: 7.5, weight: .heavy)).padding(.bottom, 2)
+            ForEach(Array(notes.prefix(PrintLayout.maxNotes).enumerated()), id: \.offset) { _, n in
+                Text("\(n.day.month)/\(n.day.day)　\(n.who)：\(n.text)")
+                    .font(.system(size: 7)).lineLimit(1).truncationMode(.tail)
+                    .frame(height: 8, alignment: .leading)
+            }
+            if notes.count > PrintLayout.maxNotes {
+                Text("ほか \(notes.count - PrintLayout.maxNotes)件（アプリのシフト表で確かめてください）")
+                    .font(.system(size: 6.5)).foregroundStyle(Color(white: 0.33))
+            }
+        }
+        .padding(.top, 6)
     }
 
     private static var today: String {
@@ -137,10 +298,11 @@ private struct PrintTable: View {
     let landscape: Bool
     let width: CGFloat
     let rowHeight: CGFloat
+    var options = PrintOptions()
 
-    private var noW: CGFloat { 14 }
-    private var nameW: CGFloat { landscape ? 42 : 46 }
-    private var ioW: CGFloat { 10 }
+    private var noW: CGFloat { options.showNames ? 14 : 20 }
+    private var nameW: CGFloat { options.showNames ? (landscape ? 42 : 46) : 0 }
+    private var ioW: CGFloat { options.showTimes ? 10 : 0 }
     private var sumW: CGFloat { 24 }
     private var cellW: CGFloat { (width - noW - nameW - ioW - sumW) / CGFloat(days.count) }
     private let line = Color(white: 0.53)
@@ -165,10 +327,12 @@ private struct PrintTable: View {
     private var header: some View {
         HStack(spacing: 0) {
             headCell("No", noW, size: 7)
-            headCell("氏名", nameW, size: 8)
-            VStack(spacing: 0) { Text("入"); Text("出") }
-                .font(.system(size: 5, weight: .heavy)).foregroundStyle(.white)
-                .frame(width: ioW, height: 26).background(Color(white: 0.2))
+            if options.showNames { headCell("氏名", nameW, size: 8) }
+            if options.showTimes {
+                VStack(spacing: 0) { Text("入"); Text("出") }
+                    .font(.system(size: 5, weight: .heavy)).foregroundStyle(.white)
+                    .frame(width: ioW, height: PrintLayout.headerHeight).background(Color(white: 0.2))
+            }
             ForEach(days, id: \.self) { d in
                 let sun = d.weekday == 0, sat = d.weekday == 6
                 VStack(spacing: 0) {
@@ -176,8 +340,9 @@ private struct PrintTable: View {
                     Text(sun ? "㊐" : sat ? "㊏" : ["日", "月", "火", "水", "木", "金", "土"][d.weekday])
                         .font(.system(size: 6.5)).opacity(0.85)
                 }
+                .minimumScaleFactor(0.6)
                 .foregroundStyle(.white)
-                .frame(width: cellW, height: 26)
+                .frame(width: cellW, height: PrintLayout.headerHeight)
                 .background(sun ? Color(white: 0.33) : sat ? Color(white: 0.53) : .black)
                 .overlay(alignment: .bottom) { if sun || sat { Rectangle().fill(.white).frame(height: 2) } }
             }
@@ -187,7 +352,7 @@ private struct PrintTable: View {
 
     private func headCell(_ t: String, _ w: CGFloat, size: CGFloat) -> some View {
         Text(t).font(.system(size: size, weight: .bold)).foregroundStyle(.white)
-            .frame(width: w, height: 26).background(Color.black)
+            .frame(width: w, height: PrintLayout.headerHeight).background(Color.black)
             .border(Color.black, width: 0.5)
     }
 
@@ -196,17 +361,22 @@ private struct PrintTable: View {
         let total = MonthSummary.of(m, days: days.count <= 7 ? days : MonthKey(days[0]).days, in: book).hours
         let fs: CGFloat = landscape ? 7 : 7.5
         return HStack(spacing: 0) {
-            Text("\(m.number)").font(.system(size: 7)).foregroundStyle(Color(white: 0.33))
+            Text("\(m.number)").font(.system(size: options.showNames ? 7 : 8, weight: options.showNames ? .regular : .bold))
+                .foregroundStyle(Color(white: options.showNames ? 0.33 : 0))
                 .frame(width: noW, height: rowHeight).border(Color(white: 0.33), width: 0.5)
-            Text(m.name).font(.system(size: 9, weight: .bold)).lineLimit(1).minimumScaleFactor(0.5)
-                .frame(width: nameW, height: rowHeight).border(Color(white: 0.8), width: 0.5)
-            VStack(spacing: 0) {
-                Text("入").frame(maxHeight: .infinity)
-                Rectangle().fill(Color(white: 0.73)).frame(height: 0.3)
-                Text("出").frame(maxHeight: .infinity)
+            if options.showNames {
+                Text(m.name).font(.system(size: 9, weight: .bold)).lineLimit(1).minimumScaleFactor(0.5)
+                    .frame(width: nameW, height: rowHeight).border(Color(white: 0.8), width: 0.5)
             }
-            .font(.system(size: 6.5, weight: .heavy))
-            .frame(width: ioW, height: rowHeight).background(Color(white: 0.92)).border(Color(white: 0.33), width: 0.5)
+            if options.showTimes {
+                VStack(spacing: 0) {
+                    Text("入").frame(maxHeight: .infinity)
+                    Rectangle().fill(Color(white: 0.73)).frame(height: 0.3)
+                    Text("出").frame(maxHeight: .infinity)
+                }
+                .font(.system(size: 6.5, weight: .heavy))
+                .frame(width: ioW, height: rowHeight).background(Color(white: 0.92)).border(Color(white: 0.33), width: 0.5)
+            }
             ForEach(days, id: \.self) { d in cell(m, d, fs: fs) }
             Text(String(format: "%.1fh", total)).font(.system(size: 7.5, weight: .heavy, design: .monospaced))
                 .minimumScaleFactor(0.6)
@@ -221,6 +391,7 @@ private struct PrintTable: View {
         let sun = d.weekday == 0, sat = d.weekday == 6
         let bg: Color = left ? Color(white: 0.78) : r?.isOff == true ? Color(white: 0.91)
             : sun ? Color(white: 0.82) : sat ? Color(white: 0.88) : .white
+        let noted = options.showNotes && !(r?.note ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         ZStack {
             bg
             if left {
@@ -230,7 +401,7 @@ private struct PrintTable: View {
                     Text(r.blockID == "off2" ? "有" : "欠").font(.system(size: 8, weight: .heavy))
                         .frame(width: 11, height: 11).overlay(Circle().stroke(Color.black, lineWidth: 1))
                 }
-            } else if let r {
+            } else if let r, options.showTimes {
                 VStack(spacing: 0) {
                     Text(short(r.inTime)).frame(maxHeight: .infinity)
                     Rectangle().fill(Color(white: 0.73)).frame(height: 0.3)
@@ -238,10 +409,23 @@ private struct PrintTable: View {
                 }
                 .font(.system(size: fs, weight: .bold, design: .monospaced))
                 .minimumScaleFactor(0.6)
+            } else if let r {
+                Text(mark(r, m)).font(.system(size: fs + 1, weight: .bold))
+                    .lineLimit(1).minimumScaleFactor(0.5).padding(.horizontal, 1)
             }
         }
         .frame(width: cellW, height: rowHeight)
+        .overlay(alignment: .topTrailing) {
+            // メモのあるマス（下の一覧に出る）
+            if noted { Text("*").font(.system(size: 6, weight: .heavy)).padding(.trailing, 1) }
+        }
         .border(sun || sat ? Color(white: 0.33) : line, width: 0.5)
+    }
+
+    /// 時刻を出さないときの勤務の記号（ひな形の略称・名前。ひな形と時刻が違えば「出」）
+    private func mark(_ r: ResolvedShift, _ m: StaffMember) -> String {
+        guard let b = book.block(r.blockID, for: m), b.inTime == r.inTime, b.outTime == r.outTime else { return "出" }
+        return b.short.isEmpty ? b.label : b.short
     }
 
     /// 印刷では先頭の0を取る（09:00 → 9:00）
@@ -253,24 +437,24 @@ private struct PrintTable: View {
 enum PDFMaker {
     /// 1枚ずつ作り、合間に画面を動かす（枚数が多くても固まって見えないように）
     @MainActor
-    static func makeAsync(pages: [PrintPageSpec], book: ShiftBook, title: String,
+    static func makeAsync(pages: [PrintPageSpec], book: ShiftBook, title: String, options: PrintOptions = PrintOptions(),
                           progress: (Int) -> Void = { _ in }) async -> Data {
         let data = NSMutableData()
         guard let consumer = CGDataConsumer(data: data as CFMutableData) else { return Data() }
-        var box = CGRect(origin: .zero, size: PrintPageView.a4)
+        var box = CGRect(origin: .zero, size: PrintLayout.a4)
         guard let ctx = CGContext(consumer: consumer, mediaBox: &box, nil) else { return Data() }
         for (i, spec) in pages.enumerated() {
             progress(i + 1)
             await Task.yield()
-            render(spec, book: book, title: title, into: ctx)
+            render(spec, book: book, title: title, options: options, into: ctx)
         }
         ctx.closePDF()
         return data as Data
     }
 
     @MainActor
-    private static func render(_ spec: PrintPageSpec, book: ShiftBook, title: String, into ctx: CGContext) {
-        let view = PrintPageView(spec: spec, book: book, title: title)
+    private static func render(_ spec: PrintPageSpec, book: ShiftBook, title: String, options: PrintOptions, into ctx: CGContext) {
+        let view = PrintPageView(spec: spec, book: book, title: title, options: options)
         var media = CGRect(origin: .zero, size: view.size)
         let renderer = ImageRenderer(content: view)
         renderer.proposedSize = ProposedViewSize(view.size)
@@ -282,22 +466,12 @@ enum PDFMaker {
     }
 
     @MainActor
-    static func make(pages: [PrintPageSpec], book: ShiftBook, title: String) -> Data {
+    static func make(pages: [PrintPageSpec], book: ShiftBook, title: String, options: PrintOptions = PrintOptions()) -> Data {
         let data = NSMutableData()
         guard let consumer = CGDataConsumer(data: data as CFMutableData) else { return Data() }
-        var box = CGRect(origin: .zero, size: PrintPageView.a4)
+        var box = CGRect(origin: .zero, size: PrintLayout.a4)
         guard let ctx = CGContext(consumer: consumer, mediaBox: &box, nil) else { return Data() }
-        for spec in pages {
-            let view = PrintPageView(spec: spec, book: book, title: title)
-            var media = CGRect(origin: .zero, size: view.size)
-            let renderer = ImageRenderer(content: view)
-            renderer.proposedSize = ProposedViewSize(view.size)
-            renderer.render { _, draw in
-                ctx.beginPage(mediaBox: &media)
-                draw(ctx)
-                ctx.endPage()
-            }
-        }
+        for spec in pages { render(spec, book: book, title: title, options: options, into: ctx) }
         ctx.closePDF()
         return data as Data
     }
@@ -322,6 +496,15 @@ struct PrintSheet: View {
     @AppStorage("printFormat") private var format: PrintFormat = .monthByDepartment
     @AppStorage("printHalf") private var half: HalfSelection = .both
     @AppStorage("printTitle") private var title = ""
+    @AppStorage("printPaper") private var paper: PaperSize = .a4
+    @AppStorage("printShowNames") private var showNames = true
+    @AppStorage("printShowTimes") private var showTimes = true
+    @AppStorage("printShowNotes") private var showNotes = false
+    /// 全ページのプレビュー
+    @State private var previewAll = false
+    private var options: PrintOptions {
+        PrintOptions(paper: paper, showNames: showNames, showTimes: showTimes, showNotes: showNotes)
+    }
     /// 表の上に出す名前（空で店舗が2つ以上なら、見ている店舗の名前）
     private var effectiveTitle: String {
         title.isEmpty && store.book.allStores.count > 1 ? store.currentStore.name : title
@@ -346,7 +529,9 @@ struct PrintSheet: View {
         let depts = book.scopedDepartments
             .filter { d in book.staff.contains { $0.departmentID == d.id } }
         let chosen = depts.filter { selected.contains($0.id) }
-        let pages = chosen.isEmpty ? [] : PrintPlanner.pages(format: format, half: half, departments: chosen, anchor: day)
+        let pages = chosen.isEmpty ? []
+            : PrintPlanner.paginate(PrintPlanner.pages(format: format, half: half, departments: chosen, anchor: day, paper: paper),
+                                    book: book, options: options)
 
         NavigationStack {
             Group {
@@ -373,6 +558,9 @@ struct PrintSheet: View {
                 ShareSheet(items: shareItems(f.url, book: book)) { done in if done { publish() } }
             }
             .sheet(item: $images) { f in ShareSheet(items: f.urls) }
+            .sheet(isPresented: $previewAll) {
+                PrintPreviewSheet(pages: pages, book: book, title: effectiveTitle, options: options)
+            }
             .alert("公開済みにしました", isPresented: Binding(get: { publishedNote != nil }, set: { if !$0 { publishedNote = nil } })) {
                 Button("OK") { publishedNote = nil }
             } message: { Text(publishedNote ?? "") }
@@ -413,6 +601,17 @@ struct PrintSheet: View {
                 }
             }
             Section {
+                Picker("用紙", selection: $paper) {
+                    ForEach(PaperSize.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                displayToggles
+            } header: {
+                Text("用紙・表に出すもの")
+            } footer: {
+                Text("A3 は A4 と同じ割り付けを大きくします（壁に貼るとき用）。人数が多くて1枚に入らないときは、自動で次のページに分けます。")
+            }
+            Section {
                 TextField("表の上に出す名前（例：店名）", text: $title)
             } footer: {
                 Text("白黒で印刷しても見分けられるよう、日曜は濃い灰色・土曜は中くらいの灰色にします。有休は○有、当欠は○欠で印刷し、公休は空白にします。")
@@ -434,12 +633,15 @@ struct PrintSheet: View {
 
             Section("プレビュー（\(pages.count)枚）") {
                 if let first = pages.first {
-                    let v = PrintPageView(spec: first, book: book, title: effectiveTitle)
+                    let v = PrintPageView(spec: first, book: book, title: effectiveTitle, options: options)
                     let scale = min(1, 320 / v.size.width)
                     v.scaleEffect(scale, anchor: .topLeading)
                         .frame(width: v.size.width * scale, height: v.size.height * scale, alignment: .topLeading)
                         .shadow(color: .black.opacity(0.15), radius: 4)
                         .frame(maxWidth: .infinity)
+                    Button { previewAll = true } label: {
+                        Label("全ページを見る（\(pages.count)枚）", systemImage: "doc.on.doc")
+                    }
                 } else {
                     Text("部門を選んでください").foregroundStyle(.secondary)
                 }
@@ -586,6 +788,14 @@ struct PrintSheet: View {
         .accessibilityAddTraits(on ? .isSelected : [])
     }
 
+    /// 表に出すもの（名前・時刻・メモ）
+    @ViewBuilder
+    private var displayToggles: some View {
+        Toggle("名前を出す（オフは番号だけ）", isOn: $showNames)
+        Toggle("出勤・退勤の時刻を出す（オフは勤務の記号）", isOn: $showTimes)
+        Toggle("マスのメモを表の下に出す", isOn: $showNotes)
+    }
+
     private var monthRow: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("対象期間").font(.subheadline.weight(.semibold))
@@ -645,6 +855,12 @@ struct PrintSheet: View {
                         }
                         .pickerStyle(.segmented)
                     }
+                    Picker("用紙", selection: $paper) {
+                        ForEach(PaperSize.allCases) { Text("用紙 \($0.title)").tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    Text("A3 は A4 と同じ割り付けを大きくします。人数が多くて1枚に入らないときは、自動で次のページに分けます。")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
             departmentChecks(depts)
@@ -652,6 +868,7 @@ struct PrintSheet: View {
                 Text("表示オプション").font(.subheadline.weight(.semibold))
                 TextField("表の上に出す名前（例：店名）", text: $title)
                     .textFieldStyle(.roundedBorder)
+                if output != .csv { displayToggles.font(.subheadline) }
                 if output == .pdf {
                     Toggle("変更点の文章も一緒に送る", isOn: $withChanges).font(.subheadline)
                 }
@@ -679,14 +896,17 @@ struct PrintSheet: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let first = pages.first {
                 GeometryReader { g in
-                    let v = PrintPageView(spec: first, book: book, title: effectiveTitle)
+                    let v = PrintPageView(spec: first, book: book, title: effectiveTitle, options: options)
                     let k = min(1, g.size.width / v.size.width, g.size.height / v.size.height)
                     v.scaleEffect(k, anchor: .topLeading)
                         .frame(width: v.size.width * k, height: v.size.height * k, alignment: .topLeading)
                         .shadow(color: .black.opacity(0.15), radius: 5)
                         .frame(maxWidth: .infinity)
                 }
-                Text("\(pages.count)枚").font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
+                Button { previewAll = true } label: {
+                    Label("全ページを見る（\(pages.count)枚）", systemImage: "doc.on.doc").font(.caption)
+                }
+                .frame(maxWidth: .infinity)
             } else {
                 Text("部門を選んでください").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -737,7 +957,7 @@ struct PrintSheet: View {
     }
 
     private func pdfURL(_ pages: [PrintPageSpec], book: ShiftBook) async throws -> URL {
-        let data = await PDFMaker.makeAsync(pages: pages, book: book, title: effectiveTitle) { progress = $0 }
+        let data = await PDFMaker.makeAsync(pages: pages, book: book, title: effectiveTitle, options: options) { progress = $0 }
         if data.isEmpty { throw CocoaError(.fileWriteUnknown) }
         let m = MonthKey(day)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("シフト表_\(m.year)年\(m.month)月.pdf")
@@ -917,5 +1137,48 @@ enum ShiftCSV {
     static func escape(_ v: String) -> String {
         guard v.contains(where: { $0 == "," || $0 == "\"" || $0 == "\n" }) else { return v }
         return "\"" + v.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+    }
+}
+
+// MARK: - 全ページのプレビュー
+
+/// 作る PDF の全ページを、送る前に確かめる
+struct PrintPreviewSheet: View {
+    let pages: [PrintPageSpec]
+    let book: ShiftBook
+    let title: String
+    let options: PrintOptions
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            GeometryReader { g in
+                ScrollView {
+                    LazyVStack(spacing: 18) {
+                        ForEach(Array(pages.enumerated()), id: \.offset) { i, spec in
+                            page(spec, number: i + 1, width: g.size.width - 32)
+                        }
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity)
+                }
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("プレビュー（\(pages.count)枚）")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dismiss() } } }
+        }
+    }
+
+    private func page(_ spec: PrintPageSpec, number: Int, width: CGFloat) -> some View {
+        let v = PrintPageView(spec: spec, book: book, title: title, options: options)
+        let k = min(1, max(0.1, width) / v.size.width)
+        return VStack(spacing: 6) {
+            v.scaleEffect(k, anchor: .topLeading)
+                .frame(width: v.size.width * k, height: v.size.height * k, alignment: .topLeading)
+                .shadow(color: .black.opacity(0.15), radius: 4)
+            Text("\(number) / \(pages.count)　\(spec.paper.title)\(spec.landscape ? "横" : "縦")")
+                .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+        }
     }
 }
