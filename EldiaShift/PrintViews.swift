@@ -573,6 +573,10 @@ struct PrintSheet: View {
                 if selected.isEmpty { selected = Set(depts.map(\.id)) }
                 CoachCenter.shared.show(.print(), after: 0.7)
             }
+            // 店舗を切り替えて、選んでいた部門が1つも無くなったら、その店舗の部門をすべて選ぶ
+            .onChange(of: depts.map(\.id)) { _, ids in
+                if selected.isDisjoint(with: ids) { selected = Set(ids) }
+            }
         }
     }
 
@@ -693,21 +697,21 @@ struct PrintSheet: View {
             .overlay(alignment: .bottom) { Divider() }
 
             if wideTab == 0 {
-                HStack(alignment: .top, spacing: DS.gap) {
-                    panel("出力形式") {
-                        VStack(spacing: 10) {
-                            ForEach(OutputKind.allCases) { outputCard($0) }
+                // 出力形式は上に横並び、その下を「出力設定｜プレビュー」の2列にする（プレビューを広く見せる）
+                VStack(spacing: DS.gap) {
+                    HStack(spacing: DS.gap) {
+                        ForEach(OutputKind.allCases) { outputCard($0) }
+                    }
+                    HStack(alignment: .top, spacing: DS.gap) {
+                        panel("出力設定") {
+                            ScrollView { settingsColumn(book: book, depts: depts) }
                         }
+                        .frame(width: 380 * zoom)
+                        panel("プレビュー") {
+                            previewColumn(book: book, chosen: chosen, pages: pages)
+                        }
+                        .frame(maxWidth: .infinity)
                     }
-                    .frame(width: 260 * zoom)
-                    panel("出力設定") {
-                        ScrollView { settingsColumn(book: book, depts: depts) }
-                    }
-                    .frame(maxWidth: .infinity)
-                    panel("プレビュー") {
-                        previewColumn(book: book, chosen: chosen, pages: pages)
-                    }
-                    .frame(maxWidth: .infinity)
                 }
                 .padding(DS.page)
             } else {
@@ -844,7 +848,7 @@ struct PrintSheet: View {
         group("対象部門") {
             if depts.isEmpty {
                 row {
-                    Text("この店舗には部門がありません。設定 →「部門」で作ると、ここで選べます。")
+                    Text("スタッフのいる部門がありません。部門を作ってスタッフを入れると、ここで選べます（設定 →「部門」、スタッフの編集の「部門」）。")
                         .appFont(.subheadline).foregroundStyle(.secondary)
                 }
             }
