@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 import LocalAuthentication
 
 // MARK: - 人件費を隠す（端末ごと。見るときは Face ID / パスコード）
@@ -81,10 +82,16 @@ struct LaborCostView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var csvFile: ExportFile?
     @State private var failure: String?
+    @State private var editingBudget = false
+    /// 年間の推移（月ごとの合計）。重いので、表示した後に出す
+    @State private var yearTotals: [Int]?
+    @State private var previousTotal: Int?
 
     var body: some View {
         if LaborCostLock.shared.canView { content } else { LaborCostLockedView() }
     }
+
+    private struct YearID: Equatable { let month: MonthKey; let revision: Int }
 
     private var content: some View {
         let book = store.book
@@ -111,17 +118,25 @@ struct LaborCostView: View {
                 }
             }
 
+            budgetSection(total.total, book: book)
+
             ForEach(groups) { g in
                 Section {
                     ForEach(g.members) { m in row(m, pays[m.id] ?? StaffPay()) }
                 } header: {
                     HStack {
+                        let cost = g.members.reduce(StaffPay()) { $0 + (pays[$1.id] ?? StaffPay()) }.total
                         Text(g.department.name).foregroundStyle(PaletteColor.fg(g.department.colorIndex))
                         Spacer()
-                        Text(Self.yen(g.members.reduce(StaffPay()) { $0 + (pays[$1.id] ?? StaffPay()) }.total)).monospacedDigit()
+                        if total.total > 0 {
+                            Text("\(Self.percent(Double(cost) / Double(total.total) * 100))").foregroundStyle(.secondary).monospacedDigit()
+                        }
+                        Text(Self.yen(cost)).monospacedDigit()
                     }
                 }
             }
+
+            yearSection
 
             Section {
                 Text("シフトから出した目安です（給与計算ではありません）。時間外は1日\(book.pay.dailyEnabled ? "\(book.pay.dailyHours)時間" : "—")・週\(book.pay.weeklyEnabled ? "\(book.pay.weeklyHours)時間" : "—")を超えた分に\(book.pay.overtimeRate)%、深夜（22時〜5時）に\(book.pay.nightRate)%を足しています。月給は在籍した日数で日割りし、時間外は「月給÷\(book.pay.monthlyStandardHours)時間」の\(100 + book.pay.overtimeRate)%で数えます。法定休日・月60時間超の割増、手当・交通費・社会保険は入りません。")
@@ -130,10 +145,30 @@ struct LaborCostView: View {
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { shareCSV(groups: groups, pays: pays) } label: { Label("CSV", systemImage: "square.and.arrow.up") }
+                Menu {
+                    Button { shareCSV(groups: groups, pays: pays) } label: { Label("人件費（1人ずつの合計）", systemImage: "person.2") }
+                    Button { shareDetailCSV(groups: groups) } label: { Label("シフト明細（勤務1日ずつ）", systemImage: "list.bullet.rectangle") }
+                } label: { Label("CSV", systemImage: "square.and.arrow.up") }
                     .accessibilityLabel("人件費をCSVで出力")
             }
         }
+        .task(id: YearID(month: month, revision: store.revision)) {
+            // 入力が続くあいだは待つ（0.3秒止まってから数える）
+            try? await Task.sleep(for: .milliseconds(yearTotals == nil ? 0 : 300))
+            guard !Task.isCancelled else { return }
+            let book = store.book
+            previousTotal = Payroll.total(month: month.adding(months: -1), in: book)
+            await Task.yield()
+            var totals: [Int] = []
+            for m in 1...12 {
+                guard !Task.isCancelled else { return }
+                let key = MonthKey(month.year, m)
+                totals.append(key == month ? total.total : Payroll.total(month: key, in: book))
+                await Task.yield()
+            }
+            yearTotals = totals
+        }
+        .sheet(isPresented: $editingBudget) { BudgetEditView(month: month) }
         .sheet(item: $csvFile) { f in ShareSheet(items: [f.url]) }
         .errorAlert($failure)
     }
@@ -159,6 +194,98 @@ struct LaborCostView: View {
         }
     }
 
+    @ViewBuilder
+    private func budgetSection(_ cost: Int, book: ShiftBook) -> some View {
+        let budget = LaborBudget.value(store: book.scopeStoreID, month: month, rules: book.pay)
+        Section {
+            if let budget {
+                let usage = LaborBudget.usage(cost, budget: budget)
+                let color: Color = (usage ?? 0) > 100 ? .red : (usage ?? 0) >= 90 ? .orange : .green
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("予算の使用率").font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Text(usage.map(Self.percent) ?? "—").font(.title3.bold()).foregroundStyle(color).monospacedDigit()
+                    }
+                    ProgressView(value: min(1, Double(cost) / Double(max(1, budget))))
+                        .tint(color)
+                        .accessibilityLabel("予算の使用率 \(usage.map(Self.percent) ?? "—")")
+                    HStack {
+                        Text("予算 \(Self.yen(budget))" + (LaborBudget.isMonthOnly(store: book.scopeStoreID, month: month, rules: book.pay) ? "（この月）" : "（毎月）"))
+                        Spacer()
+                        Text(cost <= budget ? "残り \(Self.yen(budget - cost))" : "超過 \(Self.yen(cost - budget))")
+                            .foregroundStyle(cost <= budget ? Color.secondary : Color.red)
+                    }
+                    .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                }
+                .padding(.vertical, 2)
+            }
+            if let prev = previousTotal {
+                HStack {
+                    Text("前の月（\(month.adding(months: -1).month)月）")
+                    Spacer()
+                    Text(Self.yen(prev)).monospacedDigit().foregroundStyle(.secondary)
+                    Text(Self.change(cost, from: prev)).monospacedDigit().font(.subheadline.weight(.semibold))
+                        .foregroundStyle(cost > prev ? Color.red : cost < prev ? Color.green : Color.secondary)
+                }
+                .font(.subheadline)
+            }
+            Button(budget == nil ? "月の予算を入れる" : "予算を変える") { editingBudget = true }
+        } footer: {
+            if budget == nil { Text("予算を入れると、使用率と残りを出します。店舗ごと・月ごとに決められます。") }
+        }
+    }
+
+    @ViewBuilder
+    private var yearSection: some View {
+        Section {
+            if let totals = yearTotals, totals.contains(where: { $0 > 0 }) {
+                let budgetLine = LaborBudget.value(store: store.book.scopeStoreID, month: month, rules: store.book.pay)
+                Chart {
+                    ForEach(Array(totals.enumerated()), id: \.offset) { i, v in
+                        BarMark(x: .value("月", "\(i + 1)"), y: .value("人件費", v))
+                            .foregroundStyle(i + 1 == month.month ? Color.accentColor : Color.accentColor.opacity(0.35))
+                    }
+                    if let b = budgetLine, !LaborBudget.isMonthOnly(store: store.book.scopeStoreID, month: month, rules: store.book.pay) {
+                        RuleMark(y: .value("予算", b)).foregroundStyle(.orange).lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    }
+                }
+                .chartYAxis { AxisMarks { v in AxisGridLine(); AxisValueLabel { if let n = v.as(Int.self) { Text(Self.short(n)) } } } }
+                .frame(height: 160)
+                .accessibilityLabel("\(month.year)年の月ごとの人件費")
+                .accessibilityValue(totals.enumerated().map { "\($0.offset + 1)月 \(Self.yen($0.element))" }.joined(separator: "、"))
+                Text("年の合計 \(Self.yen(totals.reduce(0, +)))").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+            } else if yearTotals == nil {
+                HStack { ProgressView(); Text("数えています…").foregroundStyle(.secondary) }
+            } else {
+                Text("この年のシフトはまだありません。").foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("\(String(month.year))年の推移")
+        }
+    }
+
+    private func shareDetailCSV(groups: [DepartmentGroup]) {
+        let rows = groups.flatMap { g in g.members.map { (member: $0, department: g.department.name) } }
+        do {
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("シフト明細_\(month.year)年\(month.month)月.csv")
+            try Data(Payroll.detailCSV(rows: rows, month: month, in: store.book).utf8).write(to: url, options: .atomic)
+            csvFile = ExportFile(url: url)
+        } catch {
+            failure = "CSVを作れませんでした（\(error.localizedDescription)）"
+        }
+    }
+
+    static func percent(_ v: Double) -> String { String(format: v < 10 ? "%.1f%%" : "%.0f%%", v) }
+    /// 前の月からの増減（前の月が 0 なら金額）
+    static func change(_ now: Int, from prev: Int) -> String {
+        guard prev > 0 else { return now > 0 ? "+\(yen(now))" : "±0" }
+        let r = Double(now - prev) / Double(prev) * 100
+        return abs(r) < 0.05 ? "±0%" : (r > 0 ? "+" : "") + String(format: "%.1f%%", r)
+    }
+    /// グラフの目盛り（万円）
+    static func short(_ v: Int) -> String { v >= 10_000 ? "\(v / 10_000)万" : "\(v)" }
+
     private func shareCSV(groups: [DepartmentGroup], pays: [String: StaffPay]) {
         let rows = groups.flatMap { g in g.members.map { (member: $0, department: g.department.name, pay: pays[$0.id] ?? StaffPay()) } }
         do {
@@ -173,6 +300,76 @@ struct LaborCostView: View {
     static func yen(_ v: Double) -> String { yen(Int(v.rounded())) }
     static func yen(_ v: Int) -> String { "¥" + v.formatted(.number.grouping(.automatic)) }
     static func hours(_ minutes: Int) -> String { String(format: "%.1f時間", Double(minutes) / 60) }
+}
+
+// MARK: - 人件費の月予算
+
+struct BudgetEditView: View {
+    let month: MonthKey
+    @Environment(ShiftStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = ""
+    @State private var monthOnly = false
+    @State private var loaded = false
+    @State private var failure: String?
+
+    var body: some View {
+        let book = store.book
+        let storeName = book.scopeStoreID.flatMap { id in book.stores.first { $0.id == id }?.name }
+        NavigationStack {
+            Form {
+                Section {
+                    HStack {
+                        Text("¥").foregroundStyle(.secondary)
+                        TextField("例：1,200,000 または 120万", text: $text)
+                            .keyboardType(.numbersAndPunctuation)
+                            .monospacedDigit()
+                    }
+                    if !text.isEmpty, LaborBudget.parse(text) == nil {
+                        Text("金額を数字で入れてください。").font(.footnote).foregroundStyle(.red)
+                    }
+                    Toggle("\(month.month)月だけの予算にする", isOn: $monthOnly)
+                } header: {
+                    Text((storeName.map { "\($0)・" } ?? "") + "人件費の月予算")
+                } footer: {
+                    Text(monthOnly ? "\(month.description)だけに使います。繁忙期など、月で予算が違うときに。"
+                                   : "毎月の予算です。月だけの予算を入れた月は、そちらを使います。")
+                }
+                if LaborBudget.value(store: book.scopeStoreID, month: month, rules: book.pay) != nil {
+                    Section {
+                        Button(monthOnly ? "\(month.month)月だけの予算を消す" : "毎月の予算を消す", role: .destructive) { save(nil) }
+                    }
+                }
+            }
+            .navigationTitle("予算")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("やめる") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") { save(LaborBudget.parse(text)) }.disabled(LaborBudget.parse(text) == nil)
+                }
+            }
+            .onAppear {
+                guard !loaded else { return }
+                loaded = true
+                monthOnly = LaborBudget.isMonthOnly(store: book.scopeStoreID, month: month, rules: book.pay)
+                if let v = LaborBudget.value(store: book.scopeStoreID, month: month, rules: book.pay) {
+                    text = v.formatted(.number.grouping(.automatic))
+                }
+            }
+            .errorAlert($failure)
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func save(_ value: Int?) {
+        var rules = store.book.pay
+        let key = LaborBudget.key(store: store.book.scopeStoreID, month: monthOnly ? month : nil)
+        rules.budgets[key] = value
+        // 毎月の予算に切り替えたら、この月だけの予算は外す（入れた金額がこの月にそのまま出るように）
+        if !monthOnly, value != nil { rules.budgets[LaborBudget.key(store: store.book.scopeStoreID, month: month)] = nil }
+        do { try store.setPayRules(rules); dismiss() } catch { failure = "保存できませんでした（\(error.localizedDescription)）" }
+    }
 }
 
 // MARK: - 設定 → 人件費

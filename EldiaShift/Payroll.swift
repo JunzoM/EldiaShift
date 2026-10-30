@@ -41,6 +41,8 @@ struct PayRules: Codable, Equatable, Sendable {
     var weeklyHours = 40
     /// 月給の人の1時間あたり ＝ 月給 ÷ この時間（月の所定労働時間）
     var monthlyStandardHours = 160
+    /// 人件費の月予算（円）。キーは LaborBudget.key（店舗ごと・月ごと。月の指定が無ければ店舗の毎月の予算）
+    var budgets: [String: Int] = [:]
 
     static let nightStart = 22 * 60
     static let nightEnd = 5 * 60
@@ -58,6 +60,7 @@ struct PayRules: Codable, Equatable, Sendable {
         weeklyEnabled = try c.decodeIfPresent(Bool.self, forKey: .weeklyEnabled) ?? d.weeklyEnabled
         weeklyHours = try c.decodeIfPresent(Int.self, forKey: .weeklyHours) ?? d.weeklyHours
         monthlyStandardHours = max(1, try c.decodeIfPresent(Int.self, forKey: .monthlyStandardHours) ?? d.monthlyStandardHours)
+        budgets = (try c.decodeIfPresent([String: Int].self, forKey: .budgets) ?? [:]).filter { $0.value >= 0 }
     }
 }
 
@@ -91,6 +94,59 @@ struct StaffPay: Equatable, Sendable {
     }
 }
 
+/// 勤務1日分の明細（シフト明細の CSV に使う）
+struct PayDayLine: Sendable {
+    var day: DayKey
+    var shift: ResolvedShift
+    var netMinutes: Int
+    var overtimeMinutes: Int
+    var nightMinutes: Int
+    var wage: WageEntry?
+    /// 時給の人の基本（月給の人は 0。月給は日割りで別に入る）
+    var base = 0.0
+    var overtimePay = 0.0
+    var nightPay = 0.0
+    var amount: Double { base + overtimePay + nightPay }
+}
+
+/// 人件費の月予算（店舗ごと。月ごとに変えられる）
+enum LaborBudget {
+    /// store：見ている店舗（nil は全店舗・1店舗だけの会社）。month：nil は「毎月」
+    static func key(store: String?, month: MonthKey?) -> String {
+        let s = store ?? "all"
+        guard let m = month else { return s }
+        return s + "|" + String(format: "%04d-%02d", m.year, m.month)
+    }
+
+    /// その月の予算（その月だけの予算 → 毎月の予算 の順）。nil は未設定
+    static func value(store: String?, month: MonthKey, rules: PayRules) -> Int? {
+        rules.budgets[key(store: store, month: month)] ?? rules.budgets[key(store: store, month: nil)]
+    }
+
+    /// その月だけの予算があるか
+    static func isMonthOnly(store: String?, month: MonthKey, rules: PayRules) -> Bool {
+        rules.budgets[key(store: store, month: month)] != nil
+    }
+
+    /// 「¥1,200,000」「120万」なども読む。読めなければ nil
+    static func parse(_ text: String) -> Int? {
+        var t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .applyingTransform(.fullwidthToHalfwidth, reverse: false) ?? text
+        t = t.replacingOccurrences(of: ",", with: "").replacingOccurrences(of: "¥", with: "")
+            .replacingOccurrences(of: "\\", with: "").replacingOccurrences(of: "円", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        var unit = 1
+        if t.hasSuffix("万") { unit = 10_000; t.removeLast() }
+        guard !t.isEmpty, t.count <= 12, t.allSatisfy({ $0.isASCII && ($0.isNumber || $0 == ".") }),
+              let v = Double(t), v >= 0 else { return nil }
+        let yen = (v * Double(unit)).rounded()
+        return yen <= 99_999_999_999 ? Int(yen) : nil
+    }
+
+    /// 使用率（%）。予算 0 は nil
+    static func usage(_ cost: Int, budget: Int) -> Double? { budget > 0 ? Double(cost) / Double(budget) * 100 : nil }
+}
+
 enum Payroll {
     /// 勤務の中の深夜（22:00〜5:00）の分数（日をまたぐ勤務も数える）
     static func nightMinutes(start: Int, end: Int) -> Int {
@@ -102,7 +158,8 @@ enum Payroll {
 
     /// その月の1人分。週の時間外は月をまたぐ週も前後の日を見て数え、その月の日の分だけを入れる。
     /// 店舗を見ているときは、その店舗で勤務した日だけ（月給は自分の店舗に入れる）。週の時間は全店舗の合計で数える
-    static func pay(of m: StaffMember, month: MonthKey, in book: ShiftBook, rules: PayRules) -> StaffPay {
+    static func pay(of m: StaffMember, month: MonthKey, in book: ShiftBook, rules: PayRules,
+                    lines: ((PayDayLine) -> Void)? = nil) -> StaffPay {
         let days = month.days
         guard let first = days.first, let last = days.last else { return StaffPay() }
         let from = first.adding(days: -((first.weekday + 6) % 7))   // その週の月曜
@@ -144,23 +201,57 @@ enum Payroll {
             out.overtimeMinutes += ot
             out.nightMinutes += night
 
+            var line = PayDayLine(day: d, shift: r, netMinutes: net, overtimeMinutes: ot, nightMinutes: night, wage: wage)
+            defer { lines?(line) }
             guard let w = wage, w.amount > 0 else { out.missingWageDays += 1; continue }
             let otRate = Double(rules.overtimeRate) / 100
             let nightRate = Double(rules.nightRate) / 100
             switch w.kind {
             case .hourly:
                 let rate = Double(w.amount)
-                out.hourlyBase += rate * Double(net) / 60
-                out.overtimePay += rate * otRate * Double(ot) / 60
-                out.nightPay += rate * nightRate * Double(night) / 60
+                line.base = rate * Double(net) / 60
+                line.overtimePay = rate * otRate * Double(ot) / 60
+                line.nightPay = rate * nightRate * Double(night) / 60
+                out.hourlyBase += line.base
             case .monthly:
                 // 月給は所定の時間分を含むので、時間外は1時間あたりの125%（割増込み）、深夜は割増分だけ
                 let rate = Double(w.amount) / Double(max(1, rules.monthlyStandardHours))
-                out.overtimePay += rate * (1 + otRate) * Double(ot) / 60
-                out.nightPay += rate * nightRate * Double(night) / 60
+                line.overtimePay = rate * (1 + otRate) * Double(ot) / 60
+                line.nightPay = rate * nightRate * Double(night) / 60
             }
+            out.overtimePay += line.overtimePay
+            out.nightPay += line.nightPay
         }
         return out
+    }
+
+    /// 月の合計だけ（予算・前月比・年間の推移に使う）。見ている店舗・部門の人を合わせる
+    static func total(month: MonthKey, in book: ShiftBook) -> Int {
+        book.staffByDepartment(visibleIn: month).flatMap(\.members)
+            .reduce(StaffPay()) { $0 + pay(of: $1, month: month, in: book, rules: book.pay) }.total
+    }
+
+    /// 勤務1日ずつの明細の CSV（月給の人は、月給そのものは入れず時間外・深夜の分だけ。月給は人件費の CSV に）
+    static func detailCSV(rows: [(member: StaffMember, department: String)], month: MonthKey, in book: ShiftBook) -> String {
+        func h(_ minutes: Int) -> String { String(format: "%.2f", Double(minutes) / 60) }
+        func q(_ s: String) -> String { s.contains(where: { $0 == "," || $0 == "\"" || $0 == "\n" || $0 == "\r" }) ? "\"\(s.replacingOccurrences(of: "\"", with: "\"\""))\"" : s }
+        let weekdays = ["日", "月", "火", "水", "木", "金", "土"]
+        var lines = ["日付,曜日,部門,スタッフ,雇用形態,出勤,退勤,休憩(分),実働時間,時間外,深夜,給与の種類,単価,基本,時間外手当,深夜手当,金額,メモ"]
+        for r in rows {
+            var days: [PayDayLine] = []
+            _ = pay(of: r.member, month: month, in: book, rules: book.pay) { days.append($0) }
+            for l in days {
+                let gross = Int(((l.shift.hours ?? 0) * 60).rounded())
+                lines.append([l.day.description, weekdays[(l.day.weekday % 7 + 7) % 7], q(r.department), q(r.member.name),
+                              q(r.member.employment), l.shift.inTime, l.shift.outTime, "\(max(0, gross - l.netMinutes))",
+                              h(l.netMinutes), h(l.overtimeMinutes), h(l.nightMinutes),
+                              l.wage.map { $0.amount > 0 ? $0.kind.label : "未設定" } ?? "未設定", l.wage.map { "\($0.amount)" } ?? "",
+                              "\(Int(l.base.rounded()))", "\(Int(l.overtimePay.rounded()))", "\(Int(l.nightPay.rounded()))",
+                              "\(Int(l.amount.rounded()))", q(book.cells[CellKey(staffID: r.member.id, day: l.day)]?.note ?? "")]
+                    .joined(separator: ","))
+            }
+        }
+        return "\u{FEFF}" + lines.joined(separator: "\r\n") + "\r\n"
     }
 
     /// 人件費の CSV（Excel で開けるよう UTF-8 の BOM 付き）

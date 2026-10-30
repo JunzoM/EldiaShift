@@ -109,5 +109,52 @@ struct ShiftNoteTests {
         #expect(TimelineMath.snap(23, step: 15) == 30)
         #expect(TimelineMath.drag(.right, in0: 540, out0: 1080, delta: 15, step: 15) == (540, 1095))
         #expect(TimelineMath.drag(.right, in0: 540, out0: 1080, delta: -900, step: 15) == (540, 555))
+@Suite("人件費の予算・明細")
+@MainActor
+struct LaborBudgetTests {
+    @Test("予算の読み方")
+    func parse() {
+        #expect(LaborBudget.parse("1,200,000") == 1_200_000)
+        #expect(LaborBudget.parse("¥ 980000円") == 980_000)
+        #expect(LaborBudget.parse("１２０万") == 1_200_000)
+        #expect(LaborBudget.parse("12.5万") == 125_000)
+        #expect(LaborBudget.parse("abc") == nil)
+        #expect(LaborBudget.parse("-5") == nil)
+        #expect(LaborBudget.parse("") == nil)
+    }
+
+    @Test("月だけの予算 → 毎月の予算の順。前の版の設定も読める")
+    func lookup() throws {
+        var r = PayRules()
+        r.budgets[LaborBudget.key(store: "s1", month: nil)] = 1_000_000
+        r.budgets[LaborBudget.key(store: "s1", month: MonthKey(2026, 12))] = 1_500_000
+        #expect(LaborBudget.value(store: "s1", month: MonthKey(2026, 11), rules: r) == 1_000_000)
+        #expect(LaborBudget.value(store: "s1", month: MonthKey(2026, 12), rules: r) == 1_500_000)
+        #expect(LaborBudget.value(store: "s2", month: MonthKey(2026, 12), rules: r) == nil)
+        #expect(LaborBudget.usage(900_000, budget: 1_000_000) == 90)
+        let back = try JSONDecoder().decode(PayRules.self, from: JSONEncoder().encode(r))
+        #expect(back.budgets == r.budgets)
+        let old = try JSONDecoder().decode(PayRules.self, from: Data(#"{"overtimeRate":25}"#.utf8))
+        #expect(old.budgets.isEmpty)
+        #expect(LaborCostView.change(1_100_000, from: 1_000_000) == "+10.0%")
+    }
+
+    @Test("シフト明細のCSVは勤務1日ずつ、合計は人件費と同じ")
+    func detailCSV() {
+        var book = ShiftBook()
+        var m = StaffMember(id: "s1", number: 1, name: "見本", departmentID: "d", active: true, joinDate: "", leaveDate: "",
+                            timeBlocks: [], patterns: [], activePatternID: nil, periodPatterns: [])
+        m.wages = [WageEntry(id: "w", from: "2026-01-01", kind: .hourly, amount: 1200)]
+        book.staff = [m]
+        let e = CellEntry(inTime: "09:00", outTime: "18:00", blockID: nil, isOff: false)
+        book.cells[CellKey(staffID: "s1", day: DayKey(2026, 11, 2))] = e
+        book.cells[CellKey(staffID: "s1", day: DayKey(2026, 11, 3))] = e
+        let csv = Payroll.detailCSV(rows: [(member: m, department: "フロント")], month: MonthKey(2026, 11), in: book)
+        let lines = csv.split(separator: "\r\n")
+        #expect(lines.count == 3)
+        #expect(lines[1].hasPrefix("2026-11-02,月,フロント,見本"))
+        let sum = lines.dropFirst().compactMap { Int($0.split(separator: ",", omittingEmptySubsequences: false)[16]) }.reduce(0, +)
+        let pay = Payroll.pay(of: m, month: MonthKey(2026, 11), in: book, rules: book.pay)
+        #expect(abs(sum - pay.total) <= 1)
     }
 }
