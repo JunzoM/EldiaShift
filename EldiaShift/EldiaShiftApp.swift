@@ -31,6 +31,7 @@ struct EldiaShiftApp: App {
                 .environment(\.shiftDatabase, db)
                 .environment(\.shiftStore, store)
                 .modifier(BrandTint(hex: store.book.brandColor))
+                .modifier(MacZoom())
         }
         #if targetEnvironment(macCatalyst)
         .defaultSize(width: 1280, height: 820)
@@ -56,10 +57,38 @@ struct MacCommands: Commands {
             Button("スタッフ") { AppTab.open(.staff) }.keyboardShortcut("4", modifiers: .command)
             Button("集計") { AppTab.open(.summary) }.keyboardShortcut("5", modifiers: .command)
             Button("店舗") { AppTab.open(.stores) }.keyboardShortcut("6", modifiers: .command)
+            Divider()
+            Button("拡大") { zoom = min(zoom + 1, MacZoom.steps.count - 1) }
+                .keyboardShortcut("+", modifiers: .command)
+                .disabled(zoom >= MacZoom.steps.count - 1)
+            Button("縮小") { zoom = max(zoom - 1, 0) }
+                .keyboardShortcut("-", modifiers: .command)
+                .disabled(zoom <= 0)
+            Button("標準の大きさ") { zoom = MacZoom.standard }
+                .keyboardShortcut("0", modifiers: .command)
         }
     }
+
+    @AppStorage(MacZoom.key) private var zoom = MacZoom.standard
 }
 #endif
+
+/// Mac の文字の大きさ（表示 → 拡大・縮小）。Mac は iPad の画面を縮めて出すので、標準でも iPad より一段大きくする
+struct MacZoom: ViewModifier {
+    static let key = "macZoom"
+    static let steps: [DynamicTypeSize] = [.medium, .large, .xLarge, .xxLarge, .xxxLarge, .accessibility1, .accessibility2]
+    static let standard = 2
+
+    @AppStorage(key) private var zoom = standard
+
+    func body(content: Content) -> some View {
+        #if targetEnvironment(macCatalyst)
+        content.dynamicTypeSize(Self.steps[min(max(zoom, 0), Self.steps.count - 1)])
+        #else
+        content
+        #endif
+    }
+}
 
 /// いちばん外側。サイドバー（iPad）・タブ（iPhone）。iOS 17 の iPad でも出す
 struct RootView: View {

@@ -176,6 +176,13 @@ struct MainTabsView: View {
 // MARK: - ホーム
 
 struct HomeView: View {
+    /// 中身の幅の上限。Mac はウインドウを広げて使うので、広めにして左右の余白を減らす
+    #if targetEnvironment(macCatalyst)
+    static let contentWidth: CGFloat = 1500
+    #else
+    static let contentWidth: CGFloat = 1100
+    #endif
+
     var openDay: (DayKey) -> Void
     var openTab: (AppTab) -> Void
     /// 店舗の切替をツールバーに出す（iPad はサイドバーにあるので出さない）
@@ -230,7 +237,7 @@ struct HomeView: View {
                 if sizeClass == .compact { quickMenu }
             }
             .padding(16)
-            .frame(maxWidth: 1100)
+            .frame(maxWidth: Self.contentWidth)
             .frame(maxWidth: .infinity)
         }
         .background(Color(.systemGroupedBackground))
