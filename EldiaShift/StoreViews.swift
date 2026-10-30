@@ -130,6 +130,10 @@ struct StoreListView: View {
     @State private var editing: Store?
     @State private var shownID: String?
     @State private var error: String?
+    /// 見本のデータを足す・消す前の確認
+    @State private var askAddSample = false
+    @State private var askRemoveSample = false
+    @State private var sampleNote: String?
 
     var body: some View {
         let book = store.book
@@ -207,8 +211,49 @@ struct StoreListView: View {
                         .accessibilityLabel("店舗を追加")
                 }
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    if store.hasSampleData {
+                        Button(role: .destructive) { askRemoveSample = true } label: { Label("見本のデータを消す", systemImage: "trash") }
+                    } else {
+                        Button { askAddSample = true } label: { Label("見本のデータで試す", systemImage: "sparkles") }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .accessibilityLabel("店舗管理のメニュー")
+            }
         }
         .sheet(item: $editing) { st in StoreEditView(storeInfo: st) }
+        .confirmationDialog("見本のデータを足しますか？", isPresented: $askAddSample, titleVisibility: .visible) {
+            Button("見本のデータを足す") {
+                do {
+                    try store.addSampleData()
+                    sampleNote = "見本ホテル（本館・別館）と、スタッフ24人を足しました。左上の店舗の切り替えから見られます。試し終わったら、このメニューの「見本のデータを消す」で見本だけを消せます。"
+                } catch {
+                    self.error = error.localizedDescription
+                }
+            }
+        } message: {
+            Text("見本の店舗2つ・部門4つ・勤務のひな形3つ・スタッフ24人を足します。今の店舗・スタッフ・シフトはそのままです。iCloud 同期がオンなら、ほかの端末にも出ます。")
+        }
+        .confirmationDialog("見本のデータを消しますか？", isPresented: $askRemoveSample, titleVisibility: .visible) {
+            Button("見本のデータを消す", role: .destructive) {
+                do {
+                    try store.removeSampleData()
+                    sampleNote = "見本のデータを消しました。消す前の内容は自動バックアップに残っています。"
+                } catch {
+                    self.error = error.localizedDescription
+                }
+            }
+        } message: {
+            Text("見本の店舗・部門・スタッフと、そのシフトを消します。見本でない店舗・スタッフはそのままです。消す前に自動でバックアップを作ります。")
+        }
+        .alert("見本のデータ", isPresented: Binding(get: { sampleNote != nil }, set: { if !$0 { sampleNote = nil } })) {
+            Button("OK") { sampleNote = nil }
+        } message: {
+            Text(sampleNote ?? "")
+        }
         .errorAlert($error)
     }
 
@@ -255,7 +300,8 @@ struct StoreListView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(st.name.isEmpty ? "（名前なし）" : st.name).font(.body.weight(.semibold)).foregroundStyle(.primary)
                 Text(st.address.isEmpty ? "住所未登録" : st.address).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                Text("部門 \(book.departments(in: st.id).count)・スタッフ \(staff)人").font(.caption2).foregroundStyle(.secondary)
+                Text("部門 \(book.departments(in: st.id).count)・スタッフ \(staff)人" + (st.facilitySummary.isEmpty ? "" : "・\(st.facilitySummary)"))
+                    .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 4)
             if current {
@@ -306,6 +352,10 @@ struct StoreDetailPanel: View {
                 info("住所", st.address)
                 info("電話番号", st.phone)
                 info("営業時間", st.hours)
+                if st.roomCount != nil || st.floorCount != nil {
+                    info("客室数", st.roomCount.map { "\($0)室" } ?? "")
+                    info("フロア数", st.floorCount.map { "\($0)階" } ?? "")
+                }
                 info("部門数", "\(depts.count)")
                 info("スタッフ数", "\(staff.count)人" + (helpers.isEmpty ? "" : "（ほかに掛け持ち \(helpers.count)人）"))
                 info("備考", st.note)
@@ -417,6 +467,14 @@ struct StoreEditView: View {
                     Text("この店舗を表示しているとき、サイドバーのロゴに「\(storeInfo.displayPrefix) SHIFT」と出します。空なら HOTEL です。")
                 }
                 Section {
+                    numberField("客室数", value: $storeInfo.roomCount, unit: "室")
+                    numberField("フロア数", value: $storeInfo.floorCount, unit: "階")
+                } header: {
+                    Text("施設（ホテル向け・なくても可）")
+                } footer: {
+                    Text("入れると、店舗の一覧と店舗の情報に出ます。")
+                }
+                Section {
                     TextField("略称（例：本館）", text: $storeInfo.short)
                 } footer: {
                     Text("掛け持ちの人がこの店舗で勤務する日に、ほかの店舗の表のマスへ小さく出します。空なら店舗名から自動で作ります（いまは「\(book.shortName(of: storeInfo))」）。")
@@ -471,6 +529,26 @@ struct StoreEditView: View {
                 Text("掛け持ちのスタッフの入れる店舗からも外れます。")
             }
             .errorAlert($error)
+        }
+    }
+}
+
+extension StoreEditView {
+    /// 数だけを入れる欄（空は未登録）
+    func numberField(_ title: String, value: Binding<Int?>, unit: String) -> some View {
+        LabeledContent(title) {
+            HStack(spacing: 4) {
+                TextField("未登録", text: Binding(
+                    get: { value.wrappedValue.map(String.init) ?? "" },
+                    set: { text in
+                        let digits = (text.applyingTransform(.fullwidthToHalfwidth, reverse: false) ?? text).filter { $0.isASCII && $0.isNumber }
+                        value.wrappedValue = digits.isEmpty ? nil : Int(digits.prefix(5))
+                    }))
+                    .keyboardType(.numberPad)
+                    .multilineTextAlignment(.trailing)
+                    .frame(maxWidth: 120)
+                Text(unit).foregroundStyle(.secondary)
+            }
         }
     }
 }
