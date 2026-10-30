@@ -201,6 +201,9 @@ struct HomeView: View {
     @AppStorage(BackupReminder.key) private var lastBackup: Double = 0
     /// ホームの数字（シフトの中身か日付が変わったときだけ数え直す）
     @State private var memo = HomeMemo()
+    /// 中身の幅（数字のカードを1段に並べるか決める）
+    @State private var contentWidth: CGFloat = 0
+    @Environment(\.appZoom) private var zoom
 
     var body: some View {
         let today = store.today
@@ -209,9 +212,16 @@ struct HomeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: DS.section) {
                 // 会社 → その下に店舗 → 選んでいる店舗の今日
-                CompanyBanner(company: store.book.company, brandHex: store.book.brandColor,
-                              storeCount: store.book.allStores.count, compact: sizeClass == .compact) { showCompany = true }
-                StoreStrip(stats: StoreTodayStat.all(store.book, today: today), compact: sizeClass == .compact) { showStores = true }
+                // iPad・Mac は店舗の切り替えを会社の帯に入れて低くする。iPhone は帯の下に店舗の並び
+                if sizeClass == .compact {
+                    CompanyBanner(company: store.book.company, brandHex: store.book.brandColor,
+                                  storeCount: store.book.allStores.count, compact: true) { showCompany = true }
+                    StoreStrip(stats: StoreTodayStat.all(store.book, today: today), compact: true) { showStores = true }
+                } else {
+                    CompanyBanner(company: store.book.company, brandHex: store.book.brandColor,
+                                  storeCount: store.book.allStores.count, stats: StoreTodayStat.all(store.book, today: today),
+                                  manageStores: { showStores = true }) { showCompany = true }
+                }
                 header(today)
                 // 見本の画面（スクショ）には出さない
                 if !DemoMode.enabled, !store.book.isEmpty, BackupReminder.isDue(last: lastBackup, now: Date()) { backupNotice }
@@ -238,6 +248,7 @@ struct HomeView: View {
                 }
             }
             .padding(DS.page)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { contentWidth = $0 }
             .frame(maxWidth: Self.contentWidth)
             .frame(maxWidth: .infinity)
         }
@@ -272,17 +283,16 @@ struct HomeView: View {
             : "まだバックアップを作っていません"
         return Button { showBackup = true } label: {
             HStack(spacing: 12) {
-                Image(systemName: "externaldrive.badge.exclamationmark").appFont(.title3).foregroundStyle(.orange)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(headline)
-                        .appFont(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                    Text("iCloud 同期とは別に、ファイルにも残しておくと安心です。押してバックアップを作ります。")
-                        .appFont(.caption).foregroundStyle(.secondary)
-                }
+                // 1行の細い帯（見出しの下で場所を取らない）
+                Image(systemName: "externaldrive.badge.exclamationmark").appFont(.subheadline).foregroundStyle(.orange)
+                Text(headline)
+                    .appFont(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(1)
+                Text("押してバックアップを作ります")
+                    .appFont(.caption).foregroundStyle(.secondary).lineLimit(1)
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right").appFont(.caption).foregroundStyle(.tertiary)
             }
-            .padding(DS.cardPadding)
+            .padding(.horizontal, DS.cardPadding).padding(.vertical, 10)
             .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: DS.cardRadius, style: .continuous))
             .contentShape(Rectangle())
         }
@@ -314,7 +324,7 @@ struct HomeView: View {
     // MARK: 数字のカード
 
     private func cards(_ info: HomeInfo) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: sizeClass == .compact ? 150 : 200), spacing: DS.gap)], spacing: DS.gap) {
+        LazyVGrid(columns: cardColumns, spacing: DS.gap) {
             HomeCard(title: "今日の出勤", systemImage: "person.2.fill", tint: .accentColor,
                      value: "\(info.working.count)", unit: "/ 在籍\(info.enrolled)人",
                      note: info.helpers > 0 ? "うち掛け持ち \(info.helpers)人・休み \(info.off)人" : "休み \(info.off)人") {
@@ -354,6 +364,18 @@ struct HomeView: View {
                 openTab(.summary)
             }
         }
+    }
+
+    /// 数字のカード6枚：広ければ1段（6列）、狭ければ2段（3列）、iPhone は2列。1枚だけ下に残らないようにする
+    private var cardColumns: [GridItem] {
+        let count: Int
+        if sizeClass == .compact {
+            count = 2
+        } else {
+            let oneRow = 6 * 170 * zoom + 5 * DS.gap + 2 * DS.page
+            count = contentWidth >= oneRow ? 6 : 3
+        }
+        return Array(repeating: GridItem(.flexible(), spacing: DS.gap), count: count)
     }
 
     /// 今月の人件費の見込み（人件費を隠しているときは金額を出さない）
