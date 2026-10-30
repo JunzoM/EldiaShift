@@ -83,12 +83,13 @@ enum BackupFile {
             let outTime = string(c["outTime"]) ?? ""
             let blockID = string(c["blockId"]).flatMap { $0.isEmpty ? nil : $0 }
             let storeID = string(c["storeId"]).flatMap { $0.isEmpty ? nil : $0 }
+            let note = string(c["note"]).map { String($0.prefix(500)) }.flatMap { $0.isEmpty ? nil : $0 }
             if !isOff, ClockTime.parse(inTime) == nil || ClockTime.parse(outTime) == nil, blockID == nil {
                 skipped += 1
                 continue
             }
             book.cells[k] = CellEntry(inTime: normalized(inTime), outTime: normalized(outTime), blockID: blockID, isOff: isOff,
-                                      storeID: isOff ? nil : storeID)
+                                      storeID: isOff ? nil : storeID, note: note)
         }
 
         // 休憩の決まり（このアプリで書き出したファイルだけが持つ。PC版のファイルは PC版と同じ決まり）
@@ -176,6 +177,7 @@ enum BackupFile {
                                     "blockId": c.blockID.map { $0 as Any } ?? NSNull(),
                                     "isOff": c.isOff, "auto": false]
             if let st = c.storeID { o["storeId"] = st }
+            if let n = c.note, !n.isEmpty { o["note"] = n }
             cells[k.description] = o
         }
         let rulesJSON = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(book.breakRules))) ?? [:]

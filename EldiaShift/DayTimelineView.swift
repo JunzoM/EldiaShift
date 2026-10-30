@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 日ごとのタイムライン（朝5:00〜翌10:00）。編集中はバーをドラッグして移動、両端で長さを変える（30分刻み）
+/// 日ごとのタイムライン（朝5:00〜翌10:00）。編集中はバーをドラッグして移動、両端で長さを変える（30分・15分刻み）
 /// 横幅は画面に収める（横スクロールにするとドラッグとぶつかるため）。空いているところを押すと8時間のシフトを作る
 struct DayTimelineView: View {
     let day: DayKey
@@ -10,6 +10,17 @@ struct DayTimelineView: View {
     @State private var editing: Edit?
     @State private var shortage: ShortageTarget?
     @State private var error: String?
+    /// 刻み（30分・15分。端末ごとに覚える）
+    @AppStorage("timelineStep") private var stepMinutes = 30
+    /// 希望休の日に勤務を作るときの確認
+    @State private var pendingCreate: PendingCreate?
+
+    private struct PendingCreate: Identifiable {
+        let member: StaffMember
+        let inM: Int
+        let outM: Int
+        var id: String { member.id }
+    }
 
     private struct DragState: Equatable {
         let staffID: String
@@ -54,6 +65,13 @@ struct DayTimelineView: View {
             HStack {
                 UndoRedoButtons()
                 Spacer()
+                Picker("時間の刻み", selection: $stepMinutes) {
+                    Text("30分").tag(30)
+                    Text("15分").tag(15)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 130)
+                .accessibilityLabel("ドラッグの時間の刻み")
                 EditingChip()
             }
             .padding(.horizontal, 12).padding(.vertical, 6)
@@ -98,6 +116,13 @@ struct DayTimelineView: View {
             CellEditorSheet(member: e.member, day: day).presentationDetents([.medium, .large])
         }
         .sensoryFeedback(.selection, trigger: drag.map { $0.inM * 10_000 + $0.outM })
+        .confirmationDialog("希望休の日です", isPresented: Binding(get: { pendingCreate != nil }, set: { if !$0 { pendingCreate = nil } }),
+                            titleVisibility: .visible, presenting: pendingCreate) { p in
+            Button("勤務を入れる") { save(p.member, (p.inM, p.outM)) }
+            Button("やめる", role: .cancel) {}
+        } message: { p in
+            Text("\(p.member.name)さんはこの日に希望休を出しています。勤務を入れますか？")
+        }
         .alert("保存できませんでした", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("OK") { error = nil }
         } message: { Text(error ?? "") }
@@ -123,8 +148,10 @@ struct DayTimelineView: View {
                     .contentShape(Rectangle())
                     .gesture(SpatialTapGesture().onEnded { v in
                         guard store.editing, live == nil, r?.isOff != true, r?.elsewhere != true else { return }
-                        let at = TimelineMath.start + TimelineMath.snap(Double(v.location.x / perMinute) - 15)
-                        if let s = TimelineMath.newSpan(at: at) { save(m, s) }
+                        let at = TimelineMath.start + TimelineMath.snap(Double(v.location.x / perMinute) - 15, step: stepMinutes)
+                        guard let s = TimelineMath.newSpan(at: at) else { return }
+                        // 希望休の日は、勤務を入れてよいか確かめる
+                        if m.requestsOff(day) { pendingCreate = PendingCreate(member: m, inM: s.inM, outM: s.outM) } else { save(m, s) }
                     })
 
                 if let r, r.isOff {
@@ -159,10 +186,18 @@ struct DayTimelineView: View {
         return ZStack {
             RoundedRectangle(cornerRadius: 8)
                 .fill(color.opacity(dragging ? 0.95 : (r?.isAuto == true ? 0.55 : 0.85)))
-            Text("\(TimelineMath.label(s.inM))〜\(TimelineMath.label(s.outM))")
-                .font(.caption2.weight(.bold)).monospacedDigit()
-                .foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.6)
-                .padding(.horizontal, 12)
+            HStack(spacing: 4) {
+                Text("\(TimelineMath.label(s.inM))〜\(TimelineMath.label(s.outM))")
+                    .font(.caption2.weight(.bold)).monospacedDigit()
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                // メモがある日は印と最初の部分を出す
+                if let note = r?.note, !note.isEmpty {
+                    Image(systemName: "note.text").font(.caption2)
+                    if w > 180 { Text(note).font(.caption2).lineLimit(1).truncationMode(.tail) }
+                }
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
             if store.editing {
                 HStack {
                     handle(m, .left, s, perMinute: perMinute)
@@ -177,11 +212,12 @@ struct DayTimelineView: View {
         .gesture(dragGesture(m, .move, s, perMinute: perMinute), including: store.editing ? .all : .subviews)
         .onTapGesture { if store.editing { editing = Edit(member: m) } }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(m.name)、\(TimelineMath.label(s.inM))から\(TimelineMath.label(s.outM))")
+        .accessibilityLabel("\(m.name)、\(TimelineMath.label(s.inM))から\(TimelineMath.label(s.outM))\(r?.note.map { "、メモ：\($0)" } ?? "")")
         .accessibilityHint(store.editing ? "ダブルタップで時刻を変えます" : "")
         .accessibilityAdjustableAction { dir in
             guard store.editing else { return }
-            let n = TimelineMath.drag(.move, in0: s.inM, out0: s.outM, delta: dir == .increment ? 30 : -30)
+            let n = TimelineMath.drag(.move, in0: s.inM, out0: s.outM, delta: dir == .increment ? stepMinutes : -stepMinutes,
+                                      step: stepMinutes)
             save(m, n)
         }
     }
@@ -221,9 +257,9 @@ struct DayTimelineView: View {
     private func dragGesture(_ m: StaffMember, _ mode: TimelineMath.Mode, _ s: (inM: Int, outM: Int), perMinute: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 4, coordinateSpace: .global)   // バーが動いても基準がずれないよう画面全体で測る
             .onChanged { v in
-                let delta = TimelineMath.snap(Double(v.translation.width / perMinute))
+                let delta = TimelineMath.snap(Double(v.translation.width / perMinute), step: stepMinutes)
                 let start = drag?.staffID == m.id && drag?.mode == mode ? drag! : DragState(staffID: m.id, mode: mode, in0: s.inM, out0: s.outM, inM: s.inM, outM: s.outM)
-                let n = TimelineMath.drag(mode, in0: start.in0, out0: start.out0, delta: delta)
+                let n = TimelineMath.drag(mode, in0: start.in0, out0: start.out0, delta: delta, step: stepMinutes)
                 var next = start
                 next.inM = n.inM
                 next.outM = n.outM

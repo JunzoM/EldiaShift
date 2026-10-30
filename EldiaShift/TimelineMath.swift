@@ -1,7 +1,7 @@
 import Foundation
 
 /// 日ごとのタイムラインの計算（PC版と同じ範囲・同じ規則）
-/// ・表示は朝5:00〜翌10:00、30分刻み
+/// ・表示は朝5:00〜翌10:00、30分刻み（設定で15分刻みにもできる）
 /// ・出勤は当日中（〜23:30）、退勤は翌10:00まで。長さは30分〜24時間
 enum TimelineMath {
     static let start = 5 * 60
@@ -14,8 +14,8 @@ enum TimelineMath {
         case move, left, right
     }
 
-    /// 30分単位にそろえる
-    static func snap(_ minutes: Double) -> Int {
+    /// 刻み（30分・15分）にそろえる
+    static func snap(_ minutes: Double, step: Int = step) -> Int {
         Int((minutes / Double(step)).rounded()) * step
     }
 
@@ -27,7 +27,7 @@ enum TimelineMath {
     }
 
     /// ドラッグした量（分、30分単位）を当てはめた結果
-    static func drag(_ mode: Mode, in0: Int, out0: Int, delta: Int) -> (inM: Int, outM: Int) {
+    static func drag(_ mode: Mode, in0: Int, out0: Int, delta: Int, step: Int = step) -> (inM: Int, outM: Int) {
         var inM = in0, outM = out0
         switch mode {
         case .move:

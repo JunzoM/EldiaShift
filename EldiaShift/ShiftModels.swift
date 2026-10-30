@@ -155,6 +155,8 @@ struct CellEntry: Hashable, Codable, Sendable {
     var isOff: Bool
     /// 勤務する店舗。nil はその人の部門の店舗（掛け持ちでほかの店舗に入る日だけ入れる）
     var storeID: String? = nil
+    /// メモ（引き継ぎ・注意点など）。空は nil
+    var note: String? = nil
 }
 
 /// 1人×1日を表すキー

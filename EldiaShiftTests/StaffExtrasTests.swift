@@ -72,3 +72,42 @@ struct StaffExtrasTests {
         #expect(empty.message.contains("まだありません"))
     }
 }
+
+@Suite("シフトのメモ・時間の刻み")
+@MainActor
+struct ShiftNoteTests {
+    private func member() -> StaffMember {
+        StaffMember(id: "s1", number: 1, name: "見本", departmentID: "d", active: true, joinDate: "", leaveDate: "",
+                    timeBlocks: [], patterns: [], activePatternID: nil, periodPatterns: [])
+    }
+
+    @Test("メモは保存・バックアップで残り、時刻だけ変えても消えない")
+    func noteKept() throws {
+        let store = ShiftStore(db: ShiftDatabase(inMemory: true))
+        try store.save(member())
+        let key = CellKey(staffID: "s1", day: DayKey(2026, 11, 10))
+        try store.setCell(key, to: CellEntry(inTime: "09:00", outTime: "18:00", blockID: nil, isOff: false, note: "鍵の受け渡し"))
+        // 時刻だけ変える（メモを渡さない）
+        try store.setCell(key, to: CellEntry(inTime: "10:00", outTime: "19:00", blockID: nil, isOff: false))
+        #expect(store.book.cells[key]?.note == "鍵の受け渡し")
+        #expect(store.book.cells[key]?.inTime == "10:00")
+        let loaded = try ShiftRecords.load(store.db.viewContext)
+        #expect(loaded.cells[key]?.note == "鍵の受け渡し")
+        #expect(Schedule.resolve(loaded.staff[0], on: key.day, in: loaded)?.note == "鍵の受け渡し")
+        let (again, _) = try BackupFile.read(try BackupFile.write(loaded))
+        #expect(again.cells[key]?.note == "鍵の受け渡し")
+        // 空の文字でメモを消す
+        var cleared = try #require(store.book.cells[key])
+        cleared.note = ""
+        try store.setCell(key, to: cleared)
+        #expect(store.book.cells[key]?.note == nil)
+    }
+
+    @Test("15分刻みでそろえる・動かす")
+    func quarterStep() {
+        #expect(TimelineMath.snap(22, step: 15) == 15)
+        #expect(TimelineMath.snap(23, step: 15) == 30)
+        #expect(TimelineMath.drag(.right, in0: 540, out0: 1080, delta: 15, step: 15) == (540, 1095))
+        #expect(TimelineMath.drag(.right, in0: 540, out0: 1080, delta: -900, step: 15) == (540, 555))
+    }
+}
