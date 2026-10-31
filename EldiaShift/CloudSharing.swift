@@ -21,7 +21,7 @@ final class ShareInbox {
                 try await db.accept(metadata)
                 self.message = "共有されたシフト表を受け取りました。届くまで少しかかることがあります。届いたら自動で切り替わります（設定の「シフト表の共有」でも切り替えられます）。"
             } catch {
-                self.message = "共有を受け取れませんでした（\(error.localizedDescription)）"
+                self.message = ShareErrorText.message(error, fallback: "共有を受け取れませんでした")
             }
         }
     }
@@ -88,7 +88,7 @@ enum CloudSharingPresenter {
         func itemTitle(for csc: UICloudSharingController) -> String? { "シフト表" }
 
         func cloudSharingController(_ csc: UICloudSharingController, failedToSaveShareWithError error: Error) {
-            Task { @MainActor in ShareInbox.shared.message = "共有を保存できませんでした（\(error.localizedDescription)）" }
+            Task { @MainActor in ShareInbox.shared.message = ShareErrorText.message(error, fallback: "共有を保存できませんでした") }
         }
 
         func cloudSharingControllerDidSaveShare(_ csc: UICloudSharingController) {
@@ -209,8 +209,46 @@ struct ShareSettingsView: View {
                 }
                 refresh()
             } catch {
-                self.error = error.localizedDescription
+                self.error = ShareErrorText.message(error)
             }
         }
+    }
+}
+
+/// 共有の失敗を、英語の技術的な文ではなく、やることがわかる文にする
+enum ShareErrorText {
+    static func message(_ error: Error, fallback: String = "共有を始められませんでした") -> String {
+        if error is ShareError { return error.localizedDescription }
+        let detail = String(describing: error)
+        // 権限ファイルに iCloud 共有の項目（com.apple.developer.icloud-extended-share-access）が無い版
+        if detail.contains("icloud-extended-share-access") || detail.contains("OneTimeLinks") {
+            return "このアプリの版では iCloud 共有を始められません。App Store（または TestFlight）で SHIFT を最新の版にしてから、もう一度お試しください。"
+        }
+        if let ck = cloudKitError(error) {
+            switch ck.code {
+            case .notAuthenticated:
+                return "iCloud にサインインしていません。「設定」アプリの一番上（Apple アカウント）でサインインし、iCloud Drive をオンにしてください。"
+            case .networkUnavailable, .networkFailure, .serviceUnavailable, .requestRateLimited, .zoneBusy:
+                return "iCloud につながりませんでした。インターネットの接続を確かめて、少し待ってからもう一度お試しください。"
+            case .quotaExceeded:
+                return "iCloud の空き容量が足りません。「設定」アプリの iCloud で空きを作ってから、もう一度お試しください。"
+            case .permissionFailure:
+                return "この Apple アカウントでは共有できません（ファミリー共有の制限などを確かめてください）。"
+            default:
+                break
+            }
+        }
+        return "\(fallback)（\(error.localizedDescription)）"
+    }
+
+    /// NSPersistentCloudKitContainer はエラーを包んで返すので、中の CKError を探す
+    private static func cloudKitError(_ error: Error) -> CKError? {
+        var current: NSError? = error as NSError
+        for _ in 0..<5 {
+            guard let e = current else { return nil }
+            if e.domain == CKErrorDomain { return CKError(_nsError: e) }
+            current = e.userInfo[NSUnderlyingErrorKey] as? NSError
+        }
+        return nil
     }
 }

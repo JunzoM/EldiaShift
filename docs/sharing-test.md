@@ -4,6 +4,7 @@
 A＝共有する人（オーナー）、B＝招待される人。どちらも最新の版を入れ、設定の「iCloud で同期する」をオンにしておく。
 
 ## 前もって
+- [ ] Xcode の Signing & Capabilities（iOS と Mac の両方）で、権限に `com.apple.developer.icloud-extended-share-access`（`InProcessOneTimeLinks`）が入っていることを確かめる。無いと iOS 26 以降で「To use one time links, you must have the … entitlement」と出て、共有も iCloud 同期も始まらない
 - [ ] CloudKit Console で、開発（Development）のスキーマに `PayRecord`（key・wages・updatedAt）と `CellRecord.note` があることを確かめる（開発ビルドを一度動かすと作られる）
 - [ ] TestFlight / App Store に出す前に、スキーマを本番（Production）へ反映する（Deploy Schema Changes）
 
