@@ -188,6 +188,30 @@ struct AppFont {
     }
 }
 
+extension AppFont {
+    /// iPhone・iPad の「文字の大きさ」（Dynamic Type）を倍率にする。本文の大きさ ÷ 標準（17pt）。
+    /// 表のようにマスの大きさが決まっている画面で、文字とマスを同じだけ大きくするために使う。
+    /// 大きすぎると表に収まらないので max で止める
+    static func typeScale(_ size: DynamicTypeSize, max: CGFloat = 1.6) -> CGFloat {
+        let body: CGFloat = switch size {
+        case .xSmall: 14
+        case .small: 15
+        case .medium: 16
+        case .large: 17
+        case .xLarge: 19
+        case .xxLarge: 21
+        case .xxxLarge: 23
+        case .accessibility1: 28
+        case .accessibility2: 33
+        case .accessibility3: 40
+        case .accessibility4: 47
+        case .accessibility5: 53
+        @unknown default: 17
+        }
+        return min(body / 17, max)
+    }
+}
+
 private struct AppZoomKey: EnvironmentKey {
     static let defaultValue: CGFloat = 1
 }
