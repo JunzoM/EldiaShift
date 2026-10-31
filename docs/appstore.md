@@ -66,10 +66,23 @@ SHIFT は、ホテルや店舗の現場で使うシフト表アプリです。�
 
 ■ 安心のデータ管理
 ・サーバー不要。データは端末と、あなたの iCloud にだけ保存（運営者は受け取りません）
-・iCloud 同期で、同じ Apple ID の iPad・iPhone で同じシフト表を使用
+・iCloud 同期で、同じ Apple ID の iPad・iPhone・Mac で同じシフト表を使用
+・iCloud 共有で、ほかの管理者とシフト表を共同編集（給与は共有しません）
 ・バックアップの作成と、自動バックアップからの復元
 ・会社の色を選んで、アプリ全体の色をそろえられます
 ・アプリの中のロゴ「〇〇 SHIFT」を、店舗ごとに自分の名前に
+
+### このバージョンの新機能（1.2）
+・Mac 版：iPad と同じ画面で Mac でも使えます（追加の購入は不要）。表示メニューから拡大・縮小
+・iCloud 共有：ほかの管理者とシフト表を共同編集。見るだけの共有も（給与は共有しません）
+・シフト編集：マスごとのメモ、15分刻み、希望休の日に入れるときの確認
+・人件費：月の予算と使用率、前月比、部門の割合、年間の推移、シフト明細の CSV
+・希望休の申請：まとめて承認・却下、部門で絞り込み、代理で登録、宛名ごとの返事
+・印刷：A3、1か月を1つの表に、人数が多いときは次のページへ、メモの一覧、全ページのプレビュー
+・スタッフ：都道府県の最低賃金の表示（毎年の改定も自動で反映）、似顔絵、10円単位の切り上げ
+・ホーム：人件費・承認待ちのカード、月の出勤人数のカレンダー、店舗の切り替え
+・iPad・Mac：スタッフ・希望休を左右2列で表示、画面全体のデザインを見直し
+・シフト表のマスが「文字の大きさ」の設定に合わせて大きくなります
 
 ### このバージョンの新機能（1.1）
 ・希望休の申請：事務所に貼るQRコードから、スタッフがスマホで申請。届いたリンクを押すだけで取り込み、承認・却下・返事まで
@@ -88,6 +101,11 @@ SHIFT は、ホテルや店舗の現場で使うシフト表アプリです。�
 ・希望休の申請：スタッフ用の申請ページ（https://facility-manager-phi.vercel.app/hotel-shift/request）は入力内容をサーバーに送らず、申請の内容を URL の「#」以降に入れたリンクを作るだけです。Associated Domains（applinks:facility-manager-phi.vercel.app）は、このリンクを押したときに SHIFT の「申請を受け取る」画面を開くために使います。お試し用のリンク（スタッフ「見本 花子」を登録すると名前が自動で選ばれます）：
 https://facility-manager-phi.vercel.app/hotel-shift/r?openExternalBrowser=1#eyJ2IjoxLCJuIjoi6KaL5pysIOiKseWtkCIsInMiOiLopovmnKzjg5vjg4bjg6sg5pys6aSoIiwiZCI6WyIyMDI2LTEyLTAzIiwiMjAyNi0xMi0xMCJdLCJyIjoi5a-p5p-755So44Gu6KaL5pysIn0
 ・Face ID：設定 → 人件費 →「この端末で人件費・給与を隠す」をオンにしたときだけ、人件費を表示する前の本人確認に使います（確認は iOS が行い、アプリは生体情報を受け取りません）。
+
+1.2 で追加した機能について：
+・iCloud 共有：設定 →「シフト表の共有」から、Apple の共有の仕組み（CKShare）でほかの Apple ID の利用者を招待します。データは利用者の iCloud の中だけでやり取りし、運営者のサーバーは使いません。給与の記録は共有されません。
+・最低賃金の表：起動時に1日1回まで、公開されている表（https://raw.githubusercontent.com/JunzoM/EldiaShift/main/minimum-wage.json）を読み込みます。読み込むだけで、利用者の情報は送りません。
+・Mac 版：iPad と同じアプリです（Mac Catalyst）。店舗の画面の「見本のデータで試す」で、4店舗・各25人の見本が入ります。
 
 ## 画面写真
 GitHub Actions の「App Store Screenshots」で作成し、`appstore-screenshots` ブランチに置く。
@@ -133,3 +151,13 @@ bash scripts/duo-screenshots.sh
 - App のプライバシー：「データを収集しない」のまま（給与・申請は端末と利用者の iCloud のみ。申請ページはサーバーに送らない）
 - 画面写真：GitHub Actions の「App Store Screenshots」を main で実行し直すと、会社の見出し・人件費などの入った新しい画面になる
 - 実機で確認：申請リンクから SHIFT が開く／人件費を隠す設定の Face ID／iPhone で受け取った申請が iPad に出る（iCloud 同期）／ホームの会社と店舗
+
+### 1.2（ビルド 3）
+- バージョン 1.2・ビルド 3。iOS と Mac で同じ番号（アップロードし直すときはビルド番号を上げる）
+- CloudKit：**スキーマの反映が必要**。開発ビルドを一度動かして `PayRecord`（key・wages・updatedAt）と `CellRecord.note` を作り、共有を一度試してから、CloudKit Console で本番へ Deploy Schema Changes（`docs/sharing-test.md` の「前もって」）
+- 実機で共有を確かめる：`docs/sharing-test.md` の 1〜8（Apple ID が違う2台）
+- 最低賃金：`minimum-wage.json` と `MinimumWage.swift` の `bundled` が同じ年度・内容であること（2026年度でそろえ済み）
+- Mac：Developer サイトで App ID の Mac Catalyst を有効化 → Xcode で「My Mac (Mac Catalyst)」を Archive してアップロード。Mac の実機で上の「Mac 版」の確認項目を見る
+- 画面写真：GitHub Actions の「App Store Screenshots」を main で実行し直す（iPad・iPhone）。Mac 用（1280×800 以上）は Mac で撮る（⌘⇧4 → スペースでウインドウ）
+- App Store Connect：「このバージョンの新機能」に 1.2 の文章、説明の「安心のデータ管理」を更新、審査メモに 1.2 の段落を追加、macOS のビルドを選ぶ
+- App のプライバシー：「データを収集しない」のまま（最低賃金の表は読み込むだけ。共有は利用者の iCloud の中だけ）
