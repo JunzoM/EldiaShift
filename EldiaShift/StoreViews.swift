@@ -500,14 +500,17 @@ struct StoreEditView: View {
                         Text("未設定").tag("")
                         ForEach(MinimumWage.prefectures, id: \.self) { Text($0).tag($0) }
                     }
-                    if let v = MinimumWage.table[storeInfo.prefecture] {
+                    if let v = MinimumWage.amount(for: storeInfo.prefecture, on: .today) {
                         LabeledContent("表の最低賃金", value: LaborCostView.yen(v))
+                    }
+                    if let next = MinimumWage.current.upcoming(storeInfo.prefecture, after: .today) {
+                        LabeledContent("\(next.from.month)月\(next.from.day)日から", value: LaborCostView.yen(next.amount))
                     }
                     numberField("手で入れる（表と違うとき）", value: $storeInfo.minimumWageOverride, unit: "円")
                 } header: {
                     Text("最低賃金")
                 } footer: {
-                    Text("この店舗のスタッフの時給が最低賃金より低いと、給与とスタッフの一覧に注意が出ます。最低賃金は毎年10月ごろに変わります。アプリの表と違うときは、金額を手で入れてください（手で入れた金額を使います）。")
+                    Text("この店舗のスタッフの時給が最低賃金より低いと、給与とスタッフの一覧に注意が出ます。最低賃金は毎年10月〜12月に、都道府県ごとに決まった日から変わります。アプリは発効日に合わせて自動で切り替え、新しい年の表もネットから読み込みます。表と違うときは、金額を手で入れてください（手で入れた金額を使います。表に任せるときは空にしてください）。")
                 }
                 Section {
                     TextField("略称（例：本館）", text: $storeInfo.short)

@@ -35,6 +35,8 @@ struct EldiaShiftApp: App {
                 .environment(\.shiftStore, store)
                 .modifier(BrandTint(hex: store.book.brandColor))
                 .modifier(MacZoom())
+                // 最低賃金の新しい表（毎年の改定）を読み込む
+                .task { await MinimumWageUpdater.refresh() }
         }
         #if targetEnvironment(macCatalyst)
         .defaultSize(width: 1280, height: 820)

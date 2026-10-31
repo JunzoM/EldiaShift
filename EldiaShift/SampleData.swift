@@ -86,7 +86,7 @@ enum SampleData {
         for (si, st) in stores.enumerated() {
             let key = storeInfo[si].key
             let depts = departments.filter { $0.storeID == st.id }
-            let minimum = MinimumWage.table[storeInfo[si].prefecture] ?? 1100
+            let minimum = MinimumWage.amount(for: storeInfo[si].prefecture, on: .today) ?? 1100
             var members: [StaffMember] = []
             for k in 0..<staffPerStore {
                 // 前の13人はフロント、あとの12人は客室
