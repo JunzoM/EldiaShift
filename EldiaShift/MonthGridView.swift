@@ -10,8 +10,19 @@ struct MonthGridView: View {
 
     @Environment(\.shiftStore) private var store
     @Environment(\.horizontalSizeClass) private var sizeClass
-    /// 文字の倍率（Mac の 表示 → 拡大・縮小）。文字だけ大きくするとマスからはみ出して切れるので、マスの幅・高さにも同じ倍率をかける
-    @Environment(\.appZoom) private var zoom
+    /// 文字の倍率（Mac の 表示 → 拡大・縮小）
+    @Environment(\.appZoom) private var baseZoom
+    /// iPhone・iPad の「文字の大きさ」
+    @Environment(\.dynamicTypeSize) private var typeSize
+    /// 表の倍率。文字だけ大きくするとマスからはみ出して切れるので、マスの幅・高さにも同じ倍率をかける。
+    /// iPhone・iPad は「文字の大きさ」から決める（Mac は Dynamic Type が効かないので Mac の倍率だけ）
+    private var zoom: CGFloat {
+        #if targetEnvironment(macCatalyst)
+        baseZoom
+        #else
+        baseZoom * AppFont.typeScale(typeSize)
+        #endif
+    }
     @State private var selected: Selection?
 
     private struct Selection: Identifiable {
@@ -186,6 +197,9 @@ struct MonthGridView: View {
         .onAppear { availableWidth = geo.size.width }
         .onChange(of: geo.size.width) { availableWidth = geo.size.width }
         }
+        // 表の中の文字（.appFont）にも同じ倍率を渡す。倍率が 1 でないとき .appFont は決まった大きさになるので、
+        // 「文字の大きさ」と二重に大きくならない。下のシートには渡さない（シートはふつうの Dynamic Type のまま）
+        .environment(\.appZoom, zoom)
         .shiftSheet(item: $selected) { s in
             if store.editing {
                 CellEditorSheet(member: s.member, day: s.day)
