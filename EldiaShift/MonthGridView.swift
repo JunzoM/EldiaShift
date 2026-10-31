@@ -10,6 +10,8 @@ struct MonthGridView: View {
 
     @Environment(\.shiftStore) private var store
     @Environment(\.horizontalSizeClass) private var sizeClass
+    /// 文字の倍率（Mac の 表示 → 拡大・縮小）。文字だけ大きくするとマスからはみ出して切れるので、マスの幅・高さにも同じ倍率をかける
+    @Environment(\.appZoom) private var zoom
     @State private var selected: Selection?
 
     private struct Selection: Identifiable {
@@ -54,19 +56,19 @@ struct MonthGridView: View {
     @State private var showRequests = false
 
     private var compact: Bool { sizeClass == .compact }
-    private var nameWidth: CGFloat { compact ? 104 : 156 }
+    private var nameWidth: CGFloat { (compact ? 104 : 156) * zoom }
     @State private var availableWidth: CGFloat = 0
     private var isWeek: Bool { mode == .week }
     private var cellWidth: CGFloat {
-        guard isWeek else { return compact ? 46 : 54 }
-        return max(compact ? 64 : 96, (availableWidth - nameWidth - summaryWidth) / 7)
+        guard isWeek else { return (compact ? 46 : 54) * zoom }
+        return max((compact ? 64 : 96) * zoom, (availableWidth - nameWidth - summaryWidth) / 7)
     }
-    private var rowHeight: CGFloat { isWeek ? (compact ? 78 : 70) : 58 }
-    private let headerHeight: CGFloat = 46
-    private let sectionHeight: CGFloat = 28
-    private let toggleHeight: CGFloat = 44
-    private let hourHeight: CGFloat = 22
-    private let summaryWidth: CGFloat = 70
+    private var rowHeight: CGFloat { (isWeek ? (compact ? 78 : 70) : 58) * zoom }
+    private var headerHeight: CGFloat { 46 * zoom }
+    private var sectionHeight: CGFloat { 28 * zoom }
+    private var toggleHeight: CGFloat { 44 * zoom }
+    private var hourHeight: CGFloat { 22 * zoom }
+    private var summaryWidth: CGFloat { 70 * zoom }
     /// 時間帯別在籍人数の並び（PC版と同じ：9時〜翌8時）
     private let hours = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6, 7, 8]
 
@@ -118,7 +120,7 @@ struct MonthGridView: View {
             toolbarRow(table: table, shown: shown)
             HStack(spacing: 0) {
                 HStack(spacing: 0) {
-                    Text("No").frame(width: 26)
+                    Text("No").frame(width: 26 * zoom)
                     Text("氏名").frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .appFont(.caption.weight(.bold)).foregroundStyle(.secondary)
@@ -386,7 +388,7 @@ struct MonthGridView: View {
         case .hour(_, _, let h):
             let night = h <= 8
             HStack(spacing: 0) {
-                Text(night ? "明" : "").appFont(.system(size: 9)).foregroundStyle(.secondary).frame(width: 26)
+                Text(night ? "明" : "").appFont(.system(size: 9)).foregroundStyle(.secondary).frame(width: 26 * zoom)
                 Text(String(format: "%02d:00", h)).appFont(.system(size: 11, weight: .bold)).monospacedDigit()
                     .foregroundStyle(night ? Color.blue : Color.secondary)
                 Spacer(minLength: 0)
@@ -528,9 +530,9 @@ struct MonthGridView: View {
     private func nameCell(_ m: StaffMember, book: ShiftBook) -> some View {
         let active = m.patterns.first { $0.id == m.activePatternID }
         return HStack(alignment: .center, spacing: 0) {
-            Text("\(m.number)").appFont(.caption2).foregroundStyle(.secondary).monospacedDigit().frame(width: 22)
+            Text("\(m.number)").appFont(.caption2).foregroundStyle(.secondary).monospacedDigit().frame(width: 22 * zoom)
             if !compact {
-                InitialAvatar(name: m.name, colorIndex: book.departments.first { $0.id == m.departmentID }?.colorIndex ?? 8, size: 28, photo: m.photo)
+                InitialAvatar(name: m.name, colorIndex: book.departments.first { $0.id == m.departmentID }?.colorIndex ?? 8, size: 28 * zoom, photo: m.photo)
                     .padding(.trailing, 6)
             }
             VStack(alignment: .leading, spacing: 2) {
