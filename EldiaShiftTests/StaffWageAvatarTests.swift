@@ -15,14 +15,17 @@ struct StaffWageAvatarTests {
 
     @Test("表は47都道府県。店舗の最低賃金は、手で入れた金額 → 表 の順")
     func table() throws {
+        MinimumWage.resetDownloaded()
         #expect(MinimumWage.prefectures.count == 47)
-        #expect(Set(MinimumWage.prefectures) == Set(MinimumWage.table.keys))
+        #expect(Set(MinimumWage.prefectures) == Set(MinimumWage.bundled.rates.keys))
+        #expect(MinimumWage.bundled.isValid)
+        let day = DayKey(2026, 11, 1)
         var st = Store(id: "a", name: "神戸")
-        #expect(MinimumWage.value(for: st) == nil)
+        #expect(MinimumWage.value(for: st, on: day) == nil)
         st.prefecture = "兵庫県"
-        #expect(MinimumWage.value(for: st) == 1172)
+        #expect(MinimumWage.value(for: st, on: day) == 1172)
         st.minimumWageOverride = 1200
-        #expect(MinimumWage.value(for: st) == 1200)
+        #expect(MinimumWage.value(for: st, on: day) == 1200)
         // 前の版の店舗の記録は未設定として読む
         let old = try JSONDecoder().decode(Store.self, from: Data(#"{"id":"a","name":"本館"}"#.utf8))
         #expect(old.prefecture.isEmpty && old.minimumWageOverride == nil)
@@ -87,5 +90,59 @@ struct StaffWageAvatarTests {
                                          space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
         ctx.draw(cg, in: CGRect(x: 0, y: 0, width: 1, height: 1))
         #expect(px[0] > 240 && px[1] > 240 && px[2] > 240)
+    }
+
+    @Test("最低賃金は発効日から切り替わる（都道府県ごとに違う日）")
+    func dated() {
+        MinimumWage.resetDownloaded()
+        // 兵庫県は 2026-10-01、京都府は 2026-11-16、沖縄県は 2026-12-02 から
+        #expect(MinimumWage.amount(for: "兵庫県", on: DayKey(2026, 9, 30)) == 1116)
+        #expect(MinimumWage.amount(for: "兵庫県", on: DayKey(2026, 10, 1)) == 1172)
+        #expect(MinimumWage.amount(for: "京都府", on: DayKey(2026, 11, 15)) == 1122)
+        #expect(MinimumWage.amount(for: "京都府", on: DayKey(2026, 11, 16)) == 1180)
+        #expect(MinimumWage.amount(for: "沖縄県", on: DayKey(2026, 12, 1)) == 1023)
+        #expect(MinimumWage.amount(for: "沖縄県", on: DayKey(2026, 12, 2)) == 1086)
+        #expect(MinimumWage.amount(for: "", on: DayKey(2026, 12, 2)) == nil)
+        let next = MinimumWage.bundled.upcoming("京都府", after: DayKey(2026, 10, 31))
+        #expect(next?.from == DayKey(2026, 11, 16) && next?.amount == 1180)
+        #expect(MinimumWage.bundled.upcoming("京都府", after: DayKey(2026, 11, 16)) == nil)
+    }
+
+    @Test("リポジトリの minimum-wage.json は正しく、アプリに入っている表と同じか新しい")
+    func jsonMatchesBundled() throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("minimum-wage.json")
+        let table = try JSONDecoder().decode(MinimumWageTable.self, from: Data(contentsOf: url))
+        #expect(table.isValid)
+        #expect(table.year >= MinimumWage.bundled.year)
+        // JSON だけ先に新しい年度にしてよい。アプリに入っている表の発効日つきの金額は、JSON にも同じ金額で入っていること
+        for (pref, list) in MinimumWage.bundled.rates {
+            for r in list where r.from != nil {
+                #expect(table.rates[pref]?.contains(r) == true, "\(pref) \(r.from ?? "") \(r.amount)")
+            }
+        }
+        if table.year == MinimumWage.bundled.year {
+            #expect(table.rates == MinimumWage.bundled.rates)
+        }
+    }
+
+    @Test("ネットから読んだ表は、正しくて新しい年度のときだけ使う")
+    func adopt() {
+        MinimumWage.resetDownloaded()
+        defer { MinimumWage.resetDownloaded() }
+        var newer = MinimumWage.bundled
+        newer.year += 1
+        newer.rates["兵庫県"]?.append(.init(from: "2027-10-01", amount: 1230))
+        // 古い年度・都道府県が欠けた表は使わない
+        var older = newer
+        older.year = MinimumWage.bundled.year - 1
+        #expect(!MinimumWage.adopt(older))
+        var broken = newer
+        broken.rates["兵庫県"] = nil
+        #expect(!MinimumWage.adopt(broken))
+        #expect(MinimumWage.amount(for: "兵庫県", on: DayKey(2027, 10, 1)) == 1172)
+        #expect(MinimumWage.adopt(newer))
+        #expect(MinimumWage.amount(for: "兵庫県", on: DayKey(2027, 10, 1)) == 1230)
+        #expect(MinimumWage.amount(for: "兵庫県", on: DayKey(2027, 9, 30)) == 1172)
     }
 }

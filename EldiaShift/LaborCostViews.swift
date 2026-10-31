@@ -465,7 +465,7 @@ struct WageSection: View {
             if LaborCostLock.shared.canView {
                 let today = DayKey.today
                 let current = member.wage(on: today)
-                let minimum = MinimumWage.value(for: member, in: store.book)
+                let minimum = MinimumWage.value(for: member, in: store.book, on: today)
                 ForEach(member.wages.sorted { $0.from > $1.from }) { w in
                     Button { editing = w } label: {
                         HStack {
