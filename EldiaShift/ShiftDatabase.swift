@@ -146,7 +146,17 @@ final class ShiftDatabase {
         // 共有を作る前に、スタッフの記録に残っている給与（前の版で書いたもの）を消しておく
         try ShiftRecords.stripWagesFromStaff(in: viewContext)
         if viewContext.hasChanges { try viewContext.save() }
-        let (_, share, shareContainer) = try await container.share([team], to: nil)
+        // 共有を作る処理は、Core Data の中で優先度の低い（utility）スレッドを待つ。画面のスレッドから呼ぶと
+        // 「優先度の逆転」になり、そのあいだ画面が固まる（Xcode の警告）。低い優先度のスレッドから、
+        // 裏側の入れ物（バックグラウンドのコンテキスト）で取り出し直したチームを渡して呼ぶ
+        let teamID = team.objectID
+        let cloud = container
+        let (share, shareContainer) = try await Task.detached(priority: .utility) { () throws -> (CKShare, CKContainer) in
+            let bg = cloud.newBackgroundContext()
+            let target = try await bg.perform { try bg.existingObject(with: teamID) }
+            let (_, share, shareContainer) = try await cloud.share([target], to: nil)
+            return (share, shareContainer)
+        }.value
         share[CKShare.SystemFieldKey.title] = "シフト表" as CKRecordValue
         return (share, shareContainer)
     }
