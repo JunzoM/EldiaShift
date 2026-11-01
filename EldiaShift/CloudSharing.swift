@@ -229,6 +229,11 @@ enum ShareErrorText {
         if detail.contains("icloud-extended-share-access") || detail.contains("OneTimeLinks") {
             return "このアプリの版では iCloud 共有を始められません。App Store（または TestFlight）で SHIFT を最新の版にしてから、もう一度お試しください。"
         }
+        // 「招待した人だけ」の共有で、招待先（メール・電話番号）とこの端末の Apple アカウントが結びつかないとき。
+        // CloudKit は internalError（1）で「couldn't decrypt the share as an invited user」と返す
+        if detail.contains("decrypt the share as an invited user") {
+            return "\(fallback)。この共有は「招待した人だけ」が開ける設定で、この端末の Apple アカウントが招待先として見つかりませんでした。\n共有した人に、次のどちらかをしてもらってください。\n・共有の画面で、この端末の Apple アカウントのメールアドレス（または電話番号）を招待先に入れて、招待し直す\n・共有のオプションを「リンクを知っている人は誰でも」にして、リンクを送り直す"
+        }
         if let ck = cloudKitError(error) {
             switch ck.code {
             case .unknownItem, .zoneNotFound, .userDeletedZone, .badContainer, .changeTokenExpired:
