@@ -36,12 +36,16 @@ struct MemoryTests {
     @Test("大きな写真も、顔写真は 240px・ホームは 1200×400・店舗は長い辺 640px になる")
     func shrinkSizes() throws {
         let big = try photo(width: 4000, height: 3000)
-        #expect(try pixels(#require(StaffPhoto.shrink(big))) == CGSize(width: 240, height: 240))
-        #expect(try pixels(#require(CompanyInfoView.shrinkCover(big))) == CGSize(width: 1200, height: 400))
-        #expect(try pixels(#require(StorePhoto.shrink(big))) == CGSize(width: 640, height: 480))
+        let face = try #require(StaffPhoto.shrink(big))
+        #expect(try pixels(face) == CGSize(width: 240, height: 240))
+        let cover = try #require(CompanyInfoView.shrinkCover(big))
+        #expect(try pixels(cover) == CGSize(width: 1200, height: 400))
+        let shop = try #require(StorePhoto.shrink(big))
+        #expect(try pixels(shop) == CGSize(width: 640, height: 480))
         // 小さな写真は大きくしない（店舗）
         let small = try photo(width: 300, height: 200)
-        #expect(try pixels(#require(StorePhoto.shrink(small))) == CGSize(width: 300, height: 200))
+        let smallShop = try #require(StorePhoto.shrink(small))
+        #expect(try pixels(smallShop) == CGSize(width: 300, height: 200))
         #expect(StaffPhoto.shrink(Data("not an image".utf8)) == nil)
     }
 
@@ -50,7 +54,8 @@ struct MemoryTests {
         // 横 4000×縦 3000 で保存され、「90度回して見る」(6) の写真 → 見た目は縦 4000・横 3000
         let rotated = try photo(width: 4000, height: 3000, orientation: 6)
         #expect(StaffPhoto.pixelSize(rotated) == CGSize(width: 3000, height: 4000))
-        #expect(try pixels(#require(StorePhoto.shrink(rotated))) == CGSize(width: 480, height: 640))
+        let shop = try #require(StorePhoto.shrink(rotated))
+        #expect(try pixels(shop) == CGSize(width: 480, height: 640))
     }
 
     @Test("表示用の画像は長い辺 1200px までにして、同じ写真は使い回す")
@@ -58,7 +63,8 @@ struct MemoryTests {
         let big = try photo(width: 3000, height: 1000)
         let a = try #require(StaffPhoto.image(big))
         #expect(a.size == CGSize(width: 1200, height: 400))
-        #expect(StaffPhoto.image(big) === a)
+        let again = try #require(StaffPhoto.image(big))
+        #expect(again === a)
     }
 
     @Test("PDF をファイルへ直接書き出せる（ページ数が合う）")
@@ -73,7 +79,8 @@ struct MemoryTests {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("memory-test.pdf")
         defer { try? FileManager.default.removeItem(at: url) }
         var seen = 0
-        #expect(await PDFMaker.makeFile(at: url, pages: pages, book: b, title: "見本") { seen = $0 })
+        let ok = await PDFMaker.makeFile(at: url, pages: pages, book: b, title: "見本") { seen = $0 }
+        #expect(ok)
         #expect(seen == pages.count)
         let doc = try #require(PDFDocument(url: url))
         #expect(doc.pageCount == pages.count)

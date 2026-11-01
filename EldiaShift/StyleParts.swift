@@ -71,11 +71,11 @@ enum StaffPhoto {
     /// 向きを直したあとの大きさ（ピクセル）。中身は展開しない
     nonisolated static func pixelSize(_ data: Data) -> CGSize? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let p = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let w = (p[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue,
-              let h = (p[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue, w > 0, h > 0 else { return nil }
+              let p = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
+              let w = (p[kCGImagePropertyPixelWidth as String] as? NSNumber)?.doubleValue,
+              let h = (p[kCGImagePropertyPixelHeight as String] as? NSNumber)?.doubleValue, w > 0, h > 0 else { return nil }
         // 5〜8 は 90度回した向き（縦横が入れ替わる）
-        let o = (p[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
+        let o = (p[kCGImagePropertyOrientation as String] as? NSNumber)?.intValue ?? 1
         return o >= 5 ? CGSize(width: h, height: w) : CGSize(width: w, height: h)
     }
 
