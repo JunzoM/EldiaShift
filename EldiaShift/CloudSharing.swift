@@ -15,6 +15,11 @@ final class ShareInbox {
     var message: String?
 
     func accept(_ metadata: CKShare.Metadata) {
+        // 自分（同じ Apple アカウント）で作った共有の招待は受け取れない。同じ Apple アカウントの端末どうしは iCloud 同期で足りる
+        if metadata.participantRole == .owner {
+            message = "この招待は、この端末と同じ Apple アカウントで作った共有です。自分の共有は受け取れません。\n同じ Apple アカウントの iPad・iPhone どうしは、設定の「iCloud で同期する」をオンにすれば同じシフト表になります。共有は、ほかの人の Apple アカウントの端末で開いてください。"
+            return
+        }
         Task { @MainActor in
             guard let db = ShiftDatabase.current else { return }
             do {
@@ -226,6 +231,12 @@ enum ShareErrorText {
         }
         if let ck = cloudKitError(error) {
             switch ck.code {
+            case .unknownItem, .zoneNotFound, .userDeletedZone, .badContainer, .changeTokenExpired:
+                return "\(fallback)。共有がやめられたか、招待を作った端末と受け取る端末でアプリの種類が違う可能性があります（Xcode から入れた開発版と、TestFlight・App Store の版のあいだでは共有できません）。同じ種類の版どうしで、新しい招待を送り直してください。\n（\(ck.code.rawValue)：\(ck.localizedDescription)）"
+            case .participantMayNeedVerification:
+                return "\(fallback)。招待されたメールアドレス・電話番号と、この端末の Apple アカウントが違います。共有した人に、この端末の Apple アカウントで招待し直してもらってください。"
+            case .alreadyShared:
+                return "\(fallback)。このシフト表は、すでにこの端末に届いています。設定の「シフト表の共有」で切り替えてください。"
             case .notAuthenticated:
                 return "iCloud にサインインしていません。「設定」アプリの一番上（Apple アカウント）でサインインし、iCloud Drive をオンにしてください。"
             case .networkUnavailable, .networkFailure, .serviceUnavailable, .requestRateLimited, .zoneBusy:
@@ -238,17 +249,34 @@ enum ShareErrorText {
                 break
             }
         }
-        return "\(fallback)（\(error.localizedDescription)）"
+        // 外側は「Failed to accept some shares」のような要約だけなので、中の原因も添える
+        let inner = nestedErrors(error).dropFirst().map { "\($0.domain) \($0.code)：\($0.localizedDescription)" }
+        let reason = inner.isEmpty ? error.localizedDescription : "\(error.localizedDescription) / " + inner.prefix(3).joined(separator: " / ")
+        return "\(fallback)（\(reason)）"
     }
 
-    /// NSPersistentCloudKitContainer はエラーを包んで返すので、中の CKError を探す
+    /// NSPersistentCloudKitContainer はエラーを包んで返すので、中の CKError を探す。
+    /// 一部だけ失敗（partialFailure）のときは、記録ごとの失敗の中から探す
     private static func cloudKitError(_ error: Error) -> CKError? {
-        var current: NSError? = error as NSError
-        for _ in 0..<5 {
-            guard let e = current else { return nil }
-            if e.domain == CKErrorDomain { return CKError(_nsError: e) }
-            current = e.userInfo[NSUnderlyingErrorKey] as? NSError
+        let all = nestedErrors(error).filter { $0.domain == CKErrorDomain }
+        let specific = all.first { $0.code != CKError.Code.partialFailure.rawValue }
+        return (specific ?? all.first).map { CKError(_nsError: $0) }
+    }
+
+    /// エラーとその中に入っているエラーを、外側から順に並べる（深さ・数に上限あり）
+    private static func nestedErrors(_ error: Error) -> [NSError] {
+        var result: [NSError] = []
+        var queue: [NSError] = [error as NSError]
+        while let e = queue.first, result.count < 20 {
+            queue.removeFirst()
+            result.append(e)
+            if let u = e.userInfo[NSUnderlyingErrorKey] as? NSError { queue.append(u) }
+            if let list = e.userInfo[NSMultipleUnderlyingErrorsKey] as? [NSError] { queue.append(contentsOf: list) }
+            if let list = e.userInfo["NSDetailedErrors"] as? [NSError] { queue.append(contentsOf: list) }
+            if let partial = e.userInfo[CKPartialErrorsByItemIDKey] as? [AnyHashable: Any] {
+                queue.append(contentsOf: partial.values.compactMap { $0 as? NSError })
+            }
         }
-        return nil
+        return result
     }
 }
