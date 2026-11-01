@@ -31,6 +31,9 @@ final class ShiftDatabase {
 
     @ObservationIgnored private let inMemory: Bool
     @ObservationIgnored private var remoteObserver: NSObjectProtocol?
+    @ObservationIgnored private var eventObserver: NSObjectProtocol?
+    /// 壊れた「共有された入れ物」を作り直すのは、起動ごとに1回まで（作り直しをくり返さない）
+    @ObservationIgnored private var sharedStoreResetDone = false
     @ObservationIgnored private var pendingReload: Task<Void, Never>?
 
     var viewContext: NSManagedObjectContext { container.viewContext }
@@ -191,8 +194,40 @@ final class ShiftDatabase {
         if !iCloudEnabled { setICloud(true) }
         guard let store = sharedStore else { throw ShareError.iCloudOff }
         switchToSharedOnArrival = true
-        _ = try await container.acceptShareInvitations(from: [metadata], into: store)
+        do {
+            _ = try await container.acceptShareInvitations(from: [metadata], into: store)
+        } catch where Self.isBrokenSharedStore(error) && !sharedStoreResetDone {
+            // 共有された入れ物が壊れていて同期を始められない → 作り直して、もう一度だけ受け取る
+            resetSharedStore()
+            guard let fresh = sharedStore else { throw error }
+            _ = try await container.acceptShareInvitations(from: [metadata], into: fresh)
+        }
         switchIfSharedArrived()
+    }
+
+    /// 共有された入れ物に、自分のデータ（自分の共有のゾーン）の情報が紛れ込んでいる状態か。
+    /// 以前、自分で作った共有の招待を自分で受け取ると、この状態になり、その入れ物の同期が
+    /// 「Only shared zones can be accessed in the shared DB」で毎回失敗して、共有を受け取れなくなる
+    nonisolated static func isBrokenSharedStore(_ error: Error) -> Bool {
+        String(describing: error).contains("Only shared zones can be accessed in the shared DB")
+    }
+
+    /// 共有された入れ物（ほかの人から共有されたシフト表の、この端末での写し）を作り直す。
+    /// 中身は iCloud から届き直すので、自分のシフト表・給与（自分のデータの入れ物）には触れない
+    private func resetSharedStore() {
+        guard iCloudEnabled, !inMemory, !sharedStoreResetDone else { return }
+        sharedStoreResetDone = true
+        let coordinator = container.persistentStoreCoordinator
+        for store in coordinator.persistentStores {
+            try? coordinator.remove(store)
+        }
+        let sharedURL = Self.storeURL.deletingLastPathComponent().appendingPathComponent(Self.sharedFileName)
+        try? coordinator.destroyPersistentStore(at: sharedURL, ofType: NSSQLiteStoreType, options: nil)
+        container = Self.makeContainer(iCloud: true, inMemory: false)
+        loadError = Self.load(container)
+        observeRemoteChanges()
+        refreshAccess()
+        changeToken += 1
     }
 
     /// 共有されたシフト表が届いていれば、それを表示する（招待を受け取った直後だけ）
@@ -269,6 +304,7 @@ final class ShiftDatabase {
     }
 
     private func observeRemoteChanges() {
+        observeSyncEvents()
         if let remoteObserver { NotificationCenter.default.removeObserver(remoteObserver) }
         remoteObserver = NotificationCenter.default.addObserver(
             forName: .NSPersistentStoreRemoteChange,
@@ -279,6 +315,26 @@ final class ShiftDatabase {
                 self?.switchIfSharedArrived()
                 self?.refreshAccess()
                 self?.scheduleReload()
+            }
+        }
+    }
+
+    /// 共有された入れ物の同期の準備が「壊れている」で失敗したら、起動ごとに1回だけ作り直す
+    private func observeSyncEvents() {
+        if let eventObserver { NotificationCenter.default.removeObserver(eventObserver) }
+        eventObserver = NotificationCenter.default.addObserver(
+            forName: NSPersistentCloudKitContainer.eventChangedNotification,
+            object: container,
+            queue: .main
+        ) { [weak self] note in
+            guard let event = note.userInfo?[NSPersistentCloudKitContainer.eventNotificationUserInfoKey]
+                    as? NSPersistentCloudKitContainer.Event,
+                  event.type == .setup, event.endDate != nil, !event.succeeded,
+                  let error = event.error, Self.isBrokenSharedStore(error) else { return }
+            let storeID = event.storeIdentifier
+            Task { @MainActor in
+                guard let self, self.sharedStore?.identifier == storeID else { return }
+                self.resetSharedStore()
             }
         }
     }
