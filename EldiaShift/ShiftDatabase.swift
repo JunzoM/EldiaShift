@@ -147,16 +147,33 @@ final class ShiftDatabase {
         try ShiftRecords.stripWagesFromStaff(in: viewContext)
         if viewContext.hasChanges { try viewContext.save() }
         // 共有を作る処理は、Core Data の中で優先度の低い（utility）スレッドを待つ。画面のスレッドから呼ぶと
-        // 「優先度の逆転」になり、そのあいだ画面が固まる（Xcode の警告）。低い優先度のスレッドから、
-        // 裏側の入れ物（バックグラウンドのコンテキスト）で取り出し直したチームを渡して呼ぶ
+        // 「優先度の逆転」になり、そのあいだ画面が固まる（Xcode の警告）。
+        // Swift の Task で包むと、await で待つ側の優先度が引き継がれて結局逆転するため、
+        // GCD の utility のキューで優先度を固定して（enforceQoS）呼び、結果はコールバックで受け取る。
+        // チームは裏側の入れ物（バックグラウンドのコンテキスト）で取り出し直して渡す（画面用の記録を別スレッドで触らない）
         let teamID = team.objectID
         let cloud = container
-        let (share, shareContainer) = try await Task.detached(priority: .utility) { () async throws -> (CKShare, CKContainer) in
-            let bg = cloud.newBackgroundContext()
-            let target = try await bg.perform { try bg.existingObject(with: teamID) }
-            let (_, share, shareContainer) = try await cloud.share([target], to: nil)
-            return (share, shareContainer)
-        }.value
+        let (share, shareContainer): (CKShare, CKContainer) = try await withCheckedThrowingContinuation { cont in
+            DispatchQueue.global(qos: .utility).async(qos: .utility, flags: .enforceQoS) {
+                let bg = cloud.newBackgroundContext()
+                var target: NSManagedObject?
+                var fetchError: Error?
+                bg.performAndWait {
+                    do { target = try bg.existingObject(with: teamID) } catch { fetchError = error }
+                }
+                guard let target else {
+                    cont.resume(throwing: fetchError ?? CKError(.internalError))
+                    return
+                }
+                cloud.share([target], to: nil) { _, share, ckContainer, error in
+                    if let share, let ckContainer {
+                        cont.resume(returning: (share, ckContainer))
+                    } else {
+                        cont.resume(throwing: error ?? CKError(.internalError))
+                    }
+                }
+            }
+        }
         share[CKShare.SystemFieldKey.title] = "シフト表" as CKRecordValue
         return (share, shareContainer)
     }
