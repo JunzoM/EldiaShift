@@ -19,7 +19,7 @@ struct CompanyBanner: View {
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             Group {
-                if let data = company.cover, let img = UIImage(data: data) {
+                if let data = company.cover, let img = StaffPhoto.image(data) {
                     Image(uiImage: img).resizable().scaledToFill()
                 } else {
                     LinearGradient(colors: [BrandColor.sidebar(brandHex), BrandColor.sidebar(brandHex).opacity(0.75)],
@@ -300,8 +300,10 @@ struct CompanyInfoView: View {
 
     /// 横長（3:1）に真ん中で切り抜き、幅 1200px の JPEG に縮める
     nonisolated static func shrinkCover(_ data: Data) -> Data? {
-        guard let img = UIImage(data: data), img.size.width > 0, img.size.height > 0 else { return nil }
         let out = CGSize(width: 1200, height: 400)
+        // 3:1 を埋める大きさまでだけ展開する（元の写真をそのまま展開しない）
+        guard let img = StaffPhoto.source(data, longSide: { s in max(s.width, s.height) * max(out.width / s.width, out.height / s.height) }),
+              img.size.width > 0, img.size.height > 0 else { return nil }
         let k = max(out.width / img.size.width, out.height / img.size.height)
         let drawn = CGSize(width: img.size.width * k, height: img.size.height * k)
         let origin = CGPoint(x: (out.width - drawn.width) / 2, y: (out.height - drawn.height) / 2)
