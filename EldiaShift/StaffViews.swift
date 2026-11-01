@@ -347,17 +347,20 @@ struct StaffDetailPanel: View {
         let dept = book.departments.first { $0.id == member.departmentID }
         let sub = [dept?.name, "No.\(member.number)", member.employment.isEmpty ? nil : member.employment,
                    Self.date(member.joinDate).map { "入社 \($0)" }].compactMap { $0 }.joined(separator: " ・ ")
-        return HStack(spacing: 14) {
-            InitialAvatar(name: member.name, colorIndex: dept?.colorIndex ?? 8, size: 56, photo: member.photo)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(member.name.isEmpty ? "（名前なし）" : member.name).appFont(.title2.weight(.bold)).lineLimit(1)
-                Text(sub).appFont(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+        // 顔がよく見えるよう、カードは大きめ（以前の約2.5倍の高さ）
+        return HStack(spacing: 24) {
+            InitialAvatar(name: member.name, colorIndex: dept?.colorIndex ?? 8, size: 168, photo: member.photo)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(member.name.isEmpty ? "（名前なし）" : member.name).appFont(.largeTitle.weight(.bold)).lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                Text(sub).appFont(.title3).foregroundStyle(.secondary).lineLimit(2)
             }
             Spacer(minLength: 8)
             statusPill.fixedSize()
             Button { editing = true } label: { Label("編集", systemImage: "pencil") }
                 .buttonStyle(.borderedProminent)
         }
+        .frame(maxWidth: .infinity, minHeight: 188, alignment: .leading)
         .padding(DS.cardPadding)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: DS.cardRadius, style: .continuous))
     }
@@ -590,6 +593,20 @@ struct StaffEditView: View {
         let book = store.book
         let deptColor = book.departments.first { $0.id == member.departmentID }?.colorIndex ?? 8
         let form = Form {
+            if onClose != nil {
+                // iPad・Mac のスタッフ画面の右で直すとき：「閉じる」は一覧の上（画面の左端）ではなく、ここ（基本の上）に出す
+                Section {
+                    HStack {
+                        Button { if dirty { askDiscard = true } else { close() } } label: {
+                            Label("閉じる", systemImage: "chevron.backward")
+                        }
+                        .buttonStyle(.bordered)
+                        Spacer()
+                    }
+                }
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
+            }
             Section("基本") {
                 HStack(spacing: 16) {
                     InitialAvatar(name: member.name.isEmpty ? "？" : member.name, colorIndex: deptColor, size: 64, photo: member.photo)
@@ -745,7 +762,7 @@ struct StaffEditView: View {
                     Button("保存") { save() }
                         .disabled(member.name.trimmingCharacters(in: .whitespaces).isEmpty || dateIssue != nil)
                 }
-                if isNew || inSheet {
+                if isNew || (inSheet && onClose == nil) {
                     ToolbarItem(placement: .cancellationAction) {
                         Button(isNew ? "やめる" : "閉じる") { if dirty { askDiscard = true } else { close() } }
                     }
