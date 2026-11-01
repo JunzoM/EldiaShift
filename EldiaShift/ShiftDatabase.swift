@@ -151,7 +151,7 @@ final class ShiftDatabase {
         // 裏側の入れ物（バックグラウンドのコンテキスト）で取り出し直したチームを渡して呼ぶ
         let teamID = team.objectID
         let cloud = container
-        let (share, shareContainer) = try await Task.detached(priority: .utility) { () throws -> (CKShare, CKContainer) in
+        let (share, shareContainer) = try await Task.detached(priority: .utility) { () async throws -> (CKShare, CKContainer) in
             let bg = cloud.newBackgroundContext()
             let target = try await bg.perform { try bg.existingObject(with: teamID) }
             let (_, share, shareContainer) = try await cloud.share([target], to: nil)
