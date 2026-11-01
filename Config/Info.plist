@@ -15,6 +15,8 @@
 	</array>
 	<key>CKSharingSupported</key>
 	<true/>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>作ったシフト表の画像（一人ずつの画像など）を、共有メニューの「画像を保存」で写真に保存するときに使います。</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>隠している人件費・給与を表示するときに、本人の確認に使います。</string>
 	<key>UIFileSharingEnabled</key>

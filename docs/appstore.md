@@ -111,7 +111,8 @@ bash scripts/duo-screenshots.sh
 ## Mac 版（Mac Catalyst）
 
 - iPad と同じアプリを Mac でも動かす（Mac Catalyst・「iPad に合わせて拡大縮小」）。バンドル ID は iOS と同じ `com.bestdelight.eldiashift`（`DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO`）なので、同じ App Store のアプリとして出し、**同じ Apple ID なら追加の購入は要らない**（ユニバーサル購入）
-- Mac 用の権限は `Config/EldiaShift-mac.entitlements`（App Sandbox・ネットワーク（iCloud）・選んだファイルの読み書き・印刷・iCloud・プッシュ・Associated Domains）。iOS の権限ファイルは今までのまま
+- Mac 用の権限は `Config/EldiaShift-mac.entitlements`（App Sandbox・ネットワーク（iCloud）・選んだファイルの読み書き・印刷・iCloud・iCloud 共有の拡張（`icloud-extended-share-access`）・プッシュ・Associated Domains）。iOS の権限ファイルにも iCloud 共有の拡張を入れる（無いと iOS 26 以降で共有も同期も始まらない）
+- Info.plist の使用目的：Face ID（人件費を表示するとき）・写真への追加（一人ずつの画像を共有メニューの「画像を保存」で保存するとき。無いと保存を押した瞬間にアプリが落ちる）
 - Developer サイト：App ID で「Mac Catalyst」を有効にし、Mac 用のプロビジョニングプロファイルを作る（Xcode の自動署名なら Signing & Capabilities で Mac を選ぶだけ）。iCloud コンテナは iOS と同じ
 - App Store Connect：同じアプリに macOS のビルドを足す（Xcode の Archive で「My Mac (Mac Catalyst)」を選んでアップロード）。Mac 用の画面写真（1280×800 以上）が要る
 - ウインドウの最初の大きさ 1280×820、いちばん小さい大きさ 960×640
