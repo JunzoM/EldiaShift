@@ -92,7 +92,8 @@ final class ShiftStore {
     func reload() {
         loadedToken = db.changeToken
         do {
-            book = try ShiftRecords.load(db.viewContext)
+            // 読み込みの途中で作る一時的なもの（何万件の記録など）は、読み終えたらすぐ手放す
+            book = try autoreleasepool { try ShiftRecords.load(db.viewContext) }
             applyScope()
             lastError = nil
         } catch {
@@ -379,13 +380,16 @@ enum ShiftRecords {
                                  colorIndex: Palette.index(r.int("colorIndex")), breakMinutes: br < 0 ? nil : br)
             }
 
+        // 同じ ID・時刻の文字列は1つを使い回す（マスが何万あっても、スタッフ・ひな形・店舗の ID は1つずつしか持たない。
+        // データベースから来た文字列のままだと1件ごとに別の入れ物になり、辞書で探すときも遅い）
+        var pool = StringPool()
         let decoder = JSONDecoder()
         // 給与は自分だけの入れ物から（無ければ、前の版でスタッフの記録に入れた給与。共有されたシフト表のものは使わない）
         var pays = Dictionary(newestByKey(try ctx.fetch(NSFetchRequest<NSManagedObject>(entityName: ShiftModel.Entity.pay)), key: "key", ctx: ctx)
             .map { ($0.str("key"), $0) }, uniquingKeysWith: { a, _ in a })
         book.staff = try newestByKey(fetch(ShiftModel.Entity.staff, ctx, team: team), key: "key", ctx: ctx).map { r -> StaffMember in
             let detail = (r.value(forKey: "detail") as? Data).flatMap { try? decoder.decode(StaffDetail.self, from: $0) }
-            let key = r.str("key")
+            let key = pool(r.str("key"))
             let oldWages = theirs ? [] : (detail?.wages ?? [])
             if !oldWages.isEmpty, var d = detail {
                 // 前の版の給与を、自分だけの入れ物へ移す（入れ物にもう入っていれば、そちらを使う）
@@ -394,8 +398,8 @@ enum ShiftRecords {
                 r.setValue(try JSONEncoder().encode(d), forKey: "detail")
             }
             let staffWages = pays[key].map { Self.wages(of: $0) } ?? oldWages
-            return StaffMember(id: r.str("key"), number: r.int("number"), name: r.str("name"),
-                               departmentID: r.str("departmentKey"), active: r.value(forKey: "active") as? Bool ?? true,
+            return StaffMember(id: key, number: r.int("number"), name: r.str("name"),
+                               departmentID: pool(r.str("departmentKey")), active: r.value(forKey: "active") as? Bool ?? true,
                                joinDate: r.str("joinDate"), leaveDate: r.str("leaveDate"),
                                timeBlocks: detail?.timeBlocks ?? [], patterns: detail?.patterns ?? [],
                                activePatternID: detail?.activePatternID, periodPatterns: detail?.periodPatterns ?? [],
@@ -406,11 +410,11 @@ enum ShiftRecords {
 
         for r in try newestByKey(fetch(ShiftModel.Entity.cell, ctx, team: team), keyOf: { "\($0.str("staffKey"))|\($0.str("day"))" }, ctx: ctx) {
             guard let day = DayKey(r.str("day")) else { continue }
-            let block = r.str("blockKey")
-            let st = r.str("storeKey")
+            let block = pool(r.str("blockKey"))
+            let st = pool(r.str("storeKey"))
             let note = r.str("note")
-            book.cells[CellKey(staffID: r.str("staffKey"), day: day)] = CellEntry(
-                inTime: r.str("inTime"), outTime: r.str("outTime"),
+            book.cells[CellKey(staffID: pool(r.str("staffKey")), day: day)] = CellEntry(
+                inTime: pool(r.str("inTime")), outTime: pool(r.str("outTime")),
                 blockID: block.isEmpty ? nil : block, isOff: r.value(forKey: "isOff") as? Bool ?? false,
                 storeID: st.isEmpty ? nil : st, note: note.isEmpty ? nil : note)
         }
@@ -711,6 +715,21 @@ enum ShiftRecords {
             }
         }
         return Array(keep.values)
+    }
+}
+
+/// 同じ中身の文字列を1つにまとめる（読み込みのときだけ使う）
+struct StringPool {
+    private var seen: [String: String] = [:]
+
+    mutating func callAsFunction(_ s: String) -> String {
+        if s.isEmpty { return "" }
+        if let hit = seen[s] { return hit }
+        // データベースから来た文字列（NSString のまま）を Swift の文字列にしてから覚える
+        var native = s
+        native.makeContiguousUTF8()
+        seen[native] = native
+        return native
     }
 }
 

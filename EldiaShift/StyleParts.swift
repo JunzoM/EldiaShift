@@ -1,3 +1,4 @@
+import ImageIO
 import SwiftUI
 
 // MARK: - 見本デザインに寄せた共通の部品
@@ -28,15 +29,19 @@ struct InitialAvatar: View {
     }
 }
 
-/// スタッフの顔写真（縮める・表示用に読み込んだ画像を使い回す）
+/// スタッフの顔写真・ロゴ・店舗やホームの写真（縮める・表示用に読み込んだ画像を使い回す）
 @MainActor
 enum StaffPhoto {
-    /// 一覧・表で何度も描くので、読み込んだ画像を覚えておく（同じ写真を毎回読み込まない）
+    /// 一覧・表で何度も描くので、展開した画像を覚えておく（同じ写真を毎回展開しない）。
+    /// 枚数ではなく展開後の大きさで上限を決める（240px の顔写真は約 230KB、ホームの写真は約 1.9MB）
     private static let cache: NSCache<NSString, UIImage> = {
         let c = NSCache<NSString, UIImage>()
-        c.countLimit = 300
+        c.totalCostLimit = 32 * 1024 * 1024
         return c
     }()
+
+    /// 表示に使う画像の長い辺の上限（ホームの写真が 1200px。昔の大きな写真もここまでに縮めて持つ）
+    nonisolated static let displayMaxPixels = 1200
 
     static func image(_ data: Data) -> UIImage? {
         // 写真の中身で見分ける（大きさ＋末尾。JPEG の先頭はどれも似ているので末尾を使う）
@@ -45,14 +50,49 @@ enum StaffPhoto {
         data.suffix(512).withUnsafeBytes { h.combine(bytes: $0) }
         let key = String(h.finalize()) as NSString
         if let hit = cache.object(forKey: key) { return hit }
-        guard let img = UIImage(data: data) else { return nil }
-        cache.setObject(img, forKey: key)
+        // 読み込むときに展開まで済ませる（描くたびに展開し直さない・キャッシュの大きさを正しく数える）
+        guard let cg = downsample(data, maxPixels: displayMaxPixels) else { return nil }
+        let img = UIImage(cgImage: cg)
+        cache.setObject(img, forKey: key, cost: cg.bytesPerRow * cg.height)
         return img
+    }
+
+    /// 画像を縮めて読む（向きも直す）。元の大きさで展開しないので、大きな写真でもメモリを使いすぎない
+    nonisolated static func downsample(_ data: Data, maxPixels: Int) -> CGImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary)
+        else { return nil }
+        let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                        kCGImageSourceCreateThumbnailWithTransform: true,
+                                        kCGImageSourceShouldCacheImmediately: true,
+                                        kCGImageSourceThumbnailMaxPixelSize: max(1, maxPixels)]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    }
+
+    /// 向きを直したあとの大きさ（ピクセル）。中身は展開しない
+    nonisolated static func pixelSize(_ data: Data) -> CGSize? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let p = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
+              let w = (p[kCGImagePropertyPixelWidth as String] as? NSNumber)?.doubleValue,
+              let h = (p[kCGImagePropertyPixelHeight as String] as? NSNumber)?.doubleValue, w > 0, h > 0 else { return nil }
+        // 5〜8 は 90度回した向き（縦横が入れ替わる）
+        let o = (p[kCGImagePropertyOrientation as String] as? NSNumber)?.intValue ?? 1
+        return o >= 5 ? CGSize(width: h, height: w) : CGSize(width: w, height: h)
+    }
+
+    /// 縮める元の画像を、必要な大きさまでだけ展開して読む（longSide：元の大きさ → 必要な長い辺のピクセル数）。
+    /// カメラの写真（4800万画素なら展開すると約 190MB）をそのまま展開しないため
+    nonisolated static func source(_ data: Data, longSide: (CGSize) -> CGFloat) -> UIImage? {
+        guard let size = pixelSize(data) else { return nil }
+        let full = max(size.width, size.height)
+        let need = Int(min(full, longSide(size)).rounded(.up))
+        return downsample(data, maxPixels: need).map { UIImage(cgImage: $0) }
     }
 
     /// 選んだ写真を真ん中で正方形に切り抜き、240px の JPEG に縮める（十数KB）
     nonisolated static func shrink(_ data: Data) -> Data? {
-        guard let img = UIImage(data: data), img.size.width > 0, img.size.height > 0 else { return nil }
+        // 短い辺が 240px になる大きさまでだけ展開する
+        guard let img = source(data, longSide: { 240 * max($0.width, $0.height) / min($0.width, $0.height) }),
+              img.size.width > 0, img.size.height > 0 else { return nil }
         let side: CGFloat = 240
         let k = side / min(img.size.width, img.size.height)
         let drawn = CGSize(width: img.size.width * k, height: img.size.height * k)

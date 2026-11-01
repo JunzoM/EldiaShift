@@ -86,7 +86,7 @@ struct StorePhoto: View {
 
     var body: some View {
         Group {
-            if let data = store.photo, let img = UIImage(data: data) {
+            if let data = store.photo, let img = StaffPhoto.image(data) {
                 Image(uiImage: img).resizable().scaledToFill()
             } else {
                 ZStack {
@@ -109,7 +109,8 @@ struct StorePhoto: View {
 
     /// 選んだ写真を小さく縮める（長い辺 640px・JPEG）
     static func shrink(_ data: Data) -> Data? {
-        guard let img = UIImage(data: data) else { return nil }
+        // 長い辺 640px までだけ展開する（元の写真をそのまま展開しない）
+        guard let img = StaffPhoto.source(data, longSide: { _ in 640 }) else { return nil }
         let k = min(1, 640 / max(img.size.width, img.size.height))
         let size = CGSize(width: (img.size.width * k).rounded(), height: (img.size.height * k).rounded())
         let fmt = UIGraphicsImageRendererFormat()

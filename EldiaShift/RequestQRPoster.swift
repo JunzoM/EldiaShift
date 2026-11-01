@@ -20,6 +20,9 @@ enum RequestForm {
         return c.url!
     }
 
+    /// QR を画像にする入れ物（作るたびに用意すると重く、メモリも食うので使い回す）
+    private static let qrContext = CIContext(options: [.cacheIntermediates: false])
+
     /// QR コードの画像（白黒・ぼやけないよう整数倍に拡大）
     static func qrImage(_ text: String, size: CGFloat) -> UIImage? {
         let f = CIFilter.qrCodeGenerator()
@@ -28,7 +31,7 @@ enum RequestForm {
         guard let out = f.outputImage else { return nil }
         let k = max(1, (size / out.extent.width).rounded(.down))
         let scaled = out.transformed(by: CGAffineTransform(scaleX: k, y: k))
-        guard let cg = CIContext().createCGImage(scaled, from: scaled.extent) else { return nil }
+        guard let cg = qrContext.createCGImage(scaled, from: scaled.extent) else { return nil }
         return UIImage(cgImage: cg)
     }
 }

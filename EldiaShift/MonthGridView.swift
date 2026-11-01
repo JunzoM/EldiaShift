@@ -157,7 +157,9 @@ struct MonthGridView: View {
 
             ScrollView(.vertical) {
                 HStack(alignment: .top, spacing: 0) {
-                    VStack(spacing: 0) {
+                    // 行は画面に見えている分だけ作る（人数・時間帯の行が多くても、全部のマスを一度に持たない）。
+                    // 行の高さは決まっているので、左の名前と右の表の行はずれない
+                    LazyVStack(spacing: 0) {
                         ForEach(rows) { r in leftCell(r, book: book).frame(height: height(r)) }
                     }
                     .frame(width: nameWidth)
@@ -170,9 +172,13 @@ struct MonthGridView: View {
                                 HStack(spacing: 0) {
                                     ForEach(days, id: \.self) { d in Color.clear.frame(width: cellWidth, height: 1).id(d) }
                                 }
-                                ForEach(rows) { r in
-                                    rightCells(r, book: book, table: table, today: today, issues: issues, shown: shown, calc: calc).frame(height: height(r))
+                                LazyVStack(alignment: .leading, spacing: 0) {
+                                    ForEach(rows) { r in
+                                        rightCells(r, book: book, table: table, today: today, issues: issues, shown: shown, calc: calc).frame(height: height(r))
+                                    }
                                 }
+                                // 幅は決めておく（作っていない行があっても、横に動く幅が変わらないように）
+                                .frame(width: cellWidth * CGFloat(days.count) + summaryWidth, alignment: .leading)
                             }
                             .background(GeometryReader { g in
                                 // iOS 17 用：表の位置が変わったら日付の行を合わせる（iOS 18 以降は下の onScrollGeometryChange）
@@ -424,8 +430,14 @@ struct MonthGridView: View {
             HStack(spacing: 0) {
                 ForEach(days, id: \.self) { d in
                     let key = CellKey(staffID: m.id, day: d)
-                    ShiftCellView(member: m, day: d, resolved: table.get(m, d),
-                                  book: book, isToday: d == today, compact: compact, large: isWeek,
+                    let r = table.get(m, d)
+                    // マスには描くのに要る値だけを渡す（シフト表まるごとを、何千ものマスそれぞれに持たせない）
+                    let away = r?.elsewhere == true ? book.store(r?.storeID) : nil
+                    ShiftCellView(name: m.name, day: d, left: m.hasLeft(on: d), resolved: r,
+                                  block: book.block(r?.blockID, for: m),
+                                  awayStore: away, awayLabel: away.map { book.shortName(of: $0) } ?? "",
+                                  hours: isWeek ? r?.netHours(book.breakRules) : nil,
+                                  isToday: d == today, compact: compact, large: isWeek,
                                   issues: issues[key] ?? [], requested: m.requestsOff(d), picked: picked.contains(key))
                         .frame(width: cellWidth, height: rowHeight)
                         .contentShape(Rectangle())
@@ -776,10 +788,18 @@ private struct FollowingHeader<Content: View>: View {
 
 /// 1人×1日のマス
 struct ShiftCellView: View {
-    let member: StaffMember
+    let name: String
     let day: DayKey
+    /// 退職したあとの日
+    let left: Bool
     let resolved: ResolvedShift?
-    let book: ShiftBook
+    /// その日のひな形（休みの種類・チップの色）
+    let block: TimeBlock?
+    /// ほかの店舗で勤務する日の店舗と、その略称
+    var awayStore: Store? = nil
+    var awayLabel = ""
+    /// 実働時間（週表示で出す）
+    var hours: Double? = nil
     let isToday: Bool
     let compact: Bool
     /// 週表示（マスが大きい）：時刻を大きく、勤務時間とひな形の名前も出す
@@ -792,7 +812,6 @@ struct ShiftCellView: View {
     var picked = false
 
     var body: some View {
-        let block = book.block(resolved?.blockID, for: member)
         ZStack {
             background(block)
             content(block)
@@ -842,7 +861,7 @@ struct ShiftCellView: View {
 
     @ViewBuilder
     private func background(_ block: TimeBlock?) -> some View {
-        if member.hasLeft(on: day) {
+        if left {
             Color(.secondarySystemBackground)
         } else if resolved?.elsewhere == true {
             // ほかの店舗で勤務する日：斜線で薄く
@@ -863,11 +882,11 @@ struct ShiftCellView: View {
 
     @ViewBuilder
     private func content(_ block: TimeBlock?) -> some View {
-        if member.hasLeft(on: day) {
+        if left {
             Text("－").appFont(.caption2).foregroundStyle(.tertiary)
         } else if let r = resolved, r.elsewhere {
             VStack(spacing: 2) {
-                if let st = book.store(r.storeID) { StoreTag(store: st, label: book.shortName(of: st), size: large ? 11 : 9) }
+                if let st = awayStore { StoreTag(store: st, label: awayLabel, size: large ? 11 : 9) }
                 Text(r.inTime.isEmpty ? "—" : r.inTime).appFont(.system(size: large ? 12 : 10)).foregroundStyle(.secondary)
                 if large { Text(r.outTime).appFont(.system(size: 11)).foregroundStyle(.tertiary) }
             }
@@ -897,7 +916,7 @@ struct ShiftCellView: View {
                             if let block {
                                 Text(block.label).foregroundStyle(PaletteColor.fg(block.colorIndex)).fontWeight(.bold)
                             }
-                            if let h = r.netHours(book.breakRules) { Text(String(format: "%.1fh", h)).foregroundStyle(.secondary) }
+                            if let h = hours { Text(String(format: "%.1fh", h)).foregroundStyle(.secondary) }
                         }
                         .appFont(.caption2)
                     }
@@ -933,11 +952,11 @@ struct ShiftCellView: View {
     }
 
     private func base(_ block: TimeBlock?) -> String {
-        let date = "\(day.month)月\(day.day)日 \(member.name)"
-        if member.hasLeft(on: day) { return "\(date)、退職後" }
+        let date = "\(day.month)月\(day.day)日 \(name)"
+        if left { return "\(date)、退職後" }
         guard let r = resolved else { return "\(date)、未定" }
         if r.isOff { return "\(date)、\(block?.label ?? "休み")" }
-        if r.elsewhere { return "\(date)、\(book.store(r.storeID)?.name ?? "ほかの店舗")で\(r.inTime)から\(r.outTime)" }
+        if r.elsewhere { return "\(date)、\(awayStore?.name ?? "ほかの店舗")で\(r.inTime)から\(r.outTime)" }
         return "\(date)、\(r.inTime)から\(r.outTime)\(r.isAuto ? "、自動" : "")"
     }
 }

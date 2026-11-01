@@ -440,28 +440,53 @@ enum PDFMaker {
     static func makeAsync(pages: [PrintPageSpec], book: ShiftBook, title: String, options: PrintOptions = PrintOptions(),
                           progress: (Int) -> Void = { _ in }) async -> Data {
         let data = NSMutableData()
-        guard let consumer = CGDataConsumer(data: data as CFMutableData) else { return Data() }
+        guard let consumer = CGDataConsumer(data: data as CFMutableData),
+              await write(pages: pages, book: book, title: title, options: options, to: consumer, progress: progress)
+        else { return Data() }
+        return data as Data
+    }
+
+    /// ファイルへ直接書き出す（PDF 全体をメモリに持ってから書き写さない。枚数が多いときのメモリを抑える）
+    @MainActor
+    static func makeFile(at url: URL, pages: [PrintPageSpec], book: ShiftBook, title: String, options: PrintOptions = PrintOptions(),
+                         progress: (Int) -> Void = { _ in }) async -> Bool {
+        try? FileManager.default.removeItem(at: url)
+        guard let consumer = CGDataConsumer(url: url as CFURL),
+              await write(pages: pages, book: book, title: title, options: options, to: consumer, progress: progress)
+        else {
+            try? FileManager.default.removeItem(at: url)
+            return false
+        }
+        return true
+    }
+
+    @MainActor
+    private static func write(pages: [PrintPageSpec], book: ShiftBook, title: String, options: PrintOptions,
+                              to consumer: CGDataConsumer, progress: (Int) -> Void) async -> Bool {
         var box = CGRect(origin: .zero, size: PrintLayout.a4)
-        guard let ctx = CGContext(consumer: consumer, mediaBox: &box, nil) else { return Data() }
+        guard let ctx = CGContext(consumer: consumer, mediaBox: &box, nil) else { return false }
         for (i, spec) in pages.enumerated() {
             progress(i + 1)
             await Task.yield()
             render(spec, book: book, title: title, options: options, into: ctx)
         }
         ctx.closePDF()
-        return data as Data
+        return true
     }
 
     @MainActor
     private static func render(_ spec: PrintPageSpec, book: ShiftBook, title: String, options: PrintOptions, into ctx: CGContext) {
-        let view = PrintPageView(spec: spec, book: book, title: title, options: options)
-        var media = CGRect(origin: .zero, size: view.size)
-        let renderer = ImageRenderer(content: view)
-        renderer.proposedSize = ProposedViewSize(view.size)
-        renderer.render { _, draw in
-            ctx.beginPage(mediaBox: &media)
-            draw(ctx)
-            ctx.endPage()
+        // 1枚ごとに一時的なもの（描いた画面の部品など）を手放す（枚数分たまらないように）
+        autoreleasepool {
+            let view = PrintPageView(spec: spec, book: book, title: title, options: options)
+            var media = CGRect(origin: .zero, size: view.size)
+            let renderer = ImageRenderer(content: view)
+            renderer.proposedSize = ProposedViewSize(view.size)
+            renderer.render { _, draw in
+                ctx.beginPage(mediaBox: &media)
+                draw(ctx)
+                ctx.endPage()
+            }
         }
     }
 
@@ -1018,11 +1043,10 @@ struct PrintSheet: View {
     }
 
     private func pdfURL(_ pages: [PrintPageSpec], book: ShiftBook) async throws -> URL {
-        let data = await PDFMaker.makeAsync(pages: pages, book: book, title: effectiveTitle, options: options) { progress = $0 }
-        if data.isEmpty { throw CocoaError(.fileWriteUnknown) }
         let m = MonthKey(day)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("シフト表_\(m.year)年\(m.month)月.pdf")
-        try data.write(to: url, options: .atomic)
+        let ok = await PDFMaker.makeFile(at: url, pages: pages, book: book, title: effectiveTitle, options: options) { progress = $0 }
+        if !ok { throw CocoaError(.fileWriteUnknown) }
         return url
     }
 
