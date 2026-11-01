@@ -98,19 +98,22 @@ struct StaffListView: View {
             let shown = sections(book).flatMap(\.members)
             // 選んだ人が一覧に無い（店舗を切り替えた・検索した）ときは、一覧の最初の人
             let current = selectedID.flatMap { id in shown.first { $0.id == id } } ?? shown.first
-            HStack(spacing: 0) {
-                list.frame(width: 340 * zoom)
-                Divider()
-                Group {
-                    if let current {
-                        StaffDetailPanel(member: current).id(current.id)
-                    } else {
-                        ContentUnavailableView("スタッフがいません", systemImage: "person.2",
-                                               description: Text("右上の「＋」でスタッフを追加します。"))
+            GeometryReader { geo in
+                HStack(spacing: 0) {
+                    // iPad の縦向きなど狭いときは、詳細の幅を残すため一覧を細くする
+                    list.frame(width: min(340 * zoom, geo.size.width * 0.4))
+                    Divider()
+                    Group {
+                        if let current {
+                            StaffDetailPanel(member: current).id(current.id)
+                        } else {
+                            ContentUnavailableView("スタッフがいません", systemImage: "person.2",
+                                                   description: Text("右上の「＋」でスタッフを追加します。"))
+                        }
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(.systemGroupedBackground))
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color(.systemGroupedBackground))
             }
             .onAppear { if selectedID == nil { selectedID = current?.id } }
         }
@@ -314,6 +317,8 @@ struct StaffDetailPanel: View {
     @State private var editing = false
 
     private static let tabs = ["基本", "勤務パターン", "給与", "希望休・申請", "今月のシフト"]
+    /// 幅が足りないとき（iPad の縦向きなど）の短い名前
+    private static let shortTabs = ["基本", "勤務", "給与", "希望休", "シフト"]
 
     var body: some View {
         if editing {
@@ -323,11 +328,10 @@ struct StaffDetailPanel: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: DS.gap) {
                     header(book)
-                    Picker("見るもの", selection: $tab) {
-                        ForEach(Self.tabs.indices, id: \.self) { Text(Self.tabs[$0]).tag($0) }
+                    ViewThatFits(in: .horizontal) {
+                        tabPicker(Self.tabs).segmented(Self.tabs.count)
+                        tabPicker(Self.shortTabs).pickerStyle(.segmented)
                     }
-                    .segmented(Self.tabs.count)
-                    .labelsHidden()
                     switch tab {
                     case 0: basics(book)
                     case 1: patterns(book)
@@ -341,28 +345,61 @@ struct StaffDetailPanel: View {
         }
     }
 
+    private func tabPicker(_ names: [String]) -> some View {
+        Picker("見るもの", selection: $tab) {
+            ForEach(names.indices, id: \.self) { Text(names[$0]).tag($0) }
+        }
+        .labelsHidden()
+    }
+
     // MARK: 上の見出し（顔・名前・部門・在職・編集）
 
     private func header(_ book: ShiftBook) -> some View {
         let dept = book.departments.first { $0.id == member.departmentID }
         let sub = [dept?.name, "No.\(member.number)", member.employment.isEmpty ? nil : member.employment,
                    Self.date(member.joinDate).map { "入社 \($0)" }].compactMap { $0 }.joined(separator: " ・ ")
+        let color = dept?.colorIndex ?? 8
         // 顔がよく見えるよう、カードは大きめ（以前の約2.5倍の高さ）
-        return HStack(spacing: 24) {
-            InitialAvatar(name: member.name, colorIndex: dept?.colorIndex ?? 8, size: 168, photo: member.photo)
-            VStack(alignment: .leading, spacing: 6) {
-                Text(member.name.isEmpty ? "（名前なし）" : member.name).appFont(.largeTitle.weight(.bold)).lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                Text(sub).appFont(.title3).foregroundStyle(.secondary).lineLimit(2)
+        // 横に並べると足りないとき（iPad の縦向きなど）は、在籍と編集を名前の下へ回す
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                InitialAvatar(name: member.name, colorIndex: color, size: 168, photo: member.photo)
+                    .padding(.trailing, 12)
+                headerTitle(sub, lines: 2)
+                    .frame(minWidth: 180, idealWidth: 180, maxWidth: .infinity, alignment: .leading)
+                statusPill.fixedSize()
+                editButton
             }
-            Spacer(minLength: 8)
-            statusPill.fixedSize()
-            Button { editing = true } label: { Label("編集", systemImage: "pencil") }
-                .buttonStyle(.borderedProminent)
+            HStack(spacing: 16) {
+                InitialAvatar(name: member.name, colorIndex: color, size: 140, photo: member.photo)
+                VStack(alignment: .leading, spacing: 10) {
+                    headerTitle(sub, lines: 3)
+                    HStack(spacing: 8) {
+                        statusPill.fixedSize()
+                        Spacer(minLength: 0)
+                        editButton
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .frame(maxWidth: .infinity, minHeight: 188, alignment: .leading)
         .padding(DS.cardPadding)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: DS.cardRadius, style: .continuous))
+    }
+
+    private func headerTitle(_ sub: String, lines: Int) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(member.name.isEmpty ? "（名前なし）" : member.name).appFont(.largeTitle.weight(.bold)).lineLimit(1)
+                .minimumScaleFactor(0.6)
+            Text(sub).appFont(.title3).foregroundStyle(.secondary).lineLimit(lines)
+        }
+    }
+
+    private var editButton: some View {
+        Button { editing = true } label: { Label("編集", systemImage: "pencil") }
+            .buttonStyle(.borderedProminent)
+            .fixedSize()
     }
 
     private var statusPill: StatusPill {
