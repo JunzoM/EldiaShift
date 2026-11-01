@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - サイドバー（iPad）・タブ（iPhone）
 
@@ -50,6 +51,8 @@ struct MainTabsView: View {
     @AppStorage("appTab") private var savedTab: AppTab = .home
     @State private var tab: AppTab = .home
     @AppStorage("viewMode") private var mode: GridMode = .month
+    /// サイドバーをアイコンだけにする（AppSidebar と同じ設定）。iPad は向きで自動で切り替える
+    @AppStorage("sidebarCompact") private var sidebarCompact = false
 
     var body: some View {
         Group {
@@ -84,13 +87,30 @@ struct MainTabsView: View {
     /// サイドバーと中身を横に並べるだけにする（NavigationSplitView だと、設定の中を開いたときに
     /// 中身の画面がサイドバーの後ろへ回り込むなど、画面の切り替わりが崩れることがあったため）
     private var split: some View {
-        HStack(spacing: 0) {
-            // 幅はサイドバー自身が決める（たたむとアイコンだけの細い帯）
-            AppSidebar(tab: $tab)
-            content(tab, storeInToolbar: false)
-                .id(tab)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        GeometryReader { geo in
+            HStack(spacing: 0) {
+                // 幅はサイドバー自身が決める（たたむとアイコンだけの細い帯）
+                AppSidebar(tab: $tab)
+                content(tab, storeInToolbar: false)
+                    .id(tab)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            // iPad：縦にしたらサイドバーをたたみ、横にしたら広げる（向きを変えたときだけ。そのあと手で切り替えてもよい）
+            .onAppear { fitSidebar(portrait: geo.size.height > geo.size.width, animated: false) }
+            .onChange(of: geo.size.height > geo.size.width) { _, portrait in fitSidebar(portrait: portrait, animated: true) }
         }
+    }
+
+    /// iPad の向きに合わせてサイドバーをたたむ・広げる（Mac はウインドウの形で変えない）
+    private func fitSidebar(portrait: Bool, animated: Bool) {
+        #if !targetEnvironment(macCatalyst)
+        guard UIDevice.current.userInterfaceIdiom == .pad, sidebarCompact != portrait else { return }
+        if animated {
+            withAnimation(.snappy(duration: 0.25)) { sidebarCompact = portrait }
+        } else {
+            sidebarCompact = portrait
+        }
+        #endif
     }
 
     // MARK: iPhone：タブ
