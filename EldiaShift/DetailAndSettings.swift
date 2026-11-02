@@ -188,6 +188,14 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    AppearancePicker()
+                } header: {
+                    Text("画面の明るさ")
+                } footer: {
+                    Text("「自動」は端末の設定（ライト・ダーク）に合わせます。この端末だけの設定です。印刷・PDF はいつも白い紙の色です。")
+                }
+
+                Section {
                     NavigationLink { ManualView() } label: { Label("操作マニュアル", systemImage: "questionmark.circle") }
                     Button {
                         CoachCenter.shared.resetAll()

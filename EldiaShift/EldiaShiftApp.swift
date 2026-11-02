@@ -35,6 +35,8 @@ struct EldiaShiftApp: App {
                 .environment(\.shiftStore, store)
                 .modifier(BrandTint(hex: store.book.brandColor))
                 .modifier(MacZoom())
+                // 画面の明るさ（設定の「自動・ライト・ダーク」）
+                .modifier(AppearanceApplier())
                 // 最低賃金の新しい表（毎年の改定）を読み込む
                 .task { await MinimumWageUpdater.refresh() }
         }
