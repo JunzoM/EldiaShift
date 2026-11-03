@@ -127,7 +127,9 @@ bash scripts/duo-screenshots.sh
 
 ### 1.1（ビルド 2）
 - バージョン 1.1・ビルド 2。アップロードし直すときはビルド番号を上げる（Xcode の Build、または project の CURRENT_PROJECT_VERSION）
-- CloudKit：1.1 で足した項目はすべて既存の JSON の中なので、スキーマの反映は不要
+- CloudKit：1.1 で足した入れ物（`PayRecord`・`CellRecord.note`）と iCloud 共有があるので、スキーマを本番へ反映する（[sharing-test.md](sharing-test.md)）
+- TestFlight：TestFlight と App Store は CloudKit の本番環境を使うので、審査に出す前に TestFlight 版で共有の招待・受け取り・編集の反映を確かめる
+- プライバシーポリシー（facility-manager の `/hotel-shift/privacy`）：iCloud 共有・最低賃金の表の読み込み・Mac 版を反映して公開済み（2026年11月2日改定）
 - Signing & Capabilities に Associated Domains（applinks:facility-manager-phi.vercel.app）が入っていることを確認（自動署名で App ID に機能が付く）
 - facility-manager の `/.well-known/apple-app-site-association` が本番で開けること（appID：294N3Z6JPG.com.bestdelight.eldiashift）
 - App Store Connect：「このバージョンの新機能」に上の文章、プロモーション用テキスト・説明を更新、審査メモに 1.1 の段落を追加
