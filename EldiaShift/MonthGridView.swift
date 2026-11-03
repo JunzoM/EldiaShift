@@ -116,6 +116,7 @@ struct MonthGridView: View {
     @State private var memo = GridMemo()
 
     var body: some View {
+        let _ = SwitchProbe.gridBody(days)
         let book = store.book
         let calc = memo.get(book, revision: store.revision, days: days, showInactive: showInactive)
         let rows = rows(calc.groups)
@@ -267,7 +268,10 @@ struct MonthGridView: View {
                     }
                 }
             }
-            .onChange(of: days) { scrollToToday(proxy, days: days, today: today) }
+            .onChange(of: days) {
+                scrollToToday(proxy, days: days, today: today)
+                SwitchProbe.shown()
+            }
             // 週の表が画面に収まって横に動かなくなったら、名前の列・日付の行の位置も戻す
             .onChange(of: fitsWidth) { if fitsWidth { scroll.x = 0 } }
         }
@@ -311,7 +315,10 @@ struct MonthGridView: View {
                     .frame(width: max(0, availableWidth - nameWidth))
                     .scrollDisabled(fitsWidth)
                     .onAppear { scrollToToday(proxy, days: days, today: today) }
-                    .onChange(of: days) { scrollToToday(proxy, days: days, today: today) }
+                    .onChange(of: days) {
+                        scrollToToday(proxy, days: days, today: today)
+                        SwitchProbe.shown()
+                    }
                 }
             }
         }
@@ -800,7 +807,9 @@ final class GridMemo {
     func get(_ book: ShiftBook, revision: Int, days: [DayKey], showInactive: Bool) -> Result {
         let k = Key(revision: revision, days: days, showInactive: showInactive)
         if k == key, let result { return result }
+        let t0 = CFAbsoluteTimeGetCurrent()
         let r = Self.make(book, days: days, showInactive: showInactive)
+        SwitchProbe.log("計算（勤務・注意・時間帯別の人数）\(SwitchProbe.ms(since: t0))ms")
         key = k
         result = r
         return r
@@ -872,6 +881,54 @@ private struct FollowingHeader<Content: View>: View {
     }
 }
 
+/// 月の切り替えにかかる時間を調べるための一時的な記録（Xcode のコンソールに「[月切替]」で出る）。
+/// 原因が分かったら消す
+enum SwitchProbe {
+    // 画面のスレッドからしか触らない（調べるための一時的なもの）
+    nonisolated(unsafe) private static var start: CFAbsoluteTime?
+    nonisolated(unsafe) private static var lastFirstDay: DayKey?
+    nonisolated(unsafe) private static var grids = 0
+    nonisolated(unsafe) private static var cells = 0
+    nonisolated(unsafe) private static var tapAt: CFAbsoluteTime?
+
+    /// 前後の月のボタンを押したとき
+    static func tapped() {
+        tapAt = CFAbsoluteTimeGetCurrent()
+        log("ボタンを押した")
+    }
+
+    static func ms(since t: CFAbsoluteTime) -> Int { Int((CFAbsoluteTimeGetCurrent() - t) * 1000) }
+    static func log(_ s: String) { print("[月切替] " + s) }
+
+    /// 表の本体を描き直すたびに呼ぶ（表示する日が変わったら測り始める）
+    static func gridBody(_ days: [DayKey]) {
+        if days.first != lastFirstDay {
+            lastFirstDay = days.first
+            start = CFAbsoluteTimeGetCurrent()
+            grids = 0
+            cells = 0
+            log("切り替え開始 \(days.first.map { "\($0.month)/\($0.day)" } ?? "")〜（\(days.count)日）"
+                + (tapAt.map { "・ボタンから \(ms(since: $0))ms" } ?? ""))
+            tapAt = nil
+        }
+        grids += 1
+    }
+
+    static func cellBody() { cells += 1 }
+
+    /// 表示する日が変わったあと（画面に出したあと）に呼ぶ
+    static func shown() {
+        guard let start else { return }
+        log("画面に反映まで \(ms(since: start))ms・表の描き直し \(grids)回・マス \(cells)個")
+        DispatchQueue.main.async {
+            log("次の描画のあと \(ms(since: start))ms・表の描き直し \(grids)回・マス \(cells)個")
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            log("3秒後までに 表の描き直し \(grids)回・マス \(cells)個（切り替えから \(ms(since: start))ms）")
+        }
+    }
+}
+
 /// 行の下の線。行は横並び（名前＋マス）の中にあるので、Divider だと縦の線になってしまう。高さを決めた横の線にする
 private struct RowLine: View {
     var body: some View {
@@ -915,6 +972,7 @@ struct ShiftCellView: View {
     var picked = false
 
     var body: some View {
+        let _ = SwitchProbe.cellBody()
         ZStack {
             background(block)
             content(block)
