@@ -116,7 +116,6 @@ struct MonthGridView: View {
     @State private var memo = GridMemo()
 
     var body: some View {
-        let _ = SwitchProbe.gridBody(days)
         let book = store.book
         let calc = memo.get(book, revision: store.revision, days: days, showInactive: showInactive)
         let rows = rows(calc.groups)
@@ -268,10 +267,7 @@ struct MonthGridView: View {
                     }
                 }
             }
-            .onChange(of: days) {
-                scrollToToday(proxy, days: days, today: today)
-                SwitchProbe.shown()
-            }
+            .onChange(of: days) { scrollToToday(proxy, days: days, today: today) }
             // 週の表が画面に収まって横に動かなくなったら、名前の列・日付の行の位置も戻す
             .onChange(of: fitsWidth) { if fitsWidth { scroll.x = 0 } }
         }
@@ -315,10 +311,7 @@ struct MonthGridView: View {
                     .frame(width: max(0, availableWidth - nameWidth))
                     .scrollDisabled(fitsWidth)
                     .onAppear { scrollToToday(proxy, days: days, today: today) }
-                    .onChange(of: days) {
-                        scrollToToday(proxy, days: days, today: today)
-                        SwitchProbe.shown()
-                    }
+                    .onChange(of: days) { scrollToToday(proxy, days: days, today: today) }
                 }
             }
         }
@@ -381,6 +374,19 @@ struct MonthGridView: View {
     }
 
     // MARK: まとめて入れる
+
+    /// 行の中の横の位置 → 何日目か（合計の列や外は nil）
+    private func day(atX x: CGFloat) -> DayKey? {
+        guard x >= 0, cellWidth > 0 else { return nil }
+        let i = Int(x / cellWidth)
+        return days.indices.contains(i) ? days[i] : nil
+    }
+
+    /// マスを押したとき：まとめて選んでいれば選ぶ・外す、ふだんはそのマスを開く
+    private func tapCell(_ m: StaffMember, _ d: DayKey) {
+        guard !m.hasLeft(on: d) else { return }
+        if selecting { togglePick(CellKey(staffID: m.id, day: d)) } else { selected = Selection(member: m, day: d) }
+    }
 
     private func togglePick(_ key: CellKey) {
         if picked.contains(key) { picked.remove(key) } else { picked.insert(key); pickAnchor = key }
@@ -533,19 +539,22 @@ struct MonthGridView: View {
                                   isToday: d == today, compact: compact, large: isWeek,
                                   issues: issues[key] ?? [], requested: m.requestsOff(d), picked: picked.contains(key))
                         .frame(width: cellWidth, height: rowHeight)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            guard !m.hasLeft(on: d) else { return }
-                            if selecting { togglePick(key) } else { selected = Selection(member: m, day: d) }
-                        }
-                        .onLongPressGesture(minimumDuration: 0.35) {
-                            // 選んでいるとき：前に選んだマスからここまでを四角く選ぶ
-                            if selecting { pickRange(to: key, shown: shown) }
-                        }
+                        // 読み上げ（VoiceOver）で押したとき。押す操作の部品は行に1つだけ付ける（下）
+                        .accessibilityAction { tapCell(m, d) }
+                        // まとめて選んでいるときだけ、マスごとに押す・長押しを付ける（長押しで四角く選ぶ）
+                        .modifier(PickGestures(enabled: selecting,
+                                               tap: { tapCell(m, d) },
+                                               longPress: { pickRange(to: key, shown: shown) }))
                 }
                 summaryCell(table.summary(m, days: days))
             }
             .overlay(alignment: .bottom) { RowLine() }
+            // ふだんは、押す操作を行に1つだけ付けて、押した位置から何日目かを決める
+            // （マスごとに付けると月で千個を超え、iPadOS 17 では表を出すたびに十数秒かかっていた）
+            .contentShape(Rectangle())
+            .gesture(SpatialTapGesture().onEnded { v in
+                if let d = day(atX: v.location.x) { tapCell(m, d) }
+            }, including: selecting ? .subviews : .all)
         case .hourToggle(let dept, _):
             let plan = book.staffing
             if plan.hasPlan(for: dept.id) {
@@ -555,17 +564,14 @@ struct MonthGridView: View {
                         let g = calc.gaps[dept.id]?[d] ?? StaffingGap()
                         Group {
                             if g.short > 0 {
-                                // 押すと、その日に入れられる人を出す
-                                Button { shortage = ShortageTarget(department: dept, day: d) } label: {
-                                    Text("−\(g.short)").appFont(.system(size: 11, weight: .heavy)).monospacedDigit()
-                                        .foregroundStyle(.white)
-                                        .padding(.horizontal, 4).padding(.vertical, 3)
-                                        .background(StaffingStyle.short, in: RoundedRectangle(cornerRadius: 4))
-                                        .frame(width: cellWidth, height: toggleHeight)
-                                        .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("\(d.day)日 \(dept.name) 不足 \(g.short)人時。入れられる人を見る")
+                                // 押すと、その日に入れられる人を出す（押す操作は行に1つ。下の onTap）
+                                Text("−\(g.short)").appFont(.system(size: 11, weight: .heavy)).monospacedDigit()
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 4).padding(.vertical, 3)
+                                    .background(StaffingStyle.short, in: RoundedRectangle(cornerRadius: 4))
+                                    .accessibilityLabel("\(d.day)日 \(dept.name) 不足 \(g.short)人時。入れられる人を見る")
+                                    .accessibilityAddTraits(.isButton)
+                                    .accessibilityAction { shortage = ShortageTarget(department: dept, day: d) }
                             } else {
                                 Image(systemName: "checkmark").appFont(.system(size: 9, weight: .bold)).foregroundStyle(StaffingStyle.ok.opacity(0.7))
                             }
@@ -577,7 +583,14 @@ struct MonthGridView: View {
                 .background(Color(.systemBackground))
                 .overlay(alignment: .bottom) { RowLine() }
                 .contentShape(Rectangle())
-                .onTapGesture { toggleHourly(dept) }
+                // 足りない日を押したら入れられる人を、それ以外は時間帯別を開く・閉じる
+                .gesture(SpatialTapGesture().onEnded { v in
+                    if let d = day(atX: v.location.x), (calc.gaps[dept.id]?[d]?.short ?? 0) > 0 {
+                        shortage = ShortageTarget(department: dept, day: d)
+                    } else {
+                        toggleHourly(dept)
+                    }
+                })
             } else {
                 Color(.systemBackground)
                     .frame(width: cellWidth * CGFloat(days.count) + summaryWidth)
@@ -602,10 +615,9 @@ struct MonthGridView: View {
                         .frame(width: cellWidth, height: hourHeight)
                         .background(n < need ? c.opacity(0.85) : c.opacity(0.15))
                         .overlay(alignment: .trailing) { Rectangle().fill(Color(.separator)).frame(width: 0.5) }
-                        .contentShape(Rectangle())
-                        .onTapGesture { if n < need { shortage = ShortageTarget(department: dept, day: d) } }
                         .accessibilityLabel("\(h)時 \(n)人（必要\(need)人）")
                         .accessibilityAddTraits(n < need ? .isButton : [])
+                        .accessibilityAction { if n < need { shortage = ShortageTarget(department: dept, day: d) } }
                     } else {
                     Text(n == 0 ? "0" : "\(n)")
                         .appFont(.system(size: n > 2 ? 13 : 11, weight: n > 2 ? .heavy : n > 0 ? .bold : .regular))
@@ -619,6 +631,13 @@ struct MonthGridView: View {
                 Color.clear.frame(width: summaryWidth, height: hourHeight)
             }
             .background(night ? Color.blue.opacity(0.04) : Color(.secondarySystemBackground).opacity(0.3))
+            // 足りない時間を押したら、その日に入れられる人を出す（押す操作は行に1つ）
+            .contentShape(Rectangle())
+            .gesture(SpatialTapGesture().onEnded { v in
+                guard let d = day(atX: v.location.x), let need = calc.needs[dept.id]?[d]?[h] ?? nil,
+                      calc.hourly.count(dept.id, on: d, hour: h) < need else { return }
+                shortage = ShortageTarget(department: dept, day: d)
+            })
         }
     }
 
@@ -807,9 +826,7 @@ final class GridMemo {
     func get(_ book: ShiftBook, revision: Int, days: [DayKey], showInactive: Bool) -> Result {
         let k = Key(revision: revision, days: days, showInactive: showInactive)
         if k == key, let result { return result }
-        let t0 = CFAbsoluteTimeGetCurrent()
         let r = Self.make(book, days: days, showInactive: showInactive)
-        SwitchProbe.log("計算（勤務・注意・時間帯別の人数）\(SwitchProbe.ms(since: t0))ms")
         key = k
         result = r
         return r
@@ -881,50 +898,66 @@ private struct FollowingHeader<Content: View>: View {
     }
 }
 
-/// 月の切り替えにかかる時間を調べるための一時的な記録（Xcode のコンソールに「[月切替]」で出る）。
-/// 原因が分かったら消す
-enum SwitchProbe {
-    // 画面のスレッドからしか触らない（調べるための一時的なもの）
-    nonisolated(unsafe) private static var start: CFAbsoluteTime?
-    nonisolated(unsafe) private static var lastFirstDay: DayKey?
-    nonisolated(unsafe) private static var grids = 0
-    nonisolated(unsafe) private static var cells = 0
-    nonisolated(unsafe) private static var tapAt: CFAbsoluteTime?
+/// マスの隅の印（自動・メモ・注意・希望休）と、まとめて選んでいるときの色。印があるマスだけ作る
+private struct CellMarks: View {
+    let auto: Bool
+    let note: Bool
+    let issues: [LaborIssue]
+    let requested: Bool
+    let picked: Bool
+    let large: Bool
 
-    /// 前後の月のボタンを押したとき
-    static func tapped() {
-        tapAt = CFAbsoluteTimeGetCurrent()
-        log("ボタンを押した")
-    }
-
-    static func ms(since t: CFAbsoluteTime) -> Int { Int((CFAbsoluteTimeGetCurrent() - t) * 1000) }
-    static func log(_ s: String) { print("[月切替] " + s) }
-
-    /// 表の本体を描き直すたびに呼ぶ（表示する日が変わったら測り始める）
-    static func gridBody(_ days: [DayKey]) {
-        if days.first != lastFirstDay {
-            lastFirstDay = days.first
-            start = CFAbsoluteTimeGetCurrent()
-            grids = 0
-            cells = 0
-            log("切り替え開始 \(days.first.map { "\($0.month)/\($0.day)" } ?? "")〜（\(days.count)日）"
-                + (tapAt.map { "・ボタンから \(ms(since: $0))ms" } ?? ""))
-            tapAt = nil
+    var body: some View {
+        ZStack {
+            if picked {
+                Rectangle().fill(Color.accentColor.opacity(0.18))
+                    .overlay(Rectangle().strokeBorder(Color.accentColor, lineWidth: 2.5))
+            }
+            if auto {
+                // 自動（くり返し・期間の予定）で決まったマスの印。時刻に重ならないよう隅に小さく
+                Circle().fill(Color.orange.opacity(0.8)).frame(width: 5, height: 5).padding(large ? 5 : 2)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: large ? .bottomTrailing : .topTrailing)
+            }
+            if note {
+                // メモがある日の印（自動の印と重ならない隅に）
+                Image(systemName: "note.text").appFont(.system(size: large ? 10 : 7, weight: .bold))
+                    .foregroundStyle(Color.secondary).padding(large ? 4 : 1.5)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: large ? .topTrailing : .bottomTrailing)
+            }
+            if !issues.isEmpty {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .appFont(.system(size: large ? 11 : 9))
+                    .foregroundStyle(issues.contains(.requestedOff) ? Color.purple : Color.orange)
+                    .padding(2)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+            if requested {
+                Text("希").appFont(.system(size: 8, weight: .heavy)).foregroundStyle(.white)
+                    .padding(.horizontal, 2)
+                    .background(Color.purple, in: RoundedRectangle(cornerRadius: 2))
+                    .padding(2)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+            }
         }
-        grids += 1
+        .accessibilityHidden(true)
     }
+}
 
-    static func cellBody() { cells += 1 }
+/// まとめて選んでいるときだけ、マスに「押す」「長押し（四角く選ぶ）」を付ける。
+/// ふだんは付けない（押す操作は行に 1 つだけ。マスごとに付けると月で千個を超えて重い）
+private struct PickGestures: ViewModifier {
+    let enabled: Bool
+    let tap: () -> Void
+    let longPress: () -> Void
 
-    /// 表示する日が変わったあと（画面に出したあと）に呼ぶ
-    static func shown() {
-        guard let start else { return }
-        log("画面に反映まで \(ms(since: start))ms・表の描き直し \(grids)回・マス \(cells)個")
-        DispatchQueue.main.async {
-            log("次の描画のあと \(ms(since: start))ms・表の描き直し \(grids)回・マス \(cells)個")
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-            log("3秒後までに 表の描き直し \(grids)回・マス \(cells)個（切り替えから \(ms(since: start))ms）")
+    func body(content: Content) -> some View {
+        if enabled {
+            content
+                .contentShape(Rectangle())
+                .onTapGesture(perform: tap)
+                .onLongPressGesture(minimumDuration: 0.35, perform: longPress)
+        } else {
+            content
         }
     }
 }
@@ -972,52 +1005,23 @@ struct ShiftCellView: View {
     var picked = false
 
     var body: some View {
-        let _ = SwitchProbe.cellBody()
+        // 重ねる部品をできるだけ減らす（月の表では 1 画面に 700 以上のマスを描くため。
+        // 以前は印ごとに overlay を 6 つ重ねていて、印が無くても枠が作られていた）
+        let marks = resolved?.isAuto == true || resolved?.note?.isEmpty == false || !issues.isEmpty || requested || picked
         ZStack {
             background(block)
             content(block)
-        }
-        .overlay(alignment: large ? .bottomTrailing : .topTrailing) {
-            // 自動（くり返し・期間の予定）で決まったマスの印。時刻に重ならないよう隅に小さく
-            if resolved?.isAuto == true {
-                Circle().fill(Color.orange.opacity(0.8)).frame(width: 5, height: 5).padding(large ? 5 : 2)
-                    .accessibilityHidden(true)
+            // 右の区切り線
+            Rectangle().fill(Color(.separator)).frame(width: 0.5)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+            if marks {
+                CellMarks(auto: resolved?.isAuto == true, note: resolved?.note?.isEmpty == false,
+                          issues: issues, requested: requested, picked: picked, large: large)
             }
         }
-        .overlay(alignment: large ? .topTrailing : .bottomTrailing) {
-            // メモがある日の印（自動で決まったマスの印と重ならない隅に）
-            if let n = resolved?.note, !n.isEmpty {
-                Image(systemName: "note.text").appFont(.system(size: large ? 10 : 7, weight: .bold))
-                    .foregroundStyle(Color.secondary).padding(large ? 4 : 1.5)
-                    .accessibilityHidden(true)
-            }
-        }
-        .overlay(alignment: .topLeading) {
-            if !issues.isEmpty {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .appFont(.system(size: large ? 11 : 9))
-                    .foregroundStyle(issues.contains(.requestedOff) ? Color.purple : Color.orange)
-                    .padding(2)
-            }
-        }
-        .overlay(alignment: .bottomLeading) {
-            if requested {
-                Text("希").appFont(.system(size: 8, weight: .heavy)).foregroundStyle(.white)
-                    .padding(.horizontal, 2)
-                    .background(Color.purple, in: RoundedRectangle(cornerRadius: 2))
-                    .padding(2)
-            }
-        }
-        .overlay {
-            if picked {
-                Rectangle().fill(Color.accentColor.opacity(0.18))
-                    .overlay(Rectangle().strokeBorder(Color.accentColor, lineWidth: 2.5))
-            }
-        }
-        .overlay(alignment: .trailing) { Rectangle().fill(Color(.separator)).frame(width: 0.5) }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText(block))
-        .accessibilityAddTraits(picked ? .isSelected : [])
+        .accessibilityAddTraits(picked ? [.isSelected, .isButton] : .isButton)
     }
 
     @ViewBuilder
@@ -1087,6 +1091,8 @@ struct ShiftCellView: View {
                     .padding(.horizontal, 2)
                 } else {
                 // 月：シフトの種類のチップと、その下に短い時刻（ひな形のままでない日は時刻をチップに）
+                // 文字を縮める設定（minimumScaleFactor）は、長くて入りきらないかもしれない文字だけに付ける。
+                // 付けると大きさを変えながら何度も並べ直すので、全部のマスに付けると表を出すのが遅くなる
                 VStack(spacing: 2) {
                     if let block, block.inTime == r.inTime, block.outTime == r.outTime {
                         ShiftChip(text: ShiftChip.label(block), colorIndex: block.colorIndex)
@@ -1095,11 +1101,11 @@ struct ShiftCellView: View {
                     } else {
                         ShiftChip(text: r.inTime.isEmpty ? "—" : r.inTime, colorIndex: block?.colorIndex ?? 8)
                         Text("〜\(r.outTime)").appFont(.system(size: 9)).foregroundStyle(.secondary)
+                            .minimumScaleFactor(0.8)
                     }
                 }
                 .monospacedDigit()
                 .lineLimit(1)
-                .minimumScaleFactor(0.8)
                 .padding(.horizontal, 4)
                 }
             }
