@@ -159,68 +159,7 @@ struct MonthGridView: View {
             .background(.bar)
             .overlay(alignment: .bottom) { Divider() }
 
-            // 縦横に動く1つの表。1行の中に「名前＋その人のマス」を入れるので、名前と行は必ずそろう。
-            // 行は画面に見えている分だけ作る（人数・時間帯の行が多くても、全部のマスを一度に持たない）。
-            // 名前の列は、横に動かしても左に貼り付く（PinnedColumn）
-            ScrollViewReader { proxy in
-                ScrollView(fitsWidth ? .vertical : [.horizontal, .vertical]) {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        // スクロール位置を合わせるための目印（日付ごと）。マスより名前の列の幅だけ左に置くので、
-                        // 目印を左端に合わせると、その日が名前の列のすぐ右に来る
-                        HStack(spacing: 0) {
-                            ForEach(days, id: \.self) { d in Color.clear.frame(width: cellWidth, height: 1).id(d) }
-                        }
-                        ForEach(rows) { r in
-                            HStack(spacing: 0) {
-                                PinnedColumn(tracker: scroll) {
-                                    leftCell(r, book: book)
-                                        .frame(width: nameWidth, height: height(r))
-                                        // 下を通るマスが透けないように
-                                        .background(Color(.systemBackground))
-                                        // 名前の列の右の線（Divider は置き場所によって向きが変わるので、幅を決めた線にする）
-                                        .overlay(alignment: .trailing) { Rectangle().fill(Color(.separator)).frame(width: 0.5) }
-                                }
-                                .zIndex(1)
-                                rightCells(r, book: book, table: table, today: today, issues: issues, shown: shown, calc: calc)
-                                    .frame(height: height(r))
-                            }
-                            .id(r.id)
-                        }
-                    }
-                    // 中身が画面より小さいときも左上に寄せる（縦横に動く表は、そのままだと真ん中に置かれる）。
-                    // defaultScrollAnchor を使うと、中身が変わるたびに見えていない行まで測り直して月の切り替えが重くなるので、
-                    // 中身を見えている大きさ以上にして左上に置く
-                    .frame(minWidth: viewport.width, minHeight: viewport.height, alignment: .topLeading)
-                    .background(GeometryReader { g in
-                        // iOS 17 用：表の位置が変わったら日付の行・名前の列を合わせる（iOS 18 以降は下の onScrollGeometryChange）
-                        let x = g.frame(in: .named("gridH")).minX
-                        Color.clear
-                            .onAppear { scroll.x = max(0, -x) }
-                            .onChange(of: x) { scroll.x = max(0, -x) }
-                    })
-                }
-                // 表の見えている大きさ（中身をこれより小さくしないために使う）
-                .background(GeometryReader { g in
-                    Color.clear
-                        .onAppear { viewport = g.size }
-                        .onChange(of: g.size) { viewport = g.size }
-                })
-                .coordinateSpace(name: "gridH")
-                .modifier(TrackHorizontalScroll(tracker: scroll))
-                .onAppear {
-                    scrollToToday(proxy, days: days, today: today)
-                    // 画面確認用：いちばん下・いちばん右まで動かした状態（名前と行がそろっているかを見る）
-                    if DemoMode.flag("-demoScrollEnd"), let last = rows.last?.id {
-                        Task { @MainActor in
-                            try? await Task.sleep(nanoseconds: 800_000_000)
-                            proxy.scrollTo(last, anchor: .bottomTrailing)
-                        }
-                    }
-                }
-                .onChange(of: days) { scrollToToday(proxy, days: days, today: today) }
-                // 週の表が画面に収まって横に動かなくなったら、名前の列・日付の行の位置も戻す
-                .onChange(of: fitsWidth) { if fitsWidth { scroll.x = 0 } }
-            }
+            gridBody(rows: rows, book: book, table: table, today: today, issues: issues, shown: shown, calc: calc)
         }
         .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
         .onAppear { availableWidth = geo.size.width }
@@ -250,6 +189,130 @@ struct MonthGridView: View {
                 StaffEditView(member: s.member, isNew: true)
             } else {
                 NavigationStack { StaffEditView(member: s.member, isNew: false, inSheet: true) }
+            }
+        }
+    }
+
+    // MARK: 表の本体
+
+    /// 表の本体。iOS 18 以降は、縦横に動く1つの表に「名前＋マス」の行を見えている分だけ作る（軽く、名前と行が必ずそろう）。
+    /// iOS 17 はこの作りだと行を何度も作り直して月の切り替えが十数秒かかるので、前の作り（名前の列と横に動く表を並べる）にする
+    @ViewBuilder
+    private func gridBody(rows: [Row], book: ShiftBook, table: ScheduleTable, today: DayKey,
+                          issues: [CellKey: [LaborIssue]], shown: [StaffMember], calc: GridMemo.Result) -> some View {
+        if #available(iOS 18.0, *) {
+            lazyTable(rows: rows, book: book, table: table, today: today, issues: issues, shown: shown, calc: calc)
+        } else {
+            classicTable(rows: rows, book: book, table: table, today: today, issues: issues, shown: shown, calc: calc)
+        }
+    }
+
+    private func lazyTable(rows: [Row], book: ShiftBook, table: ScheduleTable, today: DayKey,
+                           issues: [CellKey: [LaborIssue]], shown: [StaffMember], calc: GridMemo.Result) -> some View {
+        // 縦横に動く1つの表。1行の中に「名前＋その人のマス」を入れるので、名前と行は必ずそろう。
+        // 行は画面に見えている分だけ作る（人数・時間帯の行が多くても、全部のマスを一度に持たない）。
+        // 名前の列は、横に動かしても左に貼り付く（PinnedColumn）
+        ScrollViewReader { proxy in
+            ScrollView(fitsWidth ? .vertical : [.horizontal, .vertical]) {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    // スクロール位置を合わせるための目印（日付ごと）。マスより名前の列の幅だけ左に置くので、
+                    // 目印を左端に合わせると、その日が名前の列のすぐ右に来る
+                    HStack(spacing: 0) {
+                        ForEach(days, id: \.self) { d in Color.clear.frame(width: cellWidth, height: 1).id(d) }
+                    }
+                    ForEach(rows) { r in
+                        HStack(spacing: 0) {
+                            PinnedColumn(tracker: scroll) {
+                                leftCell(r, book: book)
+                                    .frame(width: nameWidth, height: height(r))
+                                    // 下を通るマスが透けないように
+                                    .background(Color(.systemBackground))
+                                    // 名前の列の右の線（Divider は置き場所によって向きが変わるので、幅を決めた線にする）
+                                    .overlay(alignment: .trailing) { Rectangle().fill(Color(.separator)).frame(width: 0.5) }
+                            }
+                            .zIndex(1)
+                            rightCells(r, book: book, table: table, today: today, issues: issues, shown: shown, calc: calc)
+                                .frame(height: height(r))
+                        }
+                        .id(r.id)
+                    }
+                }
+                // 中身が画面より小さいときも左上に寄せる（縦横に動く表は、そのままだと真ん中に置かれる）。
+                // defaultScrollAnchor を使うと、中身が変わるたびに見えていない行まで測り直して月の切り替えが重くなるので、
+                // 中身を見えている大きさ以上にして左上に置く
+                .frame(minWidth: viewport.width, minHeight: viewport.height, alignment: .topLeading)
+                .background(GeometryReader { g in
+                    // iOS 17 用：表の位置が変わったら日付の行・名前の列を合わせる（iOS 18 以降は下の onScrollGeometryChange）
+                    let x = g.frame(in: .named("gridH")).minX
+                    Color.clear
+                        .onAppear { scroll.x = max(0, -x) }
+                        .onChange(of: x) { scroll.x = max(0, -x) }
+                })
+            }
+            // 表の見えている大きさ（中身をこれより小さくしないために使う）
+            .background(GeometryReader { g in
+                Color.clear
+                    .onAppear { viewport = g.size }
+                    .onChange(of: g.size) { viewport = g.size }
+            })
+            .coordinateSpace(name: "gridH")
+            .modifier(TrackHorizontalScroll(tracker: scroll))
+            .onAppear {
+                scrollToToday(proxy, days: days, today: today)
+                // 画面確認用：いちばん下・いちばん右まで動かした状態（名前と行がそろっているかを見る）
+                if DemoMode.flag("-demoScrollEnd"), let last = rows.last?.id {
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 800_000_000)
+                        proxy.scrollTo(last, anchor: .bottomTrailing)
+                    }
+                }
+            }
+            .onChange(of: days) { scrollToToday(proxy, days: days, today: today) }
+            // 週の表が画面に収まって横に動かなくなったら、名前の列・日付の行の位置も戻す
+            .onChange(of: fitsWidth) { if fitsWidth { scroll.x = 0 } }
+        }
+    }
+
+    /// iOS 17 用：左に名前の列、右に横に動く表を並べ、全体を縦に動かす（行はすべて作る。左右の行の高さは同じなのでそろう）
+    private func classicTable(rows: [Row], book: ShiftBook, table: ScheduleTable, today: DayKey,
+                              issues: [CellKey: [LaborIssue]], shown: [StaffMember], calc: GridMemo.Result) -> some View {
+        ScrollView(.vertical) {
+            HStack(alignment: .top, spacing: 0) {
+                VStack(spacing: 0) {
+                    // 右の表の上にある目印の行（高さ1）と同じだけ空けて、左右の行をそろえる
+                    Color.clear.frame(height: 1)
+                    ForEach(rows) { r in leftCell(r, book: book).frame(height: height(r)) }
+                }
+                .frame(width: nameWidth)
+                .overlay(alignment: .trailing) { Rectangle().fill(Color(.separator)).frame(width: 0.5) }
+
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal) {
+                        VStack(spacing: 0) {
+                            // スクロール位置を合わせるための目印（日付ごと）
+                            HStack(spacing: 0) {
+                                ForEach(days, id: \.self) { d in Color.clear.frame(width: cellWidth, height: 1).id(d) }
+                            }
+                            ForEach(rows) { r in
+                                rightCells(r, book: book, table: table, today: today, issues: issues, shown: shown, calc: calc)
+                                    .frame(height: height(r))
+                            }
+                        }
+                        .background(GeometryReader { g in
+                            // 表の位置が変わったら日付の行を合わせる
+                            let x = g.frame(in: .named("gridH")).minX
+                            Color.clear
+                                .onAppear { scroll.x = max(0, -x) }
+                                .onChange(of: x) { scroll.x = max(0, -x) }
+                        })
+                    }
+                    .coordinateSpace(name: "gridH")
+                    // 横に動く表の幅は「画面の幅 − 名前の列」に固定する（中身の幅に合わせて広がると、名前の列が画面の外に押し出される）
+                    .frame(width: max(0, availableWidth - nameWidth))
+                    .scrollDisabled(fitsWidth)
+                    .onAppear { scrollToToday(proxy, days: days, today: today) }
+                    .onChange(of: days) { scrollToToday(proxy, days: days, today: today) }
+                }
             }
         }
     }
