@@ -397,13 +397,13 @@ extension ShiftBoardView {
     /// 表のすぐ上の帯：‹ 2026年10月 ›・今月・月／週／日（狭いときは2段）
     var periodBar: some View {
         let nav = HStack(spacing: 6) {
-            Button { anchor = mode.step(anchor, by: -1) } label: { Image(systemName: "chevron.left").frame(width: 32, height: 32) }
+            Button { SwitchProbe.tapped(); anchor = mode.step(anchor, by: -1) } label: { Image(systemName: "chevron.left").frame(width: 32, height: 32) }
                 .accessibilityLabel(mode.previousLabel)
             // 週・日にも年を付ける（月は「2026年10月」のまま）
             Text(mode == .month ? mode.title(around: anchor) : "\(String(anchor.year))年 \(mode.title(around: anchor))")
                 .appFont(.title3.weight(.bold)).monospacedDigit()
                 .lineLimit(1).minimumScaleFactor(0.7)
-            Button { anchor = mode.step(anchor, by: 1) } label: { Image(systemName: "chevron.right").frame(width: 32, height: 32) }
+            Button { SwitchProbe.tapped(); anchor = mode.step(anchor, by: 1) } label: { Image(systemName: "chevron.right").frame(width: 32, height: 32) }
                 .accessibilityLabel(mode.nextLabel)
             Button(mode.todayLabel) { anchor = .today }
                 .buttonStyle(.bordered).controlSize(.small)
