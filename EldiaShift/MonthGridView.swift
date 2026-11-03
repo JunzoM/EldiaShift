@@ -175,7 +175,8 @@ struct MonthGridView: View {
                                         .frame(width: nameWidth, height: height(r))
                                         // 下を通るマスが透けないように
                                         .background(Color(.systemBackground))
-                                        .overlay(alignment: .trailing) { Divider() }
+                                        // 名前の列の右の線（Divider は置き場所によって向きが変わるので、幅を決めた線にする）
+                                        .overlay(alignment: .trailing) { Rectangle().fill(Color(.separator)).frame(width: 0.5) }
                                 }
                                 .zIndex(1)
                                 rightCells(r, book: book, table: table, today: today, issues: issues, shown: shown, calc: calc)
@@ -192,6 +193,8 @@ struct MonthGridView: View {
                             .onChange(of: x) { scroll.x = max(0, -x) }
                     })
                 }
+                // 中身が画面より小さいときも左上に寄せる（縦横に動く表は、そのままだと真ん中に置かれる）
+                .defaultScrollAnchor(.topLeading)
                 .coordinateSpace(name: "gridH")
                 .modifier(TrackHorizontalScroll(tracker: scroll))
                 .onAppear {
