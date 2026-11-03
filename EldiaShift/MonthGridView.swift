@@ -417,7 +417,7 @@ struct MonthGridView: View {
             }
             .buttonStyle(.plain)
             .coachTarget("hourly-\(d.id)")
-            .overlay(alignment: .bottom) { Divider() }
+            .overlay(alignment: .bottom) { RowLine() }
         case .hour(_, _, let h):
             let night = h <= 8
             HStack(spacing: 0) {
@@ -465,7 +465,7 @@ struct MonthGridView: View {
                 }
                 summaryCell(table.summary(m, days: days))
             }
-            .overlay(alignment: .bottom) { Divider() }
+            .overlay(alignment: .bottom) { RowLine() }
         case .hourToggle(let dept, _):
             let plan = book.staffing
             if plan.hasPlan(for: dept.id) {
@@ -495,13 +495,13 @@ struct MonthGridView: View {
                     Text("不足").appFont(.system(size: 9)).foregroundStyle(.secondary).frame(width: summaryWidth)
                 }
                 .background(Color(.systemBackground))
-                .overlay(alignment: .bottom) { Divider() }
+                .overlay(alignment: .bottom) { RowLine() }
                 .contentShape(Rectangle())
                 .onTapGesture { toggleHourly(dept) }
             } else {
                 Color(.systemBackground)
                     .frame(width: cellWidth * CGFloat(days.count) + summaryWidth)
-                    .overlay(alignment: .bottom) { Divider() }
+                    .overlay(alignment: .bottom) { RowLine() }
                     .contentShape(Rectangle())
                     .onTapGesture { toggleHourly(dept) }
             }
@@ -620,7 +620,7 @@ struct MonthGridView: View {
         .contextMenu {
             Button("スタッフの設定を開く") { staffSheet = StaffSheet(member: m, isNew: false) }
         }
-        .overlay(alignment: .bottom) { Divider() }
+        .overlay(alignment: .bottom) { RowLine() }
     }
 
     private func patternTitle(_ p: WeekPattern) -> String {
@@ -796,6 +796,13 @@ private struct FollowingHeader<Content: View>: View {
                 content.fixedSize().offset(x: -tracker.x)
             }
             .clipped()
+    }
+}
+
+/// 行の下の線。行は横並び（名前＋マス）の中にあるので、Divider だと縦の線になってしまう。高さを決めた横の線にする
+private struct RowLine: View {
+    var body: some View {
+        Rectangle().fill(Color(.separator)).frame(height: 0.5).accessibilityHidden(true)
     }
 }
 
