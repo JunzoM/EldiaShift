@@ -121,7 +121,9 @@ struct ShiftChip: View {
     var body: some View {
         Text(text)
             .appFont(.system(size: fontSize, weight: .bold))
-            .lineLimit(1).minimumScaleFactor(0.6)
+            // 2文字まで（早番・公休など）は必ず入るので縮めない。縮める設定は文字を何度も並べ直すので、
+            // シフト表で何百個も描くと重くなる
+            .lineLimit(1).minimumScaleFactor(text.count <= 2 ? 1 : 0.6)
             .foregroundStyle(PaletteColor.fg(colorIndex))
             .padding(.horizontal, 5)
             .frame(maxWidth: .infinity, minHeight: height * zoom)
