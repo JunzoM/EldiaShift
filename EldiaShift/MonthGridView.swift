@@ -69,6 +69,8 @@ struct MonthGridView: View {
     private var compact: Bool { sizeClass == .compact }
     private var nameWidth: CGFloat { (compact ? 104 : 156) * zoom }
     @State private var availableWidth: CGFloat = 0
+    /// 表（縦横に動く部分）の見えている大きさ
+    @State private var viewport: CGSize = .zero
     private var isWeek: Bool { mode == .week }
     /// 週の表が画面の幅に収まる（横には動かさない）
     private var fitsWidth: Bool { isWeek && cellWidth * 7 + summaryWidth <= availableWidth - nameWidth + 1 }
@@ -185,6 +187,10 @@ struct MonthGridView: View {
                             .id(r.id)
                         }
                     }
+                    // 中身が画面より小さいときも左上に寄せる（縦横に動く表は、そのままだと真ん中に置かれる）。
+                    // defaultScrollAnchor を使うと、中身が変わるたびに見えていない行まで測り直して月の切り替えが重くなるので、
+                    // 中身を見えている大きさ以上にして左上に置く
+                    .frame(minWidth: viewport.width, minHeight: viewport.height, alignment: .topLeading)
                     .background(GeometryReader { g in
                         // iOS 17 用：表の位置が変わったら日付の行・名前の列を合わせる（iOS 18 以降は下の onScrollGeometryChange）
                         let x = g.frame(in: .named("gridH")).minX
@@ -193,8 +199,12 @@ struct MonthGridView: View {
                             .onChange(of: x) { scroll.x = max(0, -x) }
                     })
                 }
-                // 中身が画面より小さいときも左上に寄せる（縦横に動く表は、そのままだと真ん中に置かれる）
-                .defaultScrollAnchor(.topLeading)
+                // 表の見えている大きさ（中身をこれより小さくしないために使う）
+                .background(GeometryReader { g in
+                    Color.clear
+                        .onAppear { viewport = g.size }
+                        .onChange(of: g.size) { viewport = g.size }
+                })
                 .coordinateSpace(name: "gridH")
                 .modifier(TrackHorizontalScroll(tracker: scroll))
                 .onAppear {
