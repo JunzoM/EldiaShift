@@ -157,9 +157,8 @@ struct MonthGridView: View {
 
             ScrollView(.vertical) {
                 HStack(alignment: .top, spacing: 0) {
-                    // 行は画面に見えている分だけ作る（人数・時間帯の行が多くても、全部のマスを一度に持たない）。
-                    // 行の高さは決まっているので、左の名前と右の表の行はずれない
-                    LazyVStack(spacing: 0) {
+                    // 左の名前と右の表は、どちらも全部の行を作る（LazyVStack にすると左右が別々に作られて行がずれる）
+                    VStack(spacing: 0) {
                         ForEach(rows) { r in leftCell(r, book: book).frame(height: height(r)) }
                     }
                     .frame(width: nameWidth)
@@ -172,13 +171,9 @@ struct MonthGridView: View {
                                 HStack(spacing: 0) {
                                     ForEach(days, id: \.self) { d in Color.clear.frame(width: cellWidth, height: 1).id(d) }
                                 }
-                                LazyVStack(alignment: .leading, spacing: 0) {
-                                    ForEach(rows) { r in
-                                        rightCells(r, book: book, table: table, today: today, issues: issues, shown: shown, calc: calc).frame(height: height(r))
-                                    }
+                                ForEach(rows) { r in
+                                    rightCells(r, book: book, table: table, today: today, issues: issues, shown: shown, calc: calc).frame(height: height(r))
                                 }
-                                // 幅は決めておく（作っていない行があっても、横に動く幅が変わらないように）
-                                .frame(width: cellWidth * CGFloat(days.count) + summaryWidth, alignment: .leading)
                             }
                             .background(GeometryReader { g in
                                 // iOS 17 用：表の位置が変わったら日付の行を合わせる（iOS 18 以降は下の onScrollGeometryChange）
