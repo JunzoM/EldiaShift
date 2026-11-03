@@ -71,6 +71,8 @@ jobs:
           shoot "$PAD" ipad-day-edit -demoDay -demoEdit
           shoot "$PAD" ipad-print -demoPrint
           shoot "$PAD" ipad-hourly -demoHourly
+          shoot "$PAD" ipad-hourly-end -demoHourly -demoScrollEnd
+          shoot "$PAD" ipad-week-end -demoWeek -demoHourly -demoScrollEnd
           shoot "$PAD" ipad-staffing -demoStaffing
           shoot "$PHONE" iphone-staffing -demoStaffing
           shoot "$PAD" ipad-labor -demoLabor
@@ -85,6 +87,8 @@ jobs:
           shoot "$PAD" print-page -demoPrintPage
           shoot "$PAD" print-page-landscape -demoPrintPage -demoLandscapePage
           shoot "$PHONE" iphone-month
+          shoot "$PHONE" iphone-month-end -demoHourly -demoScrollEnd
+          shoot "$PHONE" iphone-week-end -demoWeek -demoHourly -demoScrollEnd
           shoot "$PHONE" iphone-week -demoWeek
           shoot "$PHONE" iphone-day -demoDay
           mkdir -p shots/crash
