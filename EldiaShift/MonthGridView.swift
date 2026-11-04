@@ -525,6 +525,35 @@ struct MonthGridView: View {
         case .section:
             Rectangle().fill(Color(.secondarySystemBackground))
                 .frame(width: cellWidth * CGFloat(days.count) + summaryWidth)
+        case .staff(let m) where !isWeek:
+            // 月：1行を1枚の絵として描く（部品を何千個も並べない。古い iPad でも月の切り替えを速くするため）
+            HStack(spacing: 0) {
+                MonthRowCanvas(name: m.name, cells: days.map { d in
+                    let key = CellKey(staffID: m.id, day: d)
+                    let r = table.get(m, d)
+                    let away = r?.elsewhere == true ? book.store(r?.storeID) : nil
+                    return MonthRowCanvas.Cell(day: d, left: m.hasLeft(on: d), resolved: r,
+                                               block: book.block(r?.blockID, for: m),
+                                               awayStore: away, awayLabel: away.map { book.shortName(of: $0) } ?? "",
+                                               isToday: d == today, issues: issues[key] ?? [],
+                                               requested: m.requestsOff(d), picked: picked.contains(key))
+                }, cellWidth: cellWidth, rowHeight: rowHeight, onActivate: { d in tapCell(m, d) })
+                .overlay {
+                    // まとめて選んでいるとき：押す・長押し（四角く選ぶ）を、押した位置で受ける
+                    if selecting {
+                        RowTouchCatcher(onTap: { x in if let d = day(atX: x) { tapCell(m, d) } },
+                                        onLongPress: { x in
+                                            if let d = day(atX: x) { pickRange(to: CellKey(staffID: m.id, day: d), shown: shown) }
+                                        })
+                    }
+                }
+                summaryCell(table.summary(m, days: days))
+            }
+            .overlay(alignment: .bottom) { RowLine() }
+            .contentShape(Rectangle())
+            .gesture(SpatialTapGesture().onEnded { v in
+                if let d = day(atX: v.location.x) { tapCell(m, d) }
+            }, including: selecting ? .subviews : .all)
         case .staff(let m):
             HStack(spacing: 0) {
                 ForEach(days, id: \.self) { d in
