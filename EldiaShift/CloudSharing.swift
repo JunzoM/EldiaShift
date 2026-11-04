@@ -26,7 +26,7 @@ final class ShareInbox {
                 try await db.accept(metadata)
                 self.message = "共有されたシフト表を受け取りました。届くまで少しかかることがあります。届いたら自動で切り替わります（設定の「シフト表の共有」でも切り替えられます）。"
             } catch {
-                self.message = ShareErrorText.message(error, fallback: "共有を受け取れませんでした")
+                self.message = ShareErrorText.message(error, fallback: "共有を受け取れませんでした", hint: ShareErrorText.acceptHint)
             }
         }
     }
@@ -222,7 +222,11 @@ struct ShareSettingsView: View {
 
 /// 共有の失敗を、英語の技術的な文ではなく、やることがわかる文にする
 enum ShareErrorText {
-    static func message(_ error: Error, fallback: String = "共有を始められませんでした") -> String {
+    /// 共有を受け取れず、原因が特定できないときに添える、確かめてほしいこと
+    static let acceptHint = "次の点を確かめてください。\n・招待を送った宛先（メールアドレス・電話番号）が、この端末の Apple アカウントのものか\n・この端末で、iCloud の「パスワードとキーチェーン」がオンになっているか（2ファクタ認証とパスコードも必要です）"
+
+    /// hint：原因が特定できないとき（下の個別の案内に当てはまらないとき）だけ、最後に添える文
+    static func message(_ error: Error, fallback: String = "共有を始められませんでした", hint: String? = nil) -> String {
         if error is ShareError { return error.localizedDescription }
         let detail = String(describing: error)
         // 権限ファイルに iCloud 共有の項目（com.apple.developer.icloud-extended-share-access）が無い版
@@ -257,7 +261,7 @@ enum ShareErrorText {
         // 外側は「Failed to accept some shares」のような要約だけなので、中の原因も添える
         let inner = nestedErrors(error).dropFirst().map { "\($0.domain) \($0.code)：\($0.localizedDescription)" }
         let reason = inner.isEmpty ? error.localizedDescription : "\(error.localizedDescription) / " + inner.prefix(3).joined(separator: " / ")
-        return "\(fallback)（\(reason)）"
+        return "\(fallback)（\(reason)）" + (hint.map { "\n\n\($0)" } ?? "")
     }
 
     /// NSPersistentCloudKitContainer はエラーを包んで返すので、中の CKError を探す。
