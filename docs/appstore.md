@@ -52,6 +52,7 @@ SHIFT は、ホテルや店舗の現場で使うシフト表アプリです。�
 ・掛け持ちのスタッフは、ほかの店舗で勤務する日もひと目で分かり、二重に入れることを防止
 
 ■ 共有・出力
+・iCloud で、ほかの Apple ID の人とシフト表を共有（一緒に編集・見るだけ。給与は共有されません）
 ・PDF・印刷（AirPrint）・CSV で出力
 ・一人ずつのシフト画像を作って LINE で送れる
 ・前回の公開からの変更点を、文章にして一緒に送れる
@@ -72,17 +73,20 @@ SHIFT は、ホテルや店舗の現場で使うシフト表アプリです。�
 ・アプリの中のロゴ「〇〇 SHIFT」を、店舗ごとに自分の名前に
 
 ### このバージョンの新機能（1.1）
+・シフト表の共有：iCloud で、ほかの Apple ID の人と一緒に編集（見るだけも可）
 ・希望休の申請：事務所に貼るQRコードから、スタッフがスマホで申請。届いたリンクを押すだけで取り込み、承認・却下・返事まで
 ・人件費：時給・月給の履歴、時間外・週40時間・深夜の割増を含めた月の概算。端末ごとに隠す設定も
 ・ホーム：会社の下に各店舗が並び、店舗ごとの出勤人数と承認待ちがひと目で分かる
 ・スタッフの顔写真・雇用形態、編集画面の閉じる前の確認
 ・パターンを保存する前に、表が変わる日数を表示
+・画面の明るさ：自動・ライト・ダークを設定で選択
+・シフト表の動作を改善。古い iPad でも月の切り替えが速くなりました
 
 ### キーワード（100文字以内・カンマ区切り）
 シフト,シフト表,シフト管理,勤務表,ホテル,旅館,飲食店,店舗,スタッフ,アルバイト,パート,希望休,人件費,勤怠,スケジュール
 
 ### 審査メモ（App Review への連絡）
-ログインは不要です。初回起動で「新しく作る」を押すと、例の部門と時間のひな形が入った状態で始まります。「スタッフを追加」で数人を追加すると、シフト表・ホーム・印刷の機能を確認できます。サーバーとの通信は行わず、データは端末と利用者の iCloud（CloudKit）にのみ保存します。
+ログインは不要です。初回起動で「新しく作る」を押すと、例の部門と時間のひな形が入った状態で始まります。「スタッフを追加」で数人を追加すると、シフト表・ホーム・印刷の機能を確認できます。最低賃金の公開データ（GitHub 上の JSON）の読み込みを除き、運営者のサーバーとの通信は行いません。利用者のデータは外部へ送信せず、端末と利用者の iCloud（CloudKit）にのみ保存します。
 
 1.1 で追加した機能について：
 ・希望休の申請：スタッフ用の申請ページ（https://facility-manager-phi.vercel.app/hotel-shift/request）は入力内容をサーバーに送らず、申請の内容を URL の「#」以降に入れたリンクを作るだけです。Associated Domains（applinks:facility-manager-phi.vercel.app）は、このリンクを押したときに SHIFT の「申請を受け取る」画面を開くために使います。お試し用のリンク（スタッフ「見本 花子」を登録すると名前が自動で選ばれます）：
@@ -128,7 +132,7 @@ bash scripts/duo-screenshots.sh
 ### 1.1（ビルド 2）
 - バージョン 1.1・ビルド 2。アップロードし直すときはビルド番号を上げる（Xcode の Build、または project の CURRENT_PROJECT_VERSION）
 - CloudKit：1.1 で足した入れ物（`PayRecord`・`CellRecord.note`）と iCloud 共有があるので、スキーマを本番へ反映する（[sharing-test.md](sharing-test.md)）
-- TestFlight：TestFlight と App Store は CloudKit の本番環境を使うので、審査に出す前に TestFlight 版で共有の招待・受け取り・編集の反映を確かめる
+- TestFlight：TestFlight と App Store は CloudKit の本番環境を使うので、審査に出す前に TestFlight 版で共有の招待・受け取り・編集の反映を確かめる。App Store の 1.0 にデータを入れた端末へ上書きで入れて、データが残ることも確かめる
 - プライバシーポリシー（facility-manager の `/hotel-shift/privacy`）：iCloud 共有・最低賃金の表の読み込み・Mac 版を反映して公開済み（2026年11月2日改定）
 - Signing & Capabilities に Associated Domains（applinks:facility-manager-phi.vercel.app）が入っていることを確認（自動署名で App ID に機能が付く）
 - facility-manager の `/.well-known/apple-app-site-association` が本番で開けること（appID：294N3Z6JPG.com.bestdelight.eldiashift）
