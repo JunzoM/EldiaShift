@@ -561,24 +561,11 @@ struct MonthGridView: View {
             if plan.hasPlan(for: dept.id) {
                 // 必要人数を決めている部門は、閉じていても日ごとの不足が見える
                 HStack(spacing: 0) {
-                    ForEach(days, id: \.self) { d in
-                        let g = calc.gaps[dept.id]?[d] ?? StaffingGap()
-                        Group {
-                            if g.short > 0 {
-                                // 押すと、その日に入れられる人を出す（押す操作は行に1つ。下の onTap）
-                                Text("−\(g.short)").appFont(.system(size: 11, weight: .heavy)).monospacedDigit()
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 4).padding(.vertical, 3)
-                                    .background(StaffingStyle.short, in: RoundedRectangle(cornerRadius: 4))
-                                    .accessibilityLabel("\(d.day)日 \(dept.name) 不足 \(g.short)人時。入れられる人を見る")
-                                    .accessibilityAddTraits(.isButton)
-                                    .accessibilityAction { shortage = ShortageTarget(department: dept, day: d) }
-                            } else {
-                                Image(systemName: "checkmark").appFont(.system(size: 9, weight: .bold)).foregroundStyle(StaffingStyle.ok.opacity(0.7))
-                            }
-                        }
-                        .frame(width: cellWidth, height: toggleHeight)
-                    }
+                    // 日ごとの不足の札を1枚の絵として描く（押す操作は行に1つ。下の onTap）
+                    ShortRowCanvas(departmentName: dept.name,
+                                   cells: days.map { d in ShortRowCanvas.Cell(day: d, short: calc.gaps[dept.id]?[d]?.short ?? 0) },
+                                   cellWidth: cellWidth, rowHeight: toggleHeight,
+                                   onShort: { d in shortage = ShortageTarget(department: dept, day: d) })
                     Text("不足").appFont(.system(size: 9)).foregroundStyle(.secondary).frame(width: summaryWidth)
                 }
                 .background(Color(.systemBackground))
@@ -602,33 +589,12 @@ struct MonthGridView: View {
         case .hour(let dept, _, let h):
             let night = h <= 8
             HStack(spacing: 0) {
-                ForEach(days, id: \.self) { d in
-                    let n = calc.hourly.count(dept.id, on: d, hour: h)
-                    let need = calc.needs[dept.id]?[d]?[h] ?? nil
-                    if let need, let c = StaffingStyle.color(n, need: need) {
-                        // 必要人数がある時間：実際/必要 を色で（足りない＝赤、多い＝オレンジ）
-                        HStack(spacing: 0) {
-                            Text("\(n)").appFont(.system(size: 12, weight: .heavy))
-                            Text("/\(need)").appFont(.system(size: 8)).foregroundStyle(.secondary)
-                        }
-                        .monospacedDigit()
-                        .foregroundStyle(n < need ? Color.white : c)
-                        .frame(width: cellWidth, height: hourHeight)
-                        .background(n < need ? c.opacity(0.85) : c.opacity(0.15))
-                        .overlay(alignment: .trailing) { Rectangle().fill(Color(.separator)).frame(width: 0.5) }
-                        .accessibilityLabel("\(h)時 \(n)人（必要\(need)人）")
-                        .accessibilityAddTraits(n < need ? .isButton : [])
-                        .accessibilityAction { if n < need { shortage = ShortageTarget(department: dept, day: d) } }
-                    } else {
-                    Text(n == 0 ? "0" : "\(n)")
-                        .appFont(.system(size: n > 2 ? 13 : 11, weight: n > 2 ? .heavy : n > 0 ? .bold : .regular))
-                        .monospacedDigit()
-                        .foregroundStyle(n == 0 ? Color(.tertiaryLabel) : night ? Color.blue : Color.green)
-                        .frame(width: cellWidth, height: hourHeight)
-                        .background(n > 0 ? (night ? Color.blue.opacity(0.15) : Color.green.opacity(0.15)) : Color.clear)
-                        .overlay(alignment: .trailing) { Rectangle().fill(Color(.separator)).frame(width: 0.5) }
-                    }
-                }
+                // 時間帯別の1行を1枚の絵として描く（開くと 24 時間 × 日数 × 部門のマスになるため）
+                HourRowCanvas(hour: h, cells: days.map { d in
+                    HourRowCanvas.Cell(day: d, count: calc.hourly.count(dept.id, on: d, hour: h),
+                                       need: calc.needs[dept.id]?[d]?[h] ?? nil)
+                }, cellWidth: cellWidth, rowHeight: hourHeight,
+                   onShort: { d in shortage = ShortageTarget(department: dept, day: d) })
                 Color.clear.frame(width: summaryWidth, height: hourHeight)
             }
             .background(night ? Color.blue.opacity(0.04) : Color(.secondarySystemBackground).opacity(0.3))
