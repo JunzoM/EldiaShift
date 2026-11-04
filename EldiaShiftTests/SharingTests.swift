@@ -1,3 +1,4 @@
+import CloudKit
 import CoreData
 import Foundation
 import Testing
@@ -164,5 +165,19 @@ struct SharingTests {
         // 自分のシフト表に戻すと、共有の部門は出ない
         ShiftRecords.activeTeamID = nil
         #expect(try ShiftRecords.load(ctx).departments.map(\.id) == ["mine"])
+    }
+
+    @Test("受け取れない原因が分からないときだけ、確かめることを添える（キーチェーンなど）")
+    func acceptHint() {
+        let unknown = NSError(domain: "TestDomain", code: 42, userInfo: [NSLocalizedDescriptionKey: "わからない失敗"])
+        let msg = ShareErrorText.message(unknown, fallback: "共有を受け取れませんでした", hint: ShareErrorText.acceptHint)
+        #expect(msg.hasPrefix("共有を受け取れませんでした（"))
+        #expect(msg.contains("パスワードとキーチェーン"))
+        // 原因が分かる失敗（iCloud にサインインしていない）には添えない
+        let signedOut = NSError(domain: CKErrorDomain, code: CKError.Code.notAuthenticated.rawValue)
+        #expect(!ShareErrorText.message(signedOut, fallback: "共有を受け取れませんでした", hint: ShareErrorText.acceptHint)
+            .contains("キーチェーン"))
+        // 共有を始めるときは添えない
+        #expect(!ShareErrorText.message(unknown).contains("キーチェーン"))
     }
 }
