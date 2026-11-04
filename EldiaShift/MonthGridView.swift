@@ -525,8 +525,8 @@ struct MonthGridView: View {
         case .section:
             Rectangle().fill(Color(.secondarySystemBackground))
                 .frame(width: cellWidth * CGFloat(days.count) + summaryWidth)
-        case .staff(let m) where !isWeek:
-            // 月：1行を1枚の絵として描く（部品を何千個も並べない。古い iPad でも月の切り替えを速くするため）
+        case .staff(let m):
+            // 1行を1枚の絵として描く（部品を何千個も並べない。古い iPad でも月・週の切り替えを速くするため）
             HStack(spacing: 0) {
                 MonthRowCanvas(name: m.name, cells: days.map { d in
                     let key = CellKey(staffID: m.id, day: d)
@@ -536,8 +536,10 @@ struct MonthGridView: View {
                                                block: book.block(r?.blockID, for: m),
                                                awayStore: away, awayLabel: away.map { book.shortName(of: $0) } ?? "",
                                                isToday: d == today, issues: issues[key] ?? [],
-                                               requested: m.requestsOff(d), picked: picked.contains(key))
-                }, cellWidth: cellWidth, rowHeight: rowHeight, onActivate: { d in tapCell(m, d) })
+                                               requested: m.requestsOff(d), picked: picked.contains(key),
+                                               hours: isWeek ? r?.netHours(book.breakRules) : nil)
+                }, cellWidth: cellWidth, rowHeight: rowHeight, large: isWeek, compact: compact,
+                   onActivate: { d in tapCell(m, d) })
                 .overlay {
                     // まとめて選んでいるとき：押す・長押し（四角く選ぶ）を、押した位置で受ける
                     if selecting {
@@ -550,36 +552,6 @@ struct MonthGridView: View {
                 summaryCell(table.summary(m, days: days))
             }
             .overlay(alignment: .bottom) { RowLine() }
-            .contentShape(Rectangle())
-            .gesture(SpatialTapGesture().onEnded { v in
-                if let d = day(atX: v.location.x) { tapCell(m, d) }
-            }, including: selecting ? .subviews : .all)
-        case .staff(let m):
-            HStack(spacing: 0) {
-                ForEach(days, id: \.self) { d in
-                    let key = CellKey(staffID: m.id, day: d)
-                    let r = table.get(m, d)
-                    // マスには描くのに要る値だけを渡す（シフト表まるごとを、何千ものマスそれぞれに持たせない）
-                    let away = r?.elsewhere == true ? book.store(r?.storeID) : nil
-                    ShiftCellView(name: m.name, day: d, left: m.hasLeft(on: d), resolved: r,
-                                  block: book.block(r?.blockID, for: m),
-                                  awayStore: away, awayLabel: away.map { book.shortName(of: $0) } ?? "",
-                                  hours: isWeek ? r?.netHours(book.breakRules) : nil,
-                                  isToday: d == today, compact: compact, large: isWeek,
-                                  issues: issues[key] ?? [], requested: m.requestsOff(d), picked: picked.contains(key))
-                        .frame(width: cellWidth, height: rowHeight)
-                        // 読み上げ（VoiceOver）で押したとき。押す操作の部品は行に1つだけ付ける（下）
-                        .accessibilityAction { tapCell(m, d) }
-                        // まとめて選んでいるときだけ、マスごとに押す・長押しを付ける（長押しで四角く選ぶ）
-                        .modifier(PickGestures(enabled: selecting,
-                                               tap: { tapCell(m, d) },
-                                               longPress: { pickRange(to: key, shown: shown) }))
-                }
-                summaryCell(table.summary(m, days: days))
-            }
-            .overlay(alignment: .bottom) { RowLine() }
-            // ふだんは、押す操作を行に1つだけ付けて、押した位置から何日目かを決める
-            // （マスごとに付けると月で千個を超え、iPadOS 17 では表を出すたびに十数秒かかっていた）
             .contentShape(Rectangle())
             .gesture(SpatialTapGesture().onEnded { v in
                 if let d = day(atX: v.location.x) { tapCell(m, d) }
@@ -927,69 +899,7 @@ private struct FollowingHeader<Content: View>: View {
     }
 }
 
-/// マスの隅の印（自動・メモ・注意・希望休）と、まとめて選んでいるときの色。印があるマスだけ作る
-private struct CellMarks: View {
-    let auto: Bool
-    let note: Bool
-    let issues: [LaborIssue]
-    let requested: Bool
-    let picked: Bool
-    let large: Bool
 
-    var body: some View {
-        ZStack {
-            if picked {
-                Rectangle().fill(Color.accentColor.opacity(0.18))
-                    .overlay(Rectangle().strokeBorder(Color.accentColor, lineWidth: 2.5))
-            }
-            if auto {
-                // 自動（くり返し・期間の予定）で決まったマスの印。時刻に重ならないよう隅に小さく
-                Circle().fill(Color.orange.opacity(0.8)).frame(width: 5, height: 5).padding(large ? 5 : 2)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: large ? .bottomTrailing : .topTrailing)
-            }
-            if note {
-                // メモがある日の印（自動の印と重ならない隅に）
-                Image(systemName: "note.text").appFont(.system(size: large ? 10 : 7, weight: .bold))
-                    .foregroundStyle(Color.secondary).padding(large ? 4 : 1.5)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: large ? .topTrailing : .bottomTrailing)
-            }
-            if !issues.isEmpty {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .appFont(.system(size: large ? 11 : 9))
-                    .foregroundStyle(issues.contains(.requestedOff) ? Color.purple : Color.orange)
-                    .padding(2)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            }
-            if requested {
-                Text("希").appFont(.system(size: 8, weight: .heavy)).foregroundStyle(.white)
-                    .padding(.horizontal, 2)
-                    .background(Color.purple, in: RoundedRectangle(cornerRadius: 2))
-                    .padding(2)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-            }
-        }
-        .accessibilityHidden(true)
-    }
-}
-
-/// まとめて選んでいるときだけ、マスに「押す」「長押し（四角く選ぶ）」を付ける。
-/// ふだんは付けない（押す操作は行に 1 つだけ。マスごとに付けると月で千個を超えて重い）
-private struct PickGestures: ViewModifier {
-    let enabled: Bool
-    let tap: () -> Void
-    let longPress: () -> Void
-
-    func body(content: Content) -> some View {
-        if enabled {
-            content
-                .contentShape(Rectangle())
-                .onTapGesture(perform: tap)
-                .onLongPressGesture(minimumDuration: 0.35, perform: longPress)
-        } else {
-            content
-        }
-    }
-}
 
 /// 行の下の線。行は横並び（名前＋マス）の中にあるので、Divider だと縦の線になってしまう。高さを決めた横の線にする
 private struct RowLine: View {
@@ -1008,154 +918,6 @@ private struct PinnedColumn<Content: View>: View {
     }
 }
 
-/// 1人×1日のマス
-struct ShiftCellView: View {
-    let name: String
-    let day: DayKey
-    /// 退職したあとの日
-    let left: Bool
-    let resolved: ResolvedShift?
-    /// その日のひな形（休みの種類・チップの色）
-    let block: TimeBlock?
-    /// ほかの店舗で勤務する日の店舗と、その略称
-    var awayStore: Store? = nil
-    var awayLabel = ""
-    /// 実働時間（週表示で出す）
-    var hours: Double? = nil
-    let isToday: Bool
-    let compact: Bool
-    /// 週表示（マスが大きい）：時刻を大きく、勤務時間とひな形の名前も出す
-    var large = false
-    /// 連勤などの注意
-    var issues: [LaborIssue] = []
-    /// 希望休の日
-    var requested = false
-    /// まとめて入れるために選んでいる
-    var picked = false
-
-    var body: some View {
-        // 重ねる部品をできるだけ減らす（月の表では 1 画面に 700 以上のマスを描くため。
-        // 以前は印ごとに overlay を 6 つ重ねていて、印が無くても枠が作られていた）
-        let marks = resolved?.isAuto == true || resolved?.note?.isEmpty == false || !issues.isEmpty || requested || picked
-        ZStack {
-            background(block)
-            content(block)
-            // 右の区切り線
-            Rectangle().fill(Color(.separator)).frame(width: 0.5)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-            if marks {
-                CellMarks(auto: resolved?.isAuto == true, note: resolved?.note?.isEmpty == false,
-                          issues: issues, requested: requested, picked: picked, large: large)
-            }
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityText(block))
-        .accessibilityAddTraits(picked ? [.isSelected, .isButton] : .isButton)
-    }
-
-    @ViewBuilder
-    private func background(_ block: TimeBlock?) -> some View {
-        if left {
-            Color(.secondarySystemBackground)
-        } else if resolved?.elsewhere == true {
-            // ほかの店舗で勤務する日：斜線で薄く
-            Color(.secondarySystemBackground)
-                .overlay(ElsewhereHatch().opacity(0.5))
-        } else if resolved?.isOff == true && large {
-            PaletteColor.bg(block?.colorIndex ?? 8)
-        } else if isToday {
-            Color.accentColor.opacity(0.10)
-        } else if day.weekday == 0 || JapaneseHolidays.isHoliday(day) {
-            Color.red.opacity(0.04)
-        } else if day.weekday == 6 {
-            Color.blue.opacity(0.04)
-        } else {
-            Color(.systemBackground)
-        }
-    }
-
-    @ViewBuilder
-    private func content(_ block: TimeBlock?) -> some View {
-        if left {
-            Text("－").appFont(.caption2).foregroundStyle(.tertiary)
-        } else if let r = resolved, r.elsewhere {
-            VStack(spacing: 2) {
-                if let st = awayStore { StoreTag(store: st, label: awayLabel, size: large ? 11 : 9) }
-                Text(r.inTime.isEmpty ? "—" : r.inTime).appFont(.system(size: large ? 12 : 10)).foregroundStyle(.secondary)
-                if large { Text(r.outTime).appFont(.system(size: 11)).foregroundStyle(.tertiary) }
-            }
-            .monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
-        } else if let r = resolved {
-            if r.isOff {
-                if large {
-                    Text(block?.label ?? "休み")
-                        .appFont(.headline)
-                        .foregroundStyle(PaletteColor.fg(block?.colorIndex ?? 8))
-                } else {
-                    ShiftChip(text: block.map(ShiftChip.label) ?? "休み", colorIndex: block?.colorIndex ?? 8)
-                        .padding(.horizontal, 4)
-                }
-            } else {
-                if large {
-                    VStack(spacing: 2) {
-                        if compact {
-                            // iPhone は幅が狭いので、出勤・退勤を2行に
-                            Text(r.inTime.isEmpty ? "—" : r.inTime).appFont(.system(size: 13, weight: .bold))
-                            Text(r.outTime.isEmpty ? "—" : r.outTime).appFont(.system(size: 13)).foregroundStyle(.secondary)
-                        } else {
-                            Text("\(r.inTime.isEmpty ? "—" : r.inTime)〜\(r.outTime.isEmpty ? "—" : r.outTime)")
-                                .appFont(.system(size: 14, weight: .bold))
-                        }
-                        HStack(spacing: 4) {
-                            if let block {
-                                Text(block.label).foregroundStyle(PaletteColor.fg(block.colorIndex)).fontWeight(.bold)
-                            }
-                            if let h = hours { Text(String(format: "%.1fh", h)).foregroundStyle(.secondary) }
-                        }
-                        .appFont(.caption2)
-                    }
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                    .padding(.horizontal, 2)
-                } else {
-                // 月：シフトの種類のチップと、その下に短い時刻（ひな形のままでない日は時刻をチップに）
-                // 文字を縮める設定（minimumScaleFactor）は、長くて入りきらないかもしれない文字だけに付ける。
-                // 付けると大きさを変えながら何度も並べ直すので、全部のマスに付けると表を出すのが遅くなる
-                VStack(spacing: 2) {
-                    if let block, block.inTime == r.inTime, block.outTime == r.outTime {
-                        ShiftChip(text: ShiftChip.label(block), colorIndex: block.colorIndex)
-                        Text("\(ShortTime.compact(r.inTime))-\(ShortTime.compact(r.outTime))")
-                            .appFont(.system(size: 9)).foregroundStyle(.secondary)
-                    } else {
-                        ShiftChip(text: r.inTime.isEmpty ? "—" : r.inTime, colorIndex: block?.colorIndex ?? 8)
-                        Text("〜\(r.outTime)").appFont(.system(size: 9)).foregroundStyle(.secondary)
-                            .minimumScaleFactor(0.8)
-                    }
-                }
-                .monospacedDigit()
-                .lineLimit(1)
-                .padding(.horizontal, 4)
-                }
-            }
-        }
-    }
-
-    private func accessibilityText(_ block: TimeBlock?) -> String {
-        let extra = (requested ? "、希望休" : "") + (issues.isEmpty ? "" : "、注意：" + issues.map(\.text).joined(separator: "、"))
-            + (resolved?.note.map { "、メモ：\($0)" } ?? "")
-        return base(block) + extra
-    }
-
-    private func base(_ block: TimeBlock?) -> String {
-        let date = "\(day.month)月\(day.day)日 \(name)"
-        if left { return "\(date)、退職後" }
-        guard let r = resolved else { return "\(date)、未定" }
-        if r.isOff { return "\(date)、\(block?.label ?? "休み")" }
-        if r.elsewhere { return "\(date)、\(awayStore?.name ?? "ほかの店舗")で\(r.inTime)から\(r.outTime)" }
-        return "\(date)、\(r.inTime)から\(r.outTime)\(r.isAuto ? "、自動" : "")"
-    }
-}
 
 /// ほかの店舗で勤務する日の斜線
 struct ElsewhereHatch: View {
