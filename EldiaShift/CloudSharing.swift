@@ -215,12 +215,10 @@ struct ShareSettingsView: View {
                 } else {
                     pair = try await db.makeShare()
                 }
-                CloudSharingPresenter.present(pair.0, container: pair.1) { updated in
-                    Task { @MainActor in
-                        if let updated { await db.persistUpdatedShare(updated) }
-                        store.reload()
-                        refresh()
-                    }
+                CloudSharingPresenter.present(pair.0, container: pair.1) { _ in
+                    db.shareChanged()
+                    store.reload()
+                    refresh()
                 }
                 refresh()
             } catch {
