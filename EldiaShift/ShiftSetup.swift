@@ -98,10 +98,11 @@ extension ShiftStore {
         reload()
     }
 
-    /// スタッフを消す（その人のシフトも消す）
+    /// スタッフを消す（その人のシフトと給与の記録も消す）
     func deleteStaff(_ s: StaffMember) throws {
         try ShiftRecords.delete(ShiftModel.Entity.staff, key: s.id, in: db.viewContext)
         try ShiftRecords.deleteCells(ofStaff: s.id, in: db.viewContext)
+        try ShiftRecords.deletePay(ofStaff: [s.id], in: db.viewContext)
         // 同じ部門の番号を詰める（PC版と同じ）
         let rest = book.staff.filter { $0.departmentID == s.departmentID && $0.id != s.id }.sorted(by: StaffMember.order)
         for (i, original) in rest.enumerated() where original.number != i + 1 {
