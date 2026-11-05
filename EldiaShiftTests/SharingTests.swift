@@ -132,6 +132,8 @@ struct SharingTests {
             "detail": Data(#"{"timeBlocks":[],"patterns":[],"periodPatterns":[],"wages":[{"id":"w","from":"2026-01-01","kind":"hourly","amount":1500}]}"#.utf8)])
         // 届く途中でチームのつながりがまだ無い共有の記録は、自分のシフト表に紛れ込まない
         insertShared(ShiftModel.Entity.department, team: nil, ["key": "orphan", "name": "届く途中"])
+        // 自分の給与の記録に、共有されたシフト表の人と同じ ID のものがあっても出さない（見本のデータ・バックアップは ID が同じ）
+        try ShiftRecords.upsertPay("t1", [WageEntry(id: "own", from: "2026-01-01", kind: .hourly, amount: 1500)], in: ctx)
         try ctx.save()
 
         // 何も選んでいなければ自分のシフト表（共有されたチームは古くてもまとめない）
@@ -158,6 +160,9 @@ struct SharingTests {
         #expect(ShiftDatabase.isShared(try #require(try ctx.fetch(req).first).objectID.persistentStore))
         #expect(try pays(ctx).allSatisfy { !ShiftDatabase.isShared($0.objectID.persistentStore) })
         #expect(try ShiftRecords.load(ctx).staff.first?.wages.first?.amount == 1300)
+        // 自分のシフト表の、同じ ID の人の給与は書き換わらない
+        let ownPay = try #require(try pays(ctx).first { $0.value(forKey: "key") as? String == "t1" })
+        #expect(ShiftRecords.wages(of: ownPay).first?.amount == 1500)
 
         // 設定は共有されたチームにだけ書く
         #expect(try ShiftRecords.settingsTeams(ctx).map(\.objectID) == [theirs.objectID])

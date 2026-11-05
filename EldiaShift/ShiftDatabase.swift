@@ -184,7 +184,14 @@ final class ShiftDatabase {
     /// 共有の画面で参加者・権限を変えたあと
     func persistUpdatedShare(_ share: CKShare) async {
         guard let store = privateStore else { return }
-        _ = try? await container.persistUpdatedShare(share, in: store)
+        // 保存が終わるまで呼んだスレッドを止める処理なので、画面のスレッドでは呼ばない
+        // （止まったままだと、iOS にアプリを強制終了される）。優先度の固定は makeShare と同じ理由
+        let cloud = container
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global(qos: .utility).async(qos: .utility, flags: .enforceQoS) {
+                cloud.persistUpdatedShare(share, in: store) { _, _ in cont.resume() }
+            }
+        }
         refreshAccess()
         changeToken += 1
     }

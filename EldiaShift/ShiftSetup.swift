@@ -185,7 +185,7 @@ extension ShiftRecords {
         r.setValue(try JSONEncoder().encode(StaffDetail(s)), forKey: "detail")
         r.setValue(Date(), forKey: "updatedAt")
         // 給与は共有されない自分だけの入れ物へ
-        try upsertPay(s.id, s.wages, in: ctx)
+        try upsertPay(payKey(s.id, team: try currentTeam(ctx)), s.wages, in: ctx)
     }
 
     /// 表示しているチームの、そのキーの記録を消す
