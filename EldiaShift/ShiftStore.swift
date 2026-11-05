@@ -397,7 +397,7 @@ enum ShiftRecords {
                 d.wages = nil
                 r.setValue(try JSONEncoder().encode(d), forKey: "detail")
             }
-            let staffWages = pays[key].map { Self.wages(of: $0) } ?? oldWages
+            let staffWages = pays[payKey(key, team: team)].map { Self.wages(of: $0) } ?? oldWages
             return StaffMember(id: key, number: r.int("number"), name: r.str("name"),
                                departmentID: pool(r.str("departmentKey")), active: r.value(forKey: "active") as? Bool ?? true,
                                joinDate: r.str("joinDate"), leaveDate: r.str("leaveDate"),
@@ -425,11 +425,19 @@ enum ShiftRecords {
         return book
     }
 
-    /// 給与の記録を書く（無ければ作る。自分のデータの入れ物に入る）
+    /// 給与の記録のキー。自分のシフト表はスタッフの ID、共有されたシフト表はチームの ID を前に付ける。
+    /// 見本のデータやバックアップから入れたスタッフは、端末が違っても ID が同じなので、スタッフの ID だけだと
+    /// 受け取った人の給与の記録が、共有されたシフト表の同じ ID の人に出てしまう
+    static func payKey(_ staffID: String, team: NSManagedObject) -> String {
+        guard ShiftDatabase.isShared(team.objectID.persistentStore), let id = team.value(forKey: "id") as? UUID else { return staffID }
+        return "\(id.uuidString)|\(staffID)"
+    }
+
+    /// 給与の記録を書く（無ければ作る。自分のデータの入れ物に入る）。key は payKey で作る
     @discardableResult
-    static func upsertPay(_ staffID: String, _ wages: [WageEntry], in ctx: NSManagedObjectContext) throws -> NSManagedObject? {
+    static func upsertPay(_ key: String, _ wages: [WageEntry], in ctx: NSManagedObjectContext) throws -> NSManagedObject? {
         let req = NSFetchRequest<NSManagedObject>(entityName: ShiftModel.Entity.pay)
-        req.predicate = NSPredicate(format: "key == %@", staffID)
+        req.predicate = NSPredicate(format: "key == %@", key)
         let rows = try ctx.fetch(req)
         if rows.isEmpty && wages.isEmpty { return nil }
         let r: NSManagedObject
@@ -441,7 +449,7 @@ enum ShiftRecords {
             if let store = privateStore(ctx) { ctx.assign(r, to: store) }
         }
         rows.dropFirst().forEach(ctx.delete)
-        r.setValue(staffID, forKey: "key")
+        r.setValue(key, forKey: "key")
         r.setValue(try JSONEncoder().encode(wages), forKey: "wages")
         r.setValue(Date(), forKey: "updatedAt")
         return r
@@ -505,7 +513,7 @@ enum ShiftRecords {
             r.setValue(s.joinDate, forKey: "joinDate")
             r.setValue(s.leaveDate, forKey: "leaveDate")
             r.setValue(try encoder.encode(StaffDetail(s)), forKey: "detail")
-            try upsertPay(s.id, s.wages, in: ctx)
+            try upsertPay(payKey(s.id, team: team), s.wages, in: ctx)
         }
         for (k, c) in book.cells {
             let r = insert(ShiftModel.Entity.cell, ctx, team: team, now: now)
