@@ -253,10 +253,13 @@ final class ShiftDatabase {
         guard let team = try? ShiftRecords.existingCurrentTeam(viewContext), !team.objectID.isTemporaryID else {
             readOnly = false
             viewingSharedTeam = false
+            LaborCostLock.shared.sharedTeam = false
             return
         }
         let theirs = Self.isShared(team.objectID.persistentStore)
         viewingSharedTeam = theirs
+        // 共有されたシフト表では、給与・人件費を出さない（「編集できる」でも「見るだけ」でも）
+        LaborCostLock.shared.sharedTeam = theirs
         readOnly = theirs && !container.canUpdateRecord(forManagedObjectWith: team.objectID)
     }
 
