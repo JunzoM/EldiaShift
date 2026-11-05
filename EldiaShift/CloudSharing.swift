@@ -63,12 +63,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 enum CloudSharingPresenter {
     private static var delegate: Delegate?
 
-    static func present(_ share: CKShare, container: CKContainer, onChange: @escaping (CKShare?) -> Void) {
-        let controller = UICloudSharingController(share: share, container: container)
+    /// onChange：参加者・権限を変えるたび（共有をやめたら nil）。onClose：画面を閉じたとき、変えた共有（変えていなければ nil）
+    static func present(_ share: CKShare, container: CKContainer, onChange: @escaping (CKShare?) -> Void,
+                        onClose: @escaping (CKShare?) -> Void) {
+        let controller = SharingController(share: share, container: container)
         controller.availablePermissions = [.allowPrivate, .allowReadWrite, .allowReadOnly]
         let d = Delegate(onChange: onChange)
         delegate = d
         controller.delegate = d
+        controller.onClose = { [weak d] in onClose(d?.saved) }
         guard let top = topViewController() else { return }
         if let pop = controller.popoverPresentationController {
             pop.sourceView = top.view
@@ -86,8 +89,23 @@ enum CloudSharingPresenter {
         return top
     }
 
+    /// 閉じたことを知らせる共有の画面（Apple の画面のまま。閉じたときだけ呼ぶ）
+    private final class SharingController: UICloudSharingController {
+        var onClose: (() -> Void)?
+
+        override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            // メッセージの画面などを上に出したときは呼ばない（閉じるときだけ）
+            guard isBeingDismissed || presentingViewController?.isBeingDismissed == true, let close = onClose else { return }
+            onClose = nil
+            close()
+        }
+    }
+
     private final class Delegate: NSObject, UICloudSharingControllerDelegate {
         let onChange: (CKShare?) -> Void
+        /// この画面で最後に保存した共有（共有をやめたら nil）
+        private(set) var saved: CKShare?
         init(onChange: @escaping (CKShare?) -> Void) { self.onChange = onChange }
 
         func itemTitle(for csc: UICloudSharingController) -> String? { "シフト表" }
@@ -98,11 +116,13 @@ enum CloudSharingPresenter {
 
         func cloudSharingControllerDidSaveShare(_ csc: UICloudSharingController) {
             let share = csc.share
+            saved = share
             let done = onChange
             Task { @MainActor in done(share) }
         }
 
         func cloudSharingControllerDidStopSharing(_ csc: UICloudSharingController) {
+            saved = nil
             let done = onChange
             Task { @MainActor in done(nil) }
         }
@@ -215,11 +235,18 @@ struct ShareSettingsView: View {
                 } else {
                     pair = try await db.makeShare()
                 }
-                CloudSharingPresenter.present(pair.0, container: pair.1) { _ in
+                CloudSharingPresenter.present(pair.0, container: pair.1, onChange: { _ in
                     db.shareChanged()
                     store.reload()
                     refresh()
-                }
+                }, onClose: { saved in
+                    // 閉じたときに1回だけ、変えた共有をこの端末にも入れる（参加者の端末に早く届く）
+                    guard let saved else { return }
+                    Task { @MainActor in
+                        await db.persistUpdatedShare(saved)
+                        refresh()
+                    }
+                })
                 refresh()
             } catch {
                 self.error = ShareErrorText.message(error)

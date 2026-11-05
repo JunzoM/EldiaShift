@@ -129,8 +129,8 @@ bash scripts/duo-screenshots.sh
 2. Xcode：Product → Archive → Distribute App → App Store Connect → Upload
 3. App Store Connect でビルドを選び、上の内容と画面写真を入れて「審査へ提出」
 
-### 1.1（ビルド 7）
-- バージョン 1.1・ビルド 7（ビルド 2〜6 は App Store Connect にアップロード済み）。アップロードし直すときはビルド番号を上げる（Xcode の Build、または project の CURRENT_PROJECT_VERSION）
+### 1.1（ビルド 8）
+- バージョン 1.1・ビルド 8（ビルド 2〜7 は App Store Connect にアップロード済み）。アップロードし直すときはビルド番号を上げる（Xcode の Build、または project の CURRENT_PROJECT_VERSION）
 - CloudKit：1.1 で足した入れ物（`PayRecord`・`CellRecord.note`）と iCloud 共有があるので、スキーマを本番へ反映する（[sharing-test.md](sharing-test.md)）
 - TestFlight：TestFlight と App Store は CloudKit の本番環境を使うので、審査に出す前に TestFlight 版で共有の招待・受け取り・編集の反映を確かめる。App Store の 1.0 にデータを入れた端末へ上書きで入れて、データが残ることも確かめる
 - プライバシーポリシー（facility-manager の `/hotel-shift/privacy`）：iCloud 共有・最低賃金の表の読み込み・Mac 版を反映して公開済み（2026年11月2日改定）
