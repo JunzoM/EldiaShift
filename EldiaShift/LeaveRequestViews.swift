@@ -45,6 +45,8 @@ struct LeaveRequestSections: View {
     /// 横に並べるときの列の幅（文字の倍率に合わせる）
     private var nameWidth: CGFloat { 200 * zoom }
     private var dayWidth: CGFloat { 120 * zoom }
+    /// 理由の列にこれだけ取れないときは、横に並べず詰めて出す
+    private var reasonMinWidth: CGFloat { 120 * zoom }
 
     var body: some View {
         let book = store.book
@@ -151,68 +153,106 @@ struct LeaveRequestSections: View {
             .lineLimit(2)
     }
 
-    /// 決めた申請の行：iPad・Mac は「名前｜日付｜理由｜結果」を横に並べる
+    /// 決めた申請の行：幅が足りれば「名前｜日付｜理由｜結果」を横に並べ、足りなければ詰めて出す
     @ViewBuilder
     private func decidedRow(_ r: LeaveRequestRow) -> some View {
-        let pill = StatusPill(text: r.request.status.label, color: r.request.status == .approved ? .green : .gray)
         if sizeClass == .compact {
-            HStack(spacing: 10) {
-                Text(r.member.name).appFont(.subheadline.weight(.semibold))
-                Spacer()
-                Text(dayText(r)).appFont(.subheadline).monospacedDigit()
-                pill
-            }
+            decidedStacked(r)
         } else {
-            HStack(spacing: 16) {
-                Text(r.member.name).appFont(.subheadline.weight(.semibold))
-                    .lineLimit(1).frame(width: nameWidth, alignment: .leading)
-                Text(dayText(r)).appFont(.subheadline).monospacedDigit()
-                    .frame(width: dayWidth, alignment: .leading)
-                reasonText(r).appFont(.subheadline)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                pill
+            // iPad は左右に分かれていて、1列の幅が画面の半分より狭いことがある
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 16) {
+                    Text(r.member.name).appFont(.subheadline.weight(.semibold))
+                        .lineLimit(1).frame(width: nameWidth, alignment: .leading)
+                    Text(dayText(r)).appFont(.subheadline).monospacedDigit()
+                        .frame(width: dayWidth, alignment: .leading)
+                    reasonText(r).appFont(.subheadline)
+                        .frame(minWidth: reasonMinWidth, idealWidth: reasonMinWidth, maxWidth: .infinity, alignment: .leading)
+                    decidedPill(r)
+                }
+                decidedStacked(r)
             }
+        }
+    }
+
+    private func decidedPill(_ r: LeaveRequestRow) -> StatusPill {
+        StatusPill(text: r.request.status.label, color: r.request.status == .approved ? .green : .gray)
+    }
+
+    /// 決めた申請の行（狭いとき）
+    private func decidedStacked(_ r: LeaveRequestRow) -> some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(r.member.name).appFont(.subheadline.weight(.semibold)).lineLimit(1)
+                if !r.request.note.isEmpty {
+                    Text(r.request.note).appFont(.caption).foregroundStyle(.secondary).lineLimit(2)
+                }
+            }
+            Spacer(minLength: 0)
+            Text(dayText(r)).appFont(.subheadline).monospacedDigit().lineLimit(1)
+            decidedPill(r)
         }
     }
 
     private func pendingRow(_ r: LeaveRequestRow, color: Int, book: ShiftBook) -> some View {
         let shift = r.day.flatMap { Schedule.resolve(r.member, on: $0, in: book) }
-        return HStack(spacing: sizeClass == .compact ? 12 : 16) {
+        let conflict = shift.map { !$0.isOff } ?? false
+        return Group {
             if sizeClass == .compact {
-                InitialAvatar(name: r.member.name, colorIndex: color, size: 34, photo: r.member.photo)
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(r.member.name).appFont(.body.weight(.semibold))
-                        Text(dayText(r)).appFont(.subheadline.weight(.semibold)).monospacedDigit()
-                    }
-                    if !r.request.note.isEmpty {
-                        Text(r.request.note).appFont(.caption).foregroundStyle(.secondary).lineLimit(2)
-                    }
-                }
-                Spacer()
+                pendingStacked(r, color: color, conflict: conflict)
             } else {
-                // 名前｜日付｜理由 を列にそろえて横に並べる
-                HStack(spacing: 10) {
-                    InitialAvatar(name: r.member.name, colorIndex: color, size: 34, photo: r.member.photo)
-                    Text(r.member.name).appFont(.body.weight(.semibold)).lineLimit(1)
+                // iPad は左右に分かれていて、1列の幅が画面の半分より狭いことがある
+                ViewThatFits(in: .horizontal) {
+                    // 名前｜日付｜理由 を列にそろえて横に並べる
+                    HStack(spacing: 16) {
+                        HStack(spacing: 10) {
+                            InitialAvatar(name: r.member.name, colorIndex: color, size: 34, photo: r.member.photo)
+                            Text(r.member.name).appFont(.body.weight(.semibold)).lineLimit(1)
+                        }
+                        .frame(width: nameWidth, alignment: .leading)
+                        Text(dayText(r)).appFont(.subheadline.weight(.semibold)).monospacedDigit()
+                            .frame(width: dayWidth, alignment: .leading)
+                        reasonText(r).appFont(.subheadline)
+                            .frame(minWidth: reasonMinWidth, idealWidth: reasonMinWidth, maxWidth: .infinity, alignment: .leading)
+                        if conflict { StatusPill(text: "勤務あり", color: .red) }
+                        pendingButtons(r)
+                    }
+                    pendingStacked(r, color: color, conflict: conflict)
                 }
-                .frame(width: nameWidth, alignment: .leading)
-                Text(dayText(r)).appFont(.subheadline.weight(.semibold)).monospacedDigit()
-                    .frame(width: dayWidth, alignment: .leading)
-                reasonText(r).appFont(.subheadline)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if let shift, !shift.isOff { StatusPill(text: "勤務あり", color: .red) }
-            HStack(spacing: 6) {
-                Button { decide([r], .rejected) } label: { Image(systemName: "xmark") }
-                    .buttonStyle(.bordered).tint(.red)
-                    .accessibilityLabel("\(r.member.name)さんの申請を却下")
-                Button { decide([r], .approved) } label: { Image(systemName: "checkmark") }
-                    .buttonStyle(.borderedProminent).tint(.green)
-                    .accessibilityLabel("\(r.member.name)さんの申請を承認")
             }
         }
         .padding(.vertical, 2)
+    }
+
+    /// 承認待ちの行（狭いとき）：名前の下に日付と理由を重ねる
+    private func pendingStacked(_ r: LeaveRequestRow, color: Int, conflict: Bool) -> some View {
+        HStack(spacing: 12) {
+            InitialAvatar(name: r.member.name, colorIndex: color, size: 34, photo: r.member.photo)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(r.member.name).appFont(.body.weight(.semibold)).lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(dayText(r)).appFont(.subheadline.weight(.semibold)).monospacedDigit().lineLimit(1)
+                    if conflict { StatusPill(text: "勤務あり", color: .red) }
+                }
+                if !r.request.note.isEmpty {
+                    Text(r.request.note).appFont(.caption).foregroundStyle(.secondary).lineLimit(2)
+                }
+            }
+            Spacer(minLength: 0)
+            pendingButtons(r)
+        }
+    }
+
+    private func pendingButtons(_ r: LeaveRequestRow) -> some View {
+        HStack(spacing: 6) {
+            Button { decide([r], .rejected) } label: { Image(systemName: "xmark") }
+                .buttonStyle(.bordered).tint(.red)
+                .accessibilityLabel("\(r.member.name)さんの申請を却下")
+            Button { decide([r], .approved) } label: { Image(systemName: "checkmark") }
+                .buttonStyle(.borderedProminent).tint(.green)
+                .accessibilityLabel("\(r.member.name)さんの申請を承認")
+        }
+        .fixedSize()
     }
 
     /// 行ごとの「削除しますか？」

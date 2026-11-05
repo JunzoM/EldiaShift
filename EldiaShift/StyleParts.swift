@@ -150,6 +150,8 @@ struct StatusPill: View {
             .foregroundStyle(color)
             .padding(.horizontal, 10).padding(.vertical, 4)
             .background(color.opacity(0.13), in: Capsule())
+            // 狭い列でも、折り返したり潰れたりしない
+            .fixedSize()
     }
 }
 
@@ -424,12 +426,11 @@ struct OffRequestListView: View {
                     HStack(spacing: 12) {
                         InitialAvatar(name: r.member.name, colorIndex: r.department?.colorIndex ?? 8, size: 34, photo: r.member.photo)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(r.member.name).appFont(.body.weight(.semibold))
-                            Text(r.department?.name ?? "").appFont(.caption).foregroundStyle(.secondary)
+                            Text(r.member.name).appFont(.body.weight(.semibold)).lineLimit(1)
+                            Text(r.department?.name ?? "").appFont(.caption).foregroundStyle(.secondary).lineLimit(1)
                         }
-                        Spacer()
-                        Text("希望休").appFont(.subheadline).foregroundStyle(.secondary)
-                        Text(HomeView.dayLabel(r.day)).appFont(.subheadline.weight(.semibold)).monospacedDigit()
+                        Spacer(minLength: 0)
+                        Text(HomeView.dayLabel(r.day)).appFont(.subheadline.weight(.semibold)).monospacedDigit().lineLimit(1)
                             .frame(minWidth: 86, alignment: .trailing)
                         switch r.state {
                         case .done: StatusPill(text: "休み済み", color: .green)

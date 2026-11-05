@@ -579,6 +579,16 @@ enum DemoMode {
         b.brandColor = 0x1E3A8A
         b.company.name = "見本ホテル株式会社"
         b.company.tagline = "スタッフの笑顔が、お客様の特別な時間をつくります。"
+        if DemoMode.flag("-demoPending") {
+            // 希望休の画面の確認用：承認待ちの申請（理由あり・なし、勤務と重なる日）と、決めた申請
+            let notes = ["", "家族の用事のため", "通院のため", ""]
+            for i in 0..<4 {
+                b.staff[i].leaveRequests = [LeaveRequest(id: "demo-\(i)", day: today.adding(days: i + 1).description, note: notes[i],
+                                                         status: .pending, receivedAt: Date())]
+            }
+            b.staff[4].leaveRequests = [LeaveRequest(id: "demo-4", day: today.adding(days: 2).description, note: "友人の結婚式",
+                                                     status: .approved, receivedAt: Date(), decidedAt: Date())]
+        }
         if DemoMode.flag("-demoAppStore") {
             // App Store の画面写真用：人数が足りる日が多い、落ち着いた見本
             b.staffing.bands = [
