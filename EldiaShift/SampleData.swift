@@ -181,6 +181,7 @@ extension ShiftStore {
             try ShiftRecords.deleteCells(ofStaff: m.id, in: ctx)
             dropHistory(for: m.id)
         }
+        try ShiftRecords.deletePay(ofStaff: book.staff.map(\.id).filter(SampleData.isSample), in: ctx)
         for d in book.departments where SampleData.isSample(d.id) {
             try ShiftRecords.delete(ShiftModel.Entity.department, key: d.id, in: ctx)
         }

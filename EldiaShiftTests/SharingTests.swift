@@ -172,6 +172,99 @@ struct SharingTests {
         #expect(try ShiftRecords.load(ctx).departments.map(\.id) == ["mine"])
     }
 
+    private func payKeys(_ ctx: NSManagedObjectContext) throws -> Set<String> {
+        Set(try pays(ctx).compactMap { $0.value(forKey: "key") as? String })
+    }
+
+    @Test("スタッフを消すと給与の記録も消える。別のチームの同じ ID の人の記録は残る")
+    func deleteStaffRemovesPay() throws {
+        let store = ShiftStore(db: ShiftDatabase(inMemory: true))
+        let ctx = store.db.viewContext
+        try store.save(member("1", wage: 1200))
+        try store.save(member("2", wage: 1300))
+        // 共有されたシフト表の、同じ ID の人の記録
+        let other = "\(UUID().uuidString)|1"
+        try ShiftRecords.upsertPay(other, [WageEntry(id: "o", from: "2026-04-01", kind: .hourly, amount: 1500)], in: ctx)
+        try store.db.save()
+
+        let one = try #require(store.book.staff.first { $0.id == "1" })
+        try store.deleteStaff(one)
+        #expect(try payKeys(ctx) == ["2", other])
+        // 残った人の給与はそのまま
+        #expect(store.book.staff.first { $0.id == "2" }?.wages.first?.amount == 1300)
+    }
+
+    @Test("見本のデータを消すと、見本のスタッフの給与の記録も消え、本物の人の記録は残る")
+    func removeSampleRemovesPay() throws {
+        let store = ShiftStore(db: ShiftDatabase(inMemory: true))
+        let ctx = store.db.viewContext
+        try store.startNew()
+        var real = store.newStaff(in: store.book.departments[0].id)
+        real.wages = [WageEntry(id: "r", from: "2026-04-01", kind: .hourly, amount: 1200)]
+        try store.save(real)
+        try store.addSampleData()
+        #expect(try payKeys(ctx).contains(where: SampleData.isSample))
+
+        try store.removeSampleData()
+        #expect(try payKeys(ctx) == [real.id])
+        #expect(store.book.staff.first?.wages.first?.amount == 1200)
+    }
+
+    @Test("すべて置き換えると、新しい内容にいない人の給与の記録は消え、いる人の記録は新しい内容になる")
+    func replaceAllRemovesPay() throws {
+        let store = ShiftStore(db: ShiftDatabase(inMemory: true))
+        let ctx = store.db.viewContext
+        try store.save(member("1", wage: 1200))
+        try store.save(member("2", wage: 1300))
+        let other = "\(UUID().uuidString)|2"
+        try ShiftRecords.upsertPay(other, [WageEntry(id: "o", from: "2026-04-01", kind: .hourly, amount: 1500)], in: ctx)
+        try store.db.save()
+
+        var b = ShiftBook()
+        b.staff = [member("1", wage: 1400)]
+        try store.replaceAll(with: b)
+        #expect(try payKeys(ctx) == ["1", other])
+        #expect(store.book.staff.first?.wages.first?.amount == 1400)
+        // 全員いなくなっても、別のチームの記録は残る
+        try store.replaceAll(with: ShiftBook())
+        #expect(try payKeys(ctx) == [other])
+    }
+
+    @Test("共有されたシフト表で人を消しても、自分のシフト表の同じ ID の人の給与は消えない（逆も同じ）")
+    func deletePayKeepsOtherTeam() throws {
+        defer { ShiftRecords.activeTeamID = nil }
+        ShiftRecords.activeTeamID = nil
+        let c = try twoStores()
+        let ctx = c.viewContext
+        let sharedStore = try #require(c.persistentStoreCoordinator.persistentStores.first { ShiftDatabase.isShared($0) })
+        _ = try ShiftRecords.currentTeam(ctx)
+        let theirs = NSEntityDescription.insertNewObject(forEntityName: ShiftModel.Entity.team, into: ctx)
+        ctx.assign(theirs, to: sharedStore)
+        let theirID = UUID()
+        theirs.setValue(theirID, forKey: "id")
+        theirs.setValue(Date(), forKey: "createdAt")
+        try ctx.save()
+        let wage = [WageEntry(id: "w", from: "2026-04-01", kind: .hourly, amount: 1200)]
+        let sharedKey = ShiftRecords.payKey("1", team: theirs)
+        #expect(sharedKey == "\(theirID.uuidString)|1")
+        try ShiftRecords.upsertPay("1", wage, in: ctx)
+        try ShiftRecords.upsertPay(sharedKey, wage, in: ctx)
+        try ctx.save()
+
+        // 共有されたシフト表で消す
+        ShiftRecords.activeTeamID = theirID
+        try ShiftRecords.deletePay(ofStaff: ["1"], in: ctx)
+        try ctx.save()
+        #expect(try payKeys(ctx) == ["1"])
+
+        // 自分のシフト表で消す
+        try ShiftRecords.upsertPay(sharedKey, wage, in: ctx)
+        ShiftRecords.activeTeamID = nil
+        try ShiftRecords.deletePay(ofStaff: ["1"], in: ctx)
+        try ctx.save()
+        #expect(try payKeys(ctx) == [sharedKey])
+    }
+
     @Test("受け取れない原因が分からないときだけ、確かめることを添える（キーチェーンなど）")
     func acceptHint() {
         let unknown = NSError(domain: "TestDomain", code: 42, userInfo: [NSLocalizedDescriptionKey: "わからない失敗"])

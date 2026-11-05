@@ -455,6 +455,16 @@ enum ShiftRecords {
         return r
     }
 
+    /// 表示しているチームの、そのスタッフたちの給与の記録を消す。
+    /// キーはチームごとに違う（payKey）ので、別のチームの同じ ID の人の記録は消えない
+    static func deletePay(ofStaff staffIDs: [String], in ctx: NSManagedObjectContext) throws {
+        guard !staffIDs.isEmpty else { return }
+        let team = try currentTeam(ctx)
+        let req = NSFetchRequest<NSManagedObject>(entityName: ShiftModel.Entity.pay)
+        req.predicate = NSPredicate(format: "key IN %@", staffIDs.map { payKey($0, team: team) })
+        try ctx.fetch(req).forEach(ctx.delete)
+    }
+
     static func wages(of r: NSManagedObject) -> [WageEntry] {
         (r.value(forKey: "wages") as? Data).flatMap { try? JSONDecoder().decode([WageEntry].self, from: $0) } ?? []
     }
@@ -478,6 +488,9 @@ enum ShiftRecords {
     static func replaceAll(with book: ShiftBook, in ctx: NSManagedObjectContext) throws {
         let team = try currentTeam(ctx)
         try saveSettings(book, team: team)
+        // 新しい内容にいない人の給与の記録を消す（残る人の記録は、下で書き直す）
+        let kept = Set(book.staff.map(\.id))
+        try deletePay(ofStaff: try fetch(ShiftModel.Entity.staff, ctx, team: team).map { $0.str("key") }.filter { !kept.contains($0) }, in: ctx)
         for name in [ShiftModel.Entity.department, ShiftModel.Entity.template, ShiftModel.Entity.staff, ShiftModel.Entity.cell] {
             for r in try fetch(name, ctx, team: team) { ctx.delete(r) }
         }
