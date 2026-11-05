@@ -15,7 +15,12 @@ final class LaborCostLock {
     /// 確認が済んで、いま見られる（アプリを離れると戻る）
     private(set) var unlocked = false
 
-    var canView: Bool { !hidden || unlocked }
+    /// 共有されたシフト表を表示している（給与・人件費は出さない。ShiftDatabase が入れる）
+    var sharedTeam = false
+
+    var canView: Bool { !sharedTeam && (!hidden || unlocked) }
+    /// 隠す設定で、まだ本人の確認をしていない（バックアップを書き出す前に確かめる）
+    var needsUnlock: Bool { hidden && !unlocked }
 
     private init() { hidden = UserDefaults.standard.bool(forKey: Self.key) }
 
@@ -57,7 +62,17 @@ struct LaborCostLockedView: View {
 
     var body: some View {
         let lock = LaborCostLock.shared
-        if compact {
+        if lock.sharedTeam {
+            if compact {
+                Label(Self.sharedMessage, systemImage: "person.2").foregroundStyle(.secondary)
+            } else {
+                ContentUnavailableView {
+                    Label("人件費は出しません", systemImage: "person.2")
+                } description: {
+                    Text(Self.sharedMessage)
+                }
+            }
+        } else if compact {
             Button { Task { await lock.unlock() } } label: {
                 Label("人件費・給与は隠しています（押して表示）", systemImage: "lock.fill")
             }
@@ -72,6 +87,8 @@ struct LaborCostLockedView: View {
             }
         }
     }
+
+    static let sharedMessage = "共有されたシフト表では、給与と人件費は表示しません（給与は共有されません）。"
 }
 
 // MARK: - 集計 → 人件費
@@ -102,12 +119,6 @@ struct LaborCostView: View {
         let total = pays.values.reduce(StaffPay()) { $0 + $1 }
         let missing = groups.flatMap(\.members).filter { (pays[$0.id]?.missingWageDays ?? 0) > 0 }
         return List {
-            if db.viewingSharedTeam {
-                Section {
-                    Label("共有されたシフト表です。給与は共有されないので、この端末で給与を入れた人の分だけを数えます。", systemImage: "lock")
-                        .appFont(.footnote).foregroundStyle(.secondary)
-                }
-            }
             Section {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("\(month.month)月の人件費（概算）").appFont(.subheadline).foregroundStyle(.secondary)
@@ -461,6 +472,11 @@ struct WageSection: View {
     @State private var editing: WageEntry?
 
     var body: some View {
+        // 共有されたシフト表では、給与の欄そのものを出さない
+        if !LaborCostLock.shared.sharedTeam { section }
+    }
+
+    private var section: some View {
         Section {
             if LaborCostLock.shared.canView {
                 let today = DayKey.today

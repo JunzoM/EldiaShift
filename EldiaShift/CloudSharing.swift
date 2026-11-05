@@ -178,7 +178,7 @@ struct ShareSettingsView: View {
             Section("共有されるもの・されないもの") {
                 Label("店舗・部門・時間のひな形・スタッフ・シフト・マスのメモ・希望休の申請・会社の情報・人件費の予算と割増の決まり", systemImage: "checkmark.circle")
                     .appFont(.subheadline)
-                Label("時給・月給（給与）は共有されません。この端末と、同じ Apple ID の端末にだけ残ります。", systemImage: "lock")
+                Label("時給・月給（給与）は共有されません。この端末と、同じ Apple ID の端末にだけ残ります。受け取った人の画面には、給与と人件費は出ません。", systemImage: "lock")
                     .appFont(.subheadline)
                 Label("共有を始める前に、同じ Apple ID のほかの端末の SHIFT も最新の版にしてください（前の版は給与をスタッフの記録に書くため）。", systemImage: "exclamationmark.triangle")
                     .appFont(.footnote).foregroundStyle(.orange)

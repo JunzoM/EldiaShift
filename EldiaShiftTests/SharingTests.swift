@@ -159,7 +159,8 @@ struct SharingTests {
         req.predicate = NSPredicate(format: "key == %@", "added")
         #expect(ShiftDatabase.isShared(try #require(try ctx.fetch(req).first).objectID.persistentStore))
         #expect(try pays(ctx).allSatisfy { !ShiftDatabase.isShared($0.objectID.persistentStore) })
-        #expect(try ShiftRecords.load(ctx).staff.first?.wages.first?.amount == 1300)
+        // 共有されたシフト表では、自分の端末で入れた給与も読まない（画面にも人件費にも出さない）
+        #expect(try ShiftRecords.load(ctx).staff.first?.wages.isEmpty == true)
         // 自分のシフト表の、同じ ID の人の給与は書き換わらない
         let ownPay = try #require(try pays(ctx).first { $0.value(forKey: "key") as? String == "t1" })
         #expect(ShiftRecords.wages(of: ownPay).first?.amount == 1500)

@@ -397,7 +397,8 @@ enum ShiftRecords {
                 d.wages = nil
                 r.setValue(try JSONEncoder().encode(d), forKey: "detail")
             }
-            let staffWages = pays[payKey(key, team: team)].map { Self.wages(of: $0) } ?? oldWages
+            // 共有されたシフト表では給与を読まない（画面にも人件費にも出さない。この端末に残っている見本のデータなどの給与も混ぜない）
+            let staffWages = theirs ? [] : pays[payKey(key, team: team)].map { Self.wages(of: $0) } ?? oldWages
             return StaffMember(id: key, number: r.int("number"), name: r.str("name"),
                                departmentID: pool(r.str("departmentKey")), active: r.value(forKey: "active") as? Bool ?? true,
                                joinDate: r.str("joinDate"), leaveDate: r.str("leaveDate"),

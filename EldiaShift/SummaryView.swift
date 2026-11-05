@@ -9,18 +9,21 @@ struct SummaryView: View {
     @AppStorage("summaryTab") private var tab = 0
 
     var body: some View {
+        // 共有されたシフト表では人件費を出さない
+        let showCost = !LaborCostLock.shared.sharedTeam
+        let tab = showCost || self.tab != 3 ? self.tab : 0
         Group {
             if tab == 1 { StaffingAnalysisView(month: month) } else if tab == 2 { LaborIssuesView(month: month) }
             else if tab == 3 { LaborCostView(month: month) } else { hoursList }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            Picker("見るもの", selection: $tab) {
+            Picker("見るもの", selection: Binding(get: { tab }, set: { self.tab = $0 })) {
                 Text("勤務時間・有休").tag(0)
                 Text("適正人員").tag(1)
                 Text("注意").tag(2)
-                Text("人件費").tag(3)
+                if showCost { Text("人件費").tag(3) }
             }
-            .segmented(4)
+            .segmented(showCost ? 4 : 3)
             .padding(.horizontal, 16).padding(.vertical, 8)
             .background(.bar)
         }

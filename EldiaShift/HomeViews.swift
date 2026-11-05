@@ -26,6 +26,9 @@ extension AppTab {
         }
     }
 
+    /// 「見るだけ」で共有されたシフト表で出す画面（見る・印刷するだけ。設定は共有から抜ける・切り替えるのに使う）
+    static let readOnlyTabs: [AppTab] = [.home, .schedule, .summary, .print, .settings]
+
     var systemImage: String {
         switch self {
         case .home: "house"
@@ -47,6 +50,7 @@ struct MainTabsView: View {
     @Binding var anchor: DayKey
 
     @Environment(\.shiftStore) private var store
+    @Environment(\.shiftDatabase) private var db
     @Environment(\.horizontalSizeClass) private var sizeClass
     @AppStorage("appTab") private var savedTab: AppTab = .home
     @State private var tab: AppTab = .home
@@ -80,6 +84,8 @@ struct MainTabsView: View {
         // 折りたたみの iPhone（Duo）を閉じた・iPad を分割表示にしたなどで下のタブに変わったとき、
         // タブに無い項目（スタッフ・印刷・店舗）を開いていたら、近い項目へ移す（何も出ない画面にしない）
         .onChange(of: sizeClass) { fitTabToLayout() }
+        // 「見るだけ」に変わったら、出さない画面を開いていればホームへ
+        .onChange(of: db.readOnly) { fitTabToLayout() }
     }
 
     // MARK: iPad：サイドバー
@@ -118,8 +124,15 @@ struct MainTabsView: View {
     /// 下のタブに出す項目（5つまで）
     static let compactTabs: [AppTab] = [.home, .schedule, .requests, .summary, .settings]
 
+    /// 下のタブに出す項目（「見るだけ」のときは見る・印刷するものだけ）
+    private var visibleCompactTabs: [AppTab] { db.readOnly ? AppTab.readOnlyTabs : Self.compactTabs }
+
     private func fitTabToLayout() {
-        guard sizeClass != .regular, !Self.compactTabs.contains(tab) else { return }
+        if db.readOnly, !AppTab.readOnlyTabs.contains(tab) {
+            tab = .home
+            return
+        }
+        guard sizeClass != .regular, !visibleCompactTabs.contains(tab) else { return }
         switch tab {
         case .print: tab = .schedule
         default: tab = .settings
@@ -130,7 +143,7 @@ struct MainTabsView: View {
     private var tabs: some View {
         // 5つまで（6つ以上だと「その他」の中に入り、設定の中を開くと画面が崩れるため）。
         // スタッフ・店舗は設定から、印刷はシフト表の上のボタンから開く
-        let all = Self.compactTabs
+        let all = visibleCompactTabs
         if #available(iOS 18.0, *) {
             TabView(selection: $tab) {
                 ForEach(all) { t in
@@ -153,7 +166,7 @@ struct MainTabsView: View {
         switch t {
         case .home:
             NavigationStack {
-                HomeView(openDay: openDay, openTab: { tab = $0 }, storeInToolbar: storeInToolbar)
+                HomeView(openDay: openDay, openTab: { tab = $0; fitTabToLayout() }, storeInToolbar: storeInToolbar)
             }
         case .schedule:
             ShiftBoardView(anchor: $anchor, inTabs: true, storeInToolbar: storeInToolbar)
@@ -209,6 +222,7 @@ struct HomeView: View {
     var storeInToolbar = true
 
     @Environment(\.shiftStore) private var store
+    @Environment(\.shiftDatabase) private var db
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var showPrint = false
     @State private var showStores = false
@@ -233,18 +247,20 @@ struct HomeView: View {
             VStack(alignment: .leading, spacing: DS.section) {
                 // 会社 → その下に店舗 → 選んでいる店舗の今日
                 // iPad・Mac は店舗の切り替えを会社の帯に入れて低くする。iPhone は帯の下に店舗の並び
+                // 「見るだけ」のときは、会社・店舗の編集を開かない
+                let editable = !db.readOnly
                 if sizeClass == .compact {
                     CompanyBanner(company: store.book.company, brandHex: store.book.brandColor,
-                                  storeCount: store.book.allStores.count, compact: true) { showCompany = true }
-                    StoreStrip(stats: StoreTodayStat.all(store.book, today: today), compact: true) { showStores = true }
+                                  storeCount: store.book.allStores.count, compact: true) { if editable { showCompany = true } }
+                    StoreStrip(stats: StoreTodayStat.all(store.book, today: today), compact: true) { if editable { showStores = true } }
                 } else {
                     CompanyBanner(company: store.book.company, brandHex: store.book.brandColor,
                                   storeCount: store.book.allStores.count, stats: StoreTodayStat.all(store.book, today: today),
-                                  manageStores: { showStores = true }) { showCompany = true }
+                                  manageStores: { if editable { showStores = true } }) { if editable { showCompany = true } }
                 }
                 header(today)
-                // 見本の画面（スクショ）には出さない
-                if !DemoMode.enabled, !store.book.isEmpty, BackupReminder.isDue(last: lastBackup, now: Date()) { backupNotice }
+                // 見本の画面（スクショ）・「見るだけ」のときは出さない
+                if editable, !DemoMode.enabled, !store.book.isEmpty, BackupReminder.isDue(last: lastBackup, now: Date()) { backupNotice }
                 cards(info)
                 // 出勤人数のカレンダーは、クイックメニューの下に置く
                 if sizeClass == .compact {
@@ -400,6 +416,11 @@ struct HomeView: View {
 
     /// 今月の人件費の見込み（人件費を隠しているときは金額を出さない）
     private func laborCard(_ info: HomeInfo) -> some View {
+        // 共有されたシフト表では金額を出さない（カードは並びが崩れないように残す）
+        if LaborCostLock.shared.sharedTeam {
+            return HomeCard(title: "今月の人件費", systemImage: "yensign.circle.fill", tint: .secondary,
+                            value: "—", unit: "", note: "共有されたシフト表では出しません") {}
+        }
         let visible = LaborCostLock.shared.canView
         let usage = info.laborBudget.flatMap { LaborBudget.usage(info.laborCost, budget: $0) }
         let tint: Color = !visible ? .secondary : (usage ?? 0) > 100 ? .red : (usage ?? 0) >= 90 ? .orange : .accentColor
@@ -482,15 +503,20 @@ struct HomeView: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
                 QuickButton(title: "シフト表", systemImage: "calendar") { openTab(.schedule) }
                 QuickButton(title: "印刷・共有", systemImage: "printer") { showPrint = true }
-                QuickButton(title: "スタッフ", systemImage: "person.2") {
-                    if sizeClass == .regular { openTab(.staff) } else { showStaff = true }
+                // 「見るだけ」のときは、見る・印刷するものだけ
+                if !db.readOnly {
+                    QuickButton(title: "スタッフ", systemImage: "person.2") {
+                        if sizeClass == .regular { openTab(.staff) } else { showStaff = true }
+                    }
+                    QuickButton(title: "スタッフを追加", systemImage: "person.badge.plus") {
+                        adding = store.newStaff(in: store.book.scopedDepartments.first?.id ?? store.book.departments.first?.id ?? "")
+                    }
+                    QuickButton(title: "希望休", systemImage: "calendar.badge.minus") { openTab(.requests) }
                 }
-                QuickButton(title: "スタッフを追加", systemImage: "person.badge.plus") {
-                    adding = store.newStaff(in: store.book.scopedDepartments.first?.id ?? store.book.departments.first?.id ?? "")
-                }
-                QuickButton(title: "希望休", systemImage: "calendar.badge.minus") { openTab(.requests) }
                 QuickButton(title: "集計", systemImage: "chart.bar.doc.horizontal") { openTab(.summary) }
-                QuickButton(title: "店舗", systemImage: "building.2") { showStores = true }
+                if !db.readOnly {
+                    QuickButton(title: "店舗", systemImage: "building.2") { showStores = true }
+                }
             }
             .padding(.vertical, 4)
         }

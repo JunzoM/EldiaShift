@@ -472,7 +472,9 @@ struct StaffDetailPanel: View {
 
     @ViewBuilder
     private func pay(_ book: ShiftBook) -> some View {
-        if !LaborCostLock.shared.canView {
+        if LaborCostLock.shared.sharedTeam {
+            // 共有されたシフト表では、給与の欄を出さない
+        } else if !LaborCostLock.shared.canView {
             card("給与") {
                 Text("この端末では人件費を隠しています。設定 → 人件費 で表示できます。")
                     .appFont(.subheadline).foregroundStyle(.secondary)

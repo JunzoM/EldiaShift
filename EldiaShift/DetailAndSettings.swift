@@ -159,7 +159,8 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 // よく使うもの（iPhone は下のタブにスタッフ・店舗が無いので、いちばん上に置く）
-                if !wide {
+                // 「見るだけ」で共有されたシフト表では、編集するものを出さない（共有・画面・マニュアル・このアプリについてだけ）
+                if !wide, !db.readOnly {
                 Section {
                     NavigationLink { StaffListView() } label: {
                         LabeledContent {
@@ -207,6 +208,7 @@ struct SettingsView: View {
                     }
                 }
 
+                if !db.readOnly {
                 Section("会社") {
                     NavigationLink { CompanyInfoView() } label: {
                         LabeledContent("会社の情報", value: store.book.company.name.isEmpty ? "未設定" : store.book.company.name)
@@ -247,6 +249,8 @@ struct SettingsView: View {
                     Button("すべて消去して一から作り直す", role: .destructive) { confirmReset = true }
                 } footer: {
                     Text("スタッフ・共通の時間・入力したシフトをすべて消します（部門と休みの種類は残ります）。消す前と、バックアップを読み込む前には、自動でバックアップを残します（「ファイル」アプリ →「このiPad内」→「シフト表」→「自動バックアップ」）。")
+                }
+
                 }
 
                 Section {
@@ -298,9 +302,9 @@ struct SettingsView: View {
     private func export() {
         Task { @MainActor in
             let lock = LaborCostLock.shared
-            if !lock.canView {
+            if lock.needsUnlock {
                 await lock.unlock()
-                guard lock.canView else { return }
+                guard !lock.needsUnlock else { return }
             }
             writeBackup()
         }

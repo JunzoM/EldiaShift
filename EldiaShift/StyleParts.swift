@@ -219,6 +219,7 @@ extension View {
 struct AppSidebar: View {
     @Binding var tab: AppTab
     @Environment(\.shiftStore) private var store
+    @Environment(\.shiftDatabase) private var db
     /// アイコンだけの細いサイドバーにする（端末ごとに覚える）
     @AppStorage("sidebarCompact") private var compact = false
     @Environment(\.appZoom) private var zoom
@@ -266,7 +267,8 @@ struct AppSidebar: View {
 
             ScrollView {
                 VStack(spacing: 4) {
-                    ForEach(Self.main) { item($0) }
+                    // 「見るだけ」のときは、見る・印刷するものだけ
+                    ForEach(db.readOnly ? Self.main.filter(AppTab.readOnlyTabs.contains) : Self.main) { item($0) }
                 }
                 .padding(.horizontal, compact ? 10 : 12)
             }
@@ -671,9 +673,9 @@ struct BackupView: View {
     private func export() {
         Task { @MainActor in
             let lock = LaborCostLock.shared
-            if !lock.canView {
+            if lock.needsUnlock {
                 await lock.unlock()
-                guard lock.canView else { return }
+                guard !lock.needsUnlock else { return }
             }
             writeBackup()
         }
