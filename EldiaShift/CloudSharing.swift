@@ -193,6 +193,15 @@ struct ShareSettingsView: View {
 
     private func refresh() { teams = db.teams() }
 
+    /// iCloud にある最新の共有。端末に残っている共有は、前に権限を変えたあとなどで古いことがあり、
+    /// そのまま Apple の共有の画面に渡すと、権限を変えたときに「オプションを変更できませんでした」と断られる
+    /// （画面が読み直すので、もう一度選ぶと通る）。読めなければ端末のものを使う
+    static func latest(_ share: CKShare, in container: CKContainer) async -> CKShare {
+        let mine = share.recordID.zoneID.ownerName == CKCurrentUserDefaultName
+        let database = mine ? container.privateCloudDatabase : container.sharedCloudDatabase
+        return (try? await database.record(for: share.recordID)) as? CKShare ?? share
+    }
+
     /// 共有を作って（まだなら）、Apple の共有の画面を出す
     private func manage() {
         working = true
@@ -201,7 +210,8 @@ struct ShareSettingsView: View {
             do {
                 let pair: (CKShare, CKContainer)
                 if let existing = db.shareForActiveTeam() {
-                    pair = (existing, CKContainer(identifier: ShiftDatabase.cloudContainerID))
+                    let container = CKContainer(identifier: ShiftDatabase.cloudContainerID)
+                    pair = (await Self.latest(existing, in: container), container)
                 } else {
                     pair = try await db.makeShare()
                 }
