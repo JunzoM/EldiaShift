@@ -149,7 +149,7 @@ final class ShiftDatabase {
         if let existing = try container.fetchShares(matching: [team.objectID])[team.objectID] { return (existing, ck) }
         // 端末に共有の情報が無くても、もう共有しているかもしれない（同期のやり直し中は一時的に消える）。
         // そのまま新しく共有すると、シフト表が新しい共有へ移り、参加者が中身を見られなくなるので、iCloud で確かめる
-        if let existing = try await Self.existingShare(of: container.recordID(for: team.objectID), in: ck) { return (existing, ck) }
+        if let existing = try await Self.existingShare(of: await recordID(of: team.objectID), in: ck) { return (existing, ck) }
         // 共有を作る前に、スタッフの記録に残っている給与（前の版で書いたもの）を消しておく
         try ShiftRecords.stripWagesFromStaff(in: viewContext)
         if viewContext.hasChanges { try viewContext.save() }
@@ -222,6 +222,18 @@ final class ShiftDatabase {
         }
     }
 
+    /// 記録が iCloud のどの区画にあるか。recordID(for:) は Core Data の iCloud の処理が終わるまで呼んだスレッドを止めるので、
+    /// 画面のスレッドでは呼ばない（ビルド 11 で、共有の知らせを受けたときに画面のスレッドで呼び、止まったまま iOS に強制終了された。
+    /// 記録：NSPersistentCloudKitContainer recordIDForManagedObjectID → _PFRequestExecutor wait）
+    private func recordID(of id: NSManagedObjectID) async -> CKRecord.ID? {
+        let cloud = container
+        return await withCheckedContinuation { (cont: CheckedContinuation<CKRecord.ID?, Never>) in
+            DispatchQueue.global(qos: .utility).async(qos: .utility, flags: .enforceQoS) {
+                cont.resume(returning: cloud.recordID(for: id))
+            }
+        }
+    }
+
     /// iCloud から読んだ、表示している共有されたシフト表での自分の権限
     @ObservationIgnored private var serverAccess: (team: NSManagedObjectID, readOnly: Bool)?
 
@@ -231,9 +243,9 @@ final class ShiftDatabase {
     /// 何も取り込まれなかった）。iCloud の知らせが届いたとき・アプリを前に出したときに呼ぶ
     func refreshAccessFromServer() async {
         guard let team = try? ShiftRecords.existingCurrentTeam(viewContext), !team.objectID.isTemporaryID,
-              Self.isShared(team.objectID.persistentStore),
-              let zoneID = container.recordID(for: team.objectID)?.zoneID else { return }
+              Self.isShared(team.objectID.persistentStore) else { return }
         let teamID = team.objectID
+        guard let zoneID = await recordID(of: teamID)?.zoneID else { return }
         let ck = CKContainer(identifier: Self.cloudContainerID)
         let shareID = CKRecord.ID(recordName: CKRecordNameZoneWideShare, zoneID: zoneID)
         guard let share = (try? await ck.sharedCloudDatabase.record(for: shareID)) as? CKShare,
