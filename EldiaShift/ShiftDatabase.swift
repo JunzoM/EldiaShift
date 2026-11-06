@@ -181,11 +181,27 @@ final class ShiftDatabase {
         return (share, shareContainer)
     }
 
-    /// 共有の画面で参加者・権限を変えたあと。共有は Apple の共有の画面が iCloud に保存済みで、
-    /// この端末へは同期で届く。ここで persistUpdatedShare を呼ぶと iCloud の共有も書き直され、
-    /// 開いたままの共有の画面が持つ共有が古くなって、2回目の変更が「オプションを変更できませんでした」と断られる
-    /// （画面のスレッドで呼ぶと強制終了もされた）ので呼ばない。表示だけ読み直す
+    /// 共有の画面で参加者・権限を変えたあと（画面を開いたまま）。共有は Apple の共有の画面が iCloud に保存済み。
+    /// ここで persistUpdatedShare を呼ぶと iCloud の共有も書き直され、開いたままの共有の画面が持つ共有が古くなって、
+    /// 2回目の変更が「オプションを変更できませんでした」と断られるので呼ばない。表示だけ読み直す
     func shareChanged() {
+        refreshAccess()
+        changeToken += 1
+    }
+
+    /// 共有の画面を閉じたあとに1回だけ：変えた共有をこの端末のデータベースにも入れる。
+    /// 入れないと、参加者の端末に権限の変更が届くまで数分かかる（入れると数秒）
+    func persistUpdatedShare(_ share: CKShare) async {
+        guard let store = privateStore else { return }
+        // 保存が終わるまで呼んだスレッドを止める処理なので、画面のスレッドでは呼ばない
+        // （止まったままだと、iOS にアプリを強制終了される）。優先度の固定は makeShare と同じ理由
+        let cloud = container
+        nonisolated(unsafe) let target = store
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global(qos: .utility).async(qos: .utility, flags: .enforceQoS) {
+                cloud.persistUpdatedShare(share, in: target) { _, _ in cont.resume() }
+            }
+        }
         refreshAccess()
         changeToken += 1
     }
