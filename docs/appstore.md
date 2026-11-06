@@ -145,6 +145,10 @@ bash scripts/duo-screenshots.sh
 2. Xcode：Product → Archive → Distribute App → App Store Connect → Upload
 3. App Store Connect でビルドを選び、上の内容と画面写真を入れて「審査へ提出」
 
+### 1.1.1（ビルド 13）
+- 共有を受けた人の「共有した人」に名前が出ず「—」だったのを直す（iCloud の共有から名前を取る）
+- 1.1（ビルド 12）の審査中に、TestFlight で確かめるためにアップロード
+
 ### 1.1（ビルド 12）
 - 2026年11月7日：iOS 版を審査へ提出（手動でリリース・段階的なリリース）。Mac 版は iOS のあとで別に提出する
 - バージョン 1.1・ビルド 12（ビルド 2〜11 は App Store Connect にアップロード済み）。アップロードし直すときはビルド番号を上げる（Xcode の Build、または project の CURRENT_PROJECT_VERSION）
