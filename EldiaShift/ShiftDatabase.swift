@@ -117,7 +117,9 @@ final class ShiftDatabase {
             guard let id = r.value(forKey: "id") as? UUID else { return nil }
             let theirs = Self.isShared(r.objectID.persistentStore)
             let share = shares[r.objectID]
-            return TeamInfo(id: id, sharedWithMe: theirs, ownerName: share.flatMap { Self.name(of: $0.owner) },
+            let owner = share.flatMap { Self.name(of: $0.owner) }
+                ?? (serverOwner?.team == r.objectID ? serverOwner?.name : nil)
+            return TeamInfo(id: id, sharedWithMe: theirs, ownerName: owner,
                             participants: theirs ? 0 : max(0, (share?.participants.count ?? 1) - 1),
                             canEdit: !theirs || container.canUpdateRecord(forManagedObjectWith: r.objectID),
                             isActive: r.objectID == active)
@@ -251,8 +253,18 @@ final class ShiftDatabase {
         guard let share = (try? await ck.sharedCloudDatabase.record(for: shareID)) as? CKShare,
               let me = share.currentUserParticipant else { return }
         serverAccess = (teamID, me.permission != .readWrite)
+        // 共有した人の名前も、iCloud にある共有から取る（端末に残っている共有には名前が入っていないことがある）
+        if let name = Self.name(of: share.owner), serverOwner?.team != teamID || serverOwner?.name != name {
+            serverOwner = (teamID, name)
+            changeToken += 1
+        }
         refreshAccess()
     }
+
+    /// iCloud から読んだ、表示している共有されたシフト表の共有した人の名前。
+    /// B の iPhone・Mac で、端末に残っている共有（fetchShares）からは名前が取れず「共有した人 —」になったが、
+    /// 同じ端末で Apple の共有の画面（iCloud から読み直した共有を渡している）には名前が出た
+    @ObservationIgnored private var serverOwner: (team: NSManagedObjectID, name: String)?
 
     /// 共有の画面で参加者・権限を変えたあと（画面を開いたまま）。共有は Apple の共有の画面が iCloud に保存済み。
     /// ここで persistUpdatedShare を呼ぶと iCloud の共有も書き直され、開いたままの共有の画面が持つ共有が古くなって、
