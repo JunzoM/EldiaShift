@@ -245,14 +245,29 @@ final class ShiftDatabase {
     /// 古いままのことがある（Core Data の既知の制限。B の Mac で、知らせは届くが iCloud は「変わった区画なし」と返し、
     /// 何も取り込まれなかった）。iCloud の知らせが届いたとき・アプリを前に出したときに呼ぶ
     func refreshAccessFromServer() async {
-        guard let team = try? ShiftRecords.existingCurrentTeam(viewContext), !team.objectID.isTemporaryID,
-              Self.isShared(team.objectID.persistentStore) else { return }
+        guard let team = try? ShiftRecords.existingCurrentTeam(viewContext), !team.objectID.isTemporaryID else {
+            Self.log.notice("iCloud の共有を調べない: 表示しているシフト表が無い")
+            return
+        }
+        guard Self.isShared(team.objectID.persistentStore) else { return }
         let teamID = team.objectID
-        guard let zoneID = await recordID(of: teamID)?.zoneID else { return }
+        // 区画は、シフト表の記録の ID から。取れなければ端末に残っている共有から
+        // （ビルド 14 の B の Mac で、ここから先の iCloud への問い合わせが一度も出ていなかった）
+        let recordZone = await recordID(of: teamID)?.zoneID
+        let localShare = shareForActiveTeam()
+        Self.log.notice("iCloud の共有を調べる: 記録の区画=\(recordZone != nil, privacy: .public) 端末の共有=\(localShare != nil, privacy: .public)")
+        guard let zoneID = recordZone ?? localShare?.recordID.zoneID else { return }
         let ck = CKContainer(identifier: Self.cloudContainerID)
-        let shareID = CKRecord.ID(recordName: CKRecordNameZoneWideShare, zoneID: zoneID)
-        guard let share = (try? await ck.sharedCloudDatabase.record(for: shareID)) as? CKShare,
-              let me = share.currentUserParticipant else { return }
+        let shareID = localShare?.recordID ?? CKRecord.ID(recordName: CKRecordNameZoneWideShare, zoneID: zoneID)
+        let fetched: CKRecord?
+        do { fetched = try await ck.sharedCloudDatabase.record(for: shareID) } catch {
+            Self.log.notice("iCloud の共有を読めない: \(String(describing: error), privacy: .public)")
+            return
+        }
+        guard let share = fetched as? CKShare, let me = share.currentUserParticipant else {
+            Self.log.notice("iCloud の共有に自分がいない: 共有=\(fetched is CKShare, privacy: .public)")
+            return
+        }
         serverAccess = (teamID, me.permission != .readWrite)
         // 共有した人の名前も、iCloud にある共有から取る（端末に残っている共有には名前が入っていないことがある）。
         // それにも無ければ、共有のリンクの情報（招待を受けるときに読むもの）から取る

@@ -222,6 +222,8 @@ struct ShareSettingsView: View {
         .navigationTitle("シフト表の共有")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: refresh)
+        // 共有した人の名前・権限を iCloud から読み直す（アプリを開いた直後は、まだ読めていないことがある）
+        .task { await db.refreshAccessFromServer() }
         .onChange(of: db.changeToken) { refresh() }
         .errorAlert($error)
     }
