@@ -146,6 +146,9 @@ final class ShiftDatabase {
         if viewContext.hasChanges { try viewContext.save() }
         let ck = CKContainer(identifier: Self.cloudContainerID)
         if let existing = try container.fetchShares(matching: [team.objectID])[team.objectID] { return (existing, ck) }
+        // 端末に共有の情報が無くても、もう共有しているかもしれない（同期のやり直し中は一時的に消える）。
+        // そのまま新しく共有すると、シフト表が新しい共有へ移り、参加者が中身を見られなくなるので、iCloud で確かめる
+        if let existing = try await Self.existingShare(of: container.recordID(for: team.objectID), in: ck) { return (existing, ck) }
         // 共有を作る前に、スタッフの記録に残っている給与（前の版で書いたもの）を消しておく
         try ShiftRecords.stripWagesFromStaff(in: viewContext)
         if viewContext.hasChanges { try viewContext.save() }
@@ -179,6 +182,43 @@ final class ShiftDatabase {
         }
         share[CKShare.SystemFieldKey.title] = "シフト表" as CKRecordValue
         return (share, shareContainer)
+    }
+
+    /// Core Data が共有に使う区画の名前（共有するたびに、この名前で始まる区画が1つ作られる）
+    nonisolated static let shareZonePrefix = "com.apple.coredata.cloudkit.share."
+
+    /// 自分のシフト表がもう共有されていれば、iCloud にあるその共有。共有されていないと確かめられたときだけ nil。
+    /// 確かめられないとき（通信できない・同期のやり直し中で区画が分からない）は shareLoading を投げ、新しく共有させない
+    static func existingShare(of recordID: CKRecord.ID?, in ck: CKContainer) async throws -> CKShare? {
+        let database = ck.privateCloudDatabase
+        let zones: [CKRecordZone.ID]
+        if let zone = recordID?.zoneID {
+            // チームがどの区画にあるか分かる：共有の区画でなければ、まだ共有していない
+            guard zone.zoneName.hasPrefix(shareZonePrefix) else { return nil }
+            zones = [zone]
+        } else {
+            // 分からない（同期のやり直し中など）：iCloud にある共有の区画を調べる。1つも無ければ、まだ共有していない
+            do {
+                zones = try await database.allRecordZones().map(\.zoneID).filter { $0.zoneName.hasPrefix(shareZonePrefix) }
+            } catch {
+                throw ShareError.shareLoading
+            }
+            guard !zones.isEmpty else { return nil }
+            // 共有の区画が2つ以上あると、どれがこのシフト表か分からない
+            guard zones.count == 1 else { throw ShareError.shareLoading }
+        }
+        do {
+            let record = try await database.record(for: CKRecord.ID(recordName: CKRecordNameZoneWideShare, zoneID: zones[0]))
+            guard let share = record as? CKShare else { throw ShareError.shareLoading }
+            return share
+        } catch let error as CKError where error.code == .unknownItem || error.code == .zoneNotFound {
+            // 区画はあるが共有は無い（共有をやめたあと）：新しく共有してよい
+            return nil
+        } catch let error as ShareError {
+            throw error
+        } catch {
+            throw ShareError.shareLoading
+        }
     }
 
     /// 共有の画面で参加者・権限を変えたあと（画面を開いたまま）。共有は Apple の共有の画面が iCloud に保存済み。
@@ -381,10 +421,11 @@ enum TeamChoice {
 }
 
 enum ShareError: LocalizedError {
-    case readOnly, iCloudOff, notOwner
+    case readOnly, iCloudOff, notOwner, shareLoading
 
     var errorDescription: String? {
         switch self {
+        case .shareLoading: "共有の情報を iCloud から読み込んでいるところです。少し待ってから、もう一度開いてください。"
         case .readOnly: "このシフト表は「見るだけ」で共有されています。変更できません（共有した人に「編集できる」にしてもらってください）。"
         case .iCloudOff: "共有するには、設定の「iCloud で同期する」をオンにしてください。"
         case .notOwner: "共有されたシフト表は、さらにほかの人へ共有できません。参加者を増やすときは、共有した人に頼んでください。"
