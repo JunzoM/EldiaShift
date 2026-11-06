@@ -1,6 +1,7 @@
 name: App Store Screenshots
 
-# App Store 提出用の画面写真（iPad 13インチ・iPhone 6.9インチ）。appstore-screenshots ブランチに置く
+# App Store 提出用の画面写真（iPad 13インチ・iPhone 6.9インチ・6.3インチ）。appstore-screenshots ブランチに置く
+# Mac 版は scripts/mac-screenshots.sh を手元の Mac で動かす
 on:
   workflow_dispatch:
   pull_request:
@@ -81,6 +82,14 @@ jobs:
           shoot "$PHONE" iphone-6.9/3-week -demoWeek
           shoot "$PHONE" iphone-6.9/4-day -demoDay -demoEdit
           shoot "$PHONE" iphone-6.9/5-personal -demoPersonal
+          # App Store Connect の iPhone の欄は「Dynamic Island 搭載 iPhone（中型ディスプレイ）」になり、
+          # 6.9インチ（1320×2868）は受け付けないため、6.3インチ（1206×2622）に縮めたものも作る
+          mkdir -p shots/iphone-6.3
+          for f in shots/iphone-6.9/*.png; do
+            sips -z 2622 1206 "$f" --out "shots/iphone-6.3/$(basename "$f")" >/dev/null
+            sips -s format jpeg "shots/iphone-6.3/$(basename "$f")" --out /tmp/rgb.jpg >/dev/null
+            sips -s format png /tmp/rgb.jpg --out "shots/iphone-6.3/$(basename "$f")" >/dev/null
+          done
           python3 - <<'PY'
           import struct, glob
           for f in sorted(glob.glob("shots/*/*.png")):

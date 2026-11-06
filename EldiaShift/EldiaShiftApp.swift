@@ -20,6 +20,9 @@ struct EldiaShiftApp: App {
             let m: GridMode = args.contains("-demoWeek") ? .week : args.contains("-demoDay") ? .day : .month
             UserDefaults.standard.set(m.rawValue, forKey: "viewMode")
             s.editing = args.contains("-demoEdit")
+            #if targetEnvironment(macCatalyst)
+            DemoMode.macSnapshotIfRequested()
+            #endif
         }
         ShiftStore.current = s
         // 画面の題名（真ん中・18pt 太字）。Mac は 表示 → 拡大・縮小 の倍率もかける（MacZoom）
@@ -530,6 +533,33 @@ enum DemoMode {
     static var staffing: Bool { enabled && ProcessInfo.processInfo.arguments.contains("-demoStaffing") }
     static var hourly: Bool { enabled && ProcessInfo.processInfo.arguments.contains("-demoHourly") }
     static var printLandscape: Bool { ProcessInfo.processInfo.arguments.contains("-demoLandscapePage") }
+
+    #if targetEnvironment(macCatalyst)
+    /// Mac の App Store 用の画面写真：-demoSnapshot <保存先.png> のとき、窓を 1280×800 にして自分の画面を書き出し、終わる
+    /// （2560×1600 の PNG。画面収録の許可が無くても撮れる）
+    static func macSnapshotIfRequested() {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-demoSnapshot"), i + 1 < args.count else { return }
+        let url = URL(fileURLWithPath: args[i + 1])
+        func scene() -> UIWindowScene? { UIApplication.shared.connectedScenes.first as? UIWindowScene }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            let size = CGSize(width: 1280, height: 800)
+            scene()?.sizeRestrictions?.minimumSize = size
+            scene()?.sizeRestrictions?.maximumSize = size
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 9) {
+            guard let window = scene()?.windows.first(where: \.isKeyWindow) ?? scene()?.windows.first else { exit(1) }
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 2
+            format.opaque = true
+            let image = UIGraphicsImageRenderer(bounds: window.bounds, format: format).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            try? image.pngData()?.write(to: url)
+            exit(0)
+        }
+    }
+    #endif
 
     static func book() -> ShiftBook {
         var b = ShiftBook()
