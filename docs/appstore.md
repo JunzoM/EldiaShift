@@ -52,7 +52,7 @@ SHIFT は、ホテルや店舗の現場で使うシフト表アプリです。�
 ・掛け持ちのスタッフは、ほかの店舗で勤務する日もひと目で分かり、二重に入れることを防止
 
 ■ 共有・出力
-・iCloud で、ほかの Apple ID の人とシフト表を共有（一緒に編集・見るだけ。給与は共有されません）
+・iCloud で、ほかの Apple ID の人とシフト表を共有（一緒に編集・見るだけ。給与・人件費は共有されません）
 ・PDF・印刷（AirPrint）・CSV で出力
 ・一人ずつのシフト画像を作って LINE で送れる
 ・前回の公開からの変更点を、文章にして一緒に送れる
@@ -73,7 +73,7 @@ SHIFT は、ホテルや店舗の現場で使うシフト表アプリです。�
 ・アプリの中のロゴ「〇〇 SHIFT」を、店舗ごとに自分の名前に
 
 ### このバージョンの新機能（1.1）
-・シフト表の共有：iCloud で、ほかの Apple ID の人と一緒に編集（見るだけも可）
+・シフト表の共有：iCloud で、ほかの Apple ID の人と一緒に編集（見るだけも可）。給与・人件費は共有した相手には表示しません
 ・希望休の申請：事務所に貼るQRコードから、スタッフがスマホで申請。届いたリンクを押すだけで取り込み、承認・却下・返事まで
 ・人件費：時給・月給の履歴、時間外・週40時間・深夜の割増を含めた月の概算。端末ごとに隠す設定も
 ・ホーム：会社の下に各店舗が並び、店舗ごとの出勤人数と承認待ちがひと目で分かる
@@ -89,14 +89,30 @@ SHIFT は、ホテルや店舗の現場で使うシフト表アプリです。�
 ログインは不要です。初回起動で「新しく作る」を押すと、例の部門と時間のひな形が入った状態で始まります。「スタッフを追加」で数人を追加すると、シフト表・ホーム・印刷の機能を確認できます。最低賃金の公開データ（GitHub 上の JSON）の読み込みを除き、運営者のサーバーとの通信は行いません。利用者のデータは外部へ送信せず、端末と利用者の iCloud（CloudKit）にのみ保存します。
 
 1.1 で追加した機能について：
+・シフト表の共有：設定 →「シフト表の共有」から、iCloud の共有（Apple 標準の画面）でほかの Apple ID の人を招待します。相手の権限は「編集できる」「見るだけ」から選べます。共有を受けた人には給与・人件費は表示されません。「見るだけ」の人には、ホーム・シフト表・集計・印刷・出力・設定だけを表示します。
 ・希望休の申請：スタッフ用の申請ページ（https://facility-manager-phi.vercel.app/hotel-shift/request）は入力内容をサーバーに送らず、申請の内容を URL の「#」以降に入れたリンクを作るだけです。Associated Domains（applinks:facility-manager-phi.vercel.app）は、このリンクを押したときに SHIFT の「申請を受け取る」画面を開くために使います。お試し用のリンク（スタッフ「見本 花子」を登録すると名前が自動で選ばれます）：
 https://facility-manager-phi.vercel.app/hotel-shift/r?openExternalBrowser=1#eyJ2IjoxLCJuIjoi6KaL5pysIOiKseWtkCIsInMiOiLopovmnKzjg5vjg4bjg6sg5pys6aSoIiwiZCI6WyIyMDI2LTEyLTAzIiwiMjAyNi0xMi0xMCJdLCJyIjoi5a-p5p-755So44Gu6KaL5pysIn0
 ・Face ID：設定 → 人件費 →「この端末で人件費・給与を隠す」をオンにしたときだけ、人件費を表示する前の本人確認に使います（確認は iOS が行い、アプリは生体情報を受け取りません）。
 
+## Mac 版の説明（App Store Connect の macOS の欄）
+iOS と同じ文章を元に、次のところだけ変える。
+- 冒頭：「iPad・iPhone でかんたんに作成・共有できます」→「Mac でかんたんに作成・共有できます。同じ Apple ID の iPad・iPhone とも iCloud で同じシフト表を使えます」
+- プロモーション用テキスト：「iPad・iPhone で」→「Mac で」
+- 人件費：「（Face ID・パスコードで表示）」→「（Touch ID・パスワードで表示）」
+- 安心のデータ管理：「同じ Apple ID の iPad・iPhone で」→「同じ Apple ID の Mac・iPad・iPhone で」
+- 末尾に「■ Mac で使いやすく」として「・メニューとキーボードで操作（⌘1〜⌘6 で画面の切り替え、⌘P で印刷・出力、⌘, で設定）」「・窓を大きくして、月のシフト表を広く表示」を足す
+
 ## 画面写真
 GitHub Actions の「App Store Screenshots」で作成し、`appstore-screenshots` ブランチに置く。
-- ipad-13/：iPad 13インチ用
-- iphone-6.9/：iPhone 6.9インチ用
+- ipad-13/：iPad 13インチ用（2064 × 2752）
+- iphone-6.3/：iPhone 用（1206 × 2622）。2026年11月の App Store Connect では iPhone の欄が「Dynamic Island 搭載 iPhone（中型ディスプレイ）」で、6.1・6.3インチの大きさしか受け付けない。1.1 はこれを使った
+- iphone-6.9/：iPhone 6.9インチ用（1320 × 2868）。1.0 で使った
+
+Mac 版（2560 × 1600・6枚）は手元の Mac で撮る（画面収録の許可は要らない）。`shots/mac/` にできる。
+
+```
+bash scripts/mac-screenshots.sh
+```
 
 ### iPhone Duo（折りたたみ）
 GitHub の環境にはまだ Duo のシミュレーターが無いので、Xcode 27 の入った Mac で撮る（任意。2027年4月からは iOS 27.1 SDK 以降で作ったアプリに必須になる予定）。
@@ -118,7 +134,7 @@ bash scripts/duo-screenshots.sh
 - Mac 用の権限は `Config/EldiaShift-mac.entitlements`（App Sandbox・ネットワーク（iCloud）・選んだファイルの読み書き・印刷・iCloud・iCloud 共有の拡張（`icloud-extended-share-access`）・プッシュ・Associated Domains）。iOS の権限ファイルにも iCloud 共有の拡張を入れる（無いと iOS 26 以降で共有も同期も始まらない）
 - Info.plist の使用目的：Face ID（人件費を表示するとき）・写真への追加（一人ずつの画像を共有メニューの「画像を保存」で保存するとき。無いと保存を押した瞬間にアプリが落ちる）
 - Developer サイト：App ID で「Mac Catalyst」を有効にし、Mac 用のプロビジョニングプロファイルを作る（Xcode の自動署名なら Signing & Capabilities で Mac を選ぶだけ）。iCloud コンテナは iOS と同じ
-- App Store Connect：同じアプリに macOS のビルドを足す（Xcode の Archive で「My Mac (Mac Catalyst)」を選んでアップロード）。Mac 用の画面写真（1280×800 以上）が要る
+- App Store Connect：同じアプリに macOS のビルドを足す（Xcode の Archive で「My Mac (Mac Catalyst)」を選んでアップロード）。Mac 用の画面写真（1280×800・1440×900・2560×1600・2880×1800 のどれか）が要る。左の「プラットフォームを追加」→ macOS で Mac の欄ができる
 - ウインドウの最初の大きさ 1280×820、いちばん小さい大きさ 960×640
 - メニュー：表示（⌘1〜⌘6）・印刷・出力（⌘P）・設定（⌘,）
 - CI（Build）で、Mac Catalyst のビルドも毎回確かめる
@@ -130,6 +146,7 @@ bash scripts/duo-screenshots.sh
 3. App Store Connect でビルドを選び、上の内容と画面写真を入れて「審査へ提出」
 
 ### 1.1（ビルド 12）
+- 2026年11月7日：iOS 版を審査へ提出（手動でリリース・段階的なリリース）。Mac 版は iOS のあとで別に提出する
 - バージョン 1.1・ビルド 12（ビルド 2〜11 は App Store Connect にアップロード済み）。アップロードし直すときはビルド番号を上げる（Xcode の Build、または project の CURRENT_PROJECT_VERSION）
 - CloudKit：1.1 で足した入れ物（`PayRecord`・`CellRecord.note`）と iCloud 共有があるので、スキーマを本番へ反映する（[sharing-test.md](sharing-test.md)）
 - TestFlight：TestFlight と App Store は CloudKit の本番環境を使うので、審査に出す前に TestFlight 版で共有の招待・受け取り・編集の反映を確かめる。App Store の 1.0 にデータを入れた端末へ上書きで入れて、データが残ることも確かめる
