@@ -192,7 +192,7 @@ struct ShareSettingsView: View {
 
             Section {
                 if let active, active.sharedWithMe {
-                    LabeledContent("共有した人", value: active.ownerName.map { "\($0)さん" } ?? "—")
+                    LabeledContent("共有元", value: active.sourceName ?? "—")
                     LabeledContent("この端末でできること", value: active.canEdit ? "編集できる" : "見るだけ")
                     Button { manage() } label: { Label("参加者を見る・共有から抜ける", systemImage: "person.2") }
                         .disabled(working)

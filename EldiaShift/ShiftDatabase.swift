@@ -94,16 +94,27 @@ final class ShiftDatabase {
         let id: UUID
         /// ほかの人から共有された
         let sharedWithMe: Bool
-        /// 共有した人（共有されたシフト表のとき）
-        let ownerName: String?
+        /// 共有元（共有されたシフト表の会社名。無ければ最初の店舗名）。
+        /// 共有した人の名前は、iCloud が参加者のアプリに渡さないので使えない（ビルド 15 の B の Mac の記録で、
+        /// 端末の共有・iCloud の共有・共有のリンクの情報のどれにも、名前もメールアドレスも入っていなかった）
+        let sourceName: String?
         /// 自分のシフト表を共有している人数（自分を除く）
         let participants: Int
         let canEdit: Bool
         let isActive: Bool
 
         var title: String {
-            sharedWithMe ? "\(ownerName.map { "\($0)さん" } ?? "ほかの人")のシフト表（共有）" : "自分のシフト表"
+            sharedWithMe ? "\(sourceName ?? "ほかの人")のシフト表（共有）" : "自分のシフト表"
         }
+    }
+
+    /// シフト表の設定（共有されている）から、会社名か最初の店舗名
+    nonisolated static func sourceName(of team: NSManagedObject) -> String? {
+        guard let data = team.value(forKey: "settings") as? Data,
+              let settings = try? JSONDecoder().decode(TeamSettings.self, from: data) else { return nil }
+        let names = [settings.company?.name, settings.stores?.first?.name]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        return names.first { !$0.isEmpty }
     }
 
     /// 自分のシフト表と、共有されたシフト表
@@ -117,9 +128,7 @@ final class ShiftDatabase {
             guard let id = r.value(forKey: "id") as? UUID else { return nil }
             let theirs = Self.isShared(r.objectID.persistentStore)
             let share = shares[r.objectID]
-            let owner = share.flatMap { Self.name(of: $0.owner) }
-                ?? (serverOwner?.team == r.objectID ? serverOwner?.name : nil)
-            return TeamInfo(id: id, sharedWithMe: theirs, ownerName: owner,
+            return TeamInfo(id: id, sharedWithMe: theirs, sourceName: theirs ? Self.sourceName(of: r) : nil,
                             participants: theirs ? 0 : max(0, (share?.participants.count ?? 1) - 1),
                             canEdit: !theirs || container.canUpdateRecord(forManagedObjectWith: r.objectID),
                             isActive: r.objectID == active)
@@ -253,18 +262,8 @@ final class ShiftDatabase {
         guard let share = (try? await ck.sharedCloudDatabase.record(for: shareID)) as? CKShare,
               let me = share.currentUserParticipant else { return }
         serverAccess = (teamID, me.permission != .readWrite)
-        // 共有した人の名前も、iCloud にある共有から取る（端末に残っている共有には名前が入っていないことがある）
-        if let name = Self.name(of: share.owner), serverOwner?.team != teamID || serverOwner?.name != name {
-            serverOwner = (teamID, name)
-            changeToken += 1
-        }
         refreshAccess()
     }
-
-    /// iCloud から読んだ、表示している共有されたシフト表の共有した人の名前。
-    /// B の iPhone・Mac で、端末に残っている共有（fetchShares）からは名前が取れず「共有した人 —」になったが、
-    /// 同じ端末で Apple の共有の画面（iCloud から読み直した共有を渡している）には名前が出た
-    @ObservationIgnored private var serverOwner: (team: NSManagedObjectID, name: String)?
 
     /// 共有の画面で参加者・権限を変えたあと（画面を開いたまま）。共有は Apple の共有の画面が iCloud に保存済み。
     /// ここで persistUpdatedShare を呼ぶと iCloud の共有も書き直され、開いたままの共有の画面が持つ共有が古くなって、
@@ -364,11 +363,6 @@ final class ShiftDatabase {
         if readOnly != locked { readOnly = locked }
     }
 
-    nonisolated static func name(of p: CKShare.Participant) -> String? {
-        guard let c = p.userIdentity.nameComponents else { return nil }
-        let s = PersonNameComponentsFormatter.localizedString(from: c, style: .default)
-        return s.isEmpty ? nil : s
-    }
 
     private static func makeContainer(iCloud: Bool, inMemory: Bool) -> NSPersistentCloudKitContainer {
         let c = NSPersistentCloudKitContainer(name: "EldiaShift", managedObjectModel: ShiftModel.model)
