@@ -1,7 +1,6 @@
 import CloudKit
 import CoreData
 import Observation
-import os
 
 /// 端末内のデータベース（Core Data）。サーバーは使わない。
 /// ・iCloud 同期オフ：この端末の中だけで完結
@@ -95,16 +94,27 @@ final class ShiftDatabase {
         let id: UUID
         /// ほかの人から共有された
         let sharedWithMe: Bool
-        /// 共有した人（共有されたシフト表のとき）
-        let ownerName: String?
+        /// 共有元（共有されたシフト表の会社名。無ければ最初の店舗名）。
+        /// 共有した人の名前は、iCloud が参加者のアプリに渡さないので使えない（ビルド 15 の B の Mac の記録で、
+        /// 端末の共有・iCloud の共有・共有のリンクの情報のどれにも、名前もメールアドレスも入っていなかった）
+        let sourceName: String?
         /// 自分のシフト表を共有している人数（自分を除く）
         let participants: Int
         let canEdit: Bool
         let isActive: Bool
 
         var title: String {
-            sharedWithMe ? "\(ownerName.map { "\($0)さん" } ?? "ほかの人")のシフト表（共有）" : "自分のシフト表"
+            sharedWithMe ? "\(sourceName ?? "ほかの人")のシフト表（共有）" : "自分のシフト表"
         }
+    }
+
+    /// シフト表の設定（共有されている）から、会社名か最初の店舗名
+    nonisolated static func sourceName(of team: NSManagedObject) -> String? {
+        guard let data = team.value(forKey: "settings") as? Data,
+              let settings = try? JSONDecoder().decode(TeamSettings.self, from: data) else { return nil }
+        let names = [settings.company?.name, settings.stores?.first?.name]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        return names.first { !$0.isEmpty }
     }
 
     /// 自分のシフト表と、共有されたシフト表
@@ -118,9 +128,7 @@ final class ShiftDatabase {
             guard let id = r.value(forKey: "id") as? UUID else { return nil }
             let theirs = Self.isShared(r.objectID.persistentStore)
             let share = shares[r.objectID]
-            let owner = share.flatMap { Self.name(of: $0.owner) }
-                ?? (serverOwner?.team == r.objectID ? serverOwner?.name : nil)
-            return TeamInfo(id: id, sharedWithMe: theirs, ownerName: owner,
+            return TeamInfo(id: id, sharedWithMe: theirs, sourceName: theirs ? Self.sourceName(of: r) : nil,
                             participants: theirs ? 0 : max(0, (share?.participants.count ?? 1) - 1),
                             canEdit: !theirs || container.canUpdateRecord(forManagedObjectWith: r.objectID),
                             isActive: r.objectID == active)
@@ -245,76 +253,16 @@ final class ShiftDatabase {
     /// 古いままのことがある（Core Data の既知の制限。B の Mac で、知らせは届くが iCloud は「変わった区画なし」と返し、
     /// 何も取り込まれなかった）。iCloud の知らせが届いたとき・アプリを前に出したときに呼ぶ
     func refreshAccessFromServer() async {
-        guard let team = try? ShiftRecords.existingCurrentTeam(viewContext), !team.objectID.isTemporaryID else {
-            Self.log.notice("iCloud の共有を調べない: 表示しているシフト表が無い")
-            return
-        }
-        guard Self.isShared(team.objectID.persistentStore) else { return }
+        guard let team = try? ShiftRecords.existingCurrentTeam(viewContext), !team.objectID.isTemporaryID,
+              Self.isShared(team.objectID.persistentStore) else { return }
         let teamID = team.objectID
-        // 区画は、シフト表の記録の ID から。取れなければ端末に残っている共有から
-        // （ビルド 14 の B の Mac で、ここから先の iCloud への問い合わせが一度も出ていなかった）
-        let recordZone = await recordID(of: teamID)?.zoneID
-        let localShare = shareForActiveTeam()
-        Self.log.notice("iCloud の共有を調べる: 記録の区画=\(recordZone != nil, privacy: .public) 端末の共有=\(localShare != nil, privacy: .public)")
-        guard let zoneID = recordZone ?? localShare?.recordID.zoneID else { return }
+        guard let zoneID = await recordID(of: teamID)?.zoneID else { return }
         let ck = CKContainer(identifier: Self.cloudContainerID)
-        let shareID = localShare?.recordID ?? CKRecord.ID(recordName: CKRecordNameZoneWideShare, zoneID: zoneID)
-        let fetched: CKRecord?
-        do { fetched = try await ck.sharedCloudDatabase.record(for: shareID) } catch {
-            Self.log.notice("iCloud の共有を読めない: \(String(describing: error), privacy: .public)")
-            return
-        }
-        guard let share = fetched as? CKShare, let me = share.currentUserParticipant else {
-            Self.log.notice("iCloud の共有に自分がいない: 共有=\(fetched is CKShare, privacy: .public)")
-            return
-        }
+        let shareID = CKRecord.ID(recordName: CKRecordNameZoneWideShare, zoneID: zoneID)
+        guard let share = (try? await ck.sharedCloudDatabase.record(for: shareID)) as? CKShare,
+              let me = share.currentUserParticipant else { return }
         serverAccess = (teamID, me.permission != .readWrite)
-        // 共有した人の名前も、iCloud にある共有から取る（端末に残っている共有には名前が入っていないことがある）。
-        // それにも無ければ、共有のリンクの情報（招待を受けるときに読むもの）から取る
-        let serverName = Self.name(of: share.owner)
-        let metadataName = serverName == nil ? await Self.ownerNameFromMetadata(share.url, in: ck) : nil
-        let identity = share.owner.userIdentity
-        Self.log.notice("""
-            共有した人の名前: 端末=\(self.shareForActiveTeam().flatMap { Self.name(of: $0.owner) } != nil, privacy: .public) \
-            iCloud=\(serverName != nil, privacy: .public) リンク=\(metadataName != nil, privacy: .public) \
-            メール=\(identity.lookupInfo?.emailAddress != nil, privacy: .public) \
-            電話=\(identity.lookupInfo?.phoneNumber != nil, privacy: .public) \
-            iCloudあり=\(identity.hasiCloudAccount, privacy: .public) URL=\(share.url != nil, privacy: .public)
-            """)
-        if let name = serverName ?? metadataName, serverOwner?.team != teamID || serverOwner?.name != name {
-            serverOwner = (teamID, name)
-            changeToken += 1
-        }
         refreshAccess()
-    }
-
-    /// iCloud から読んだ、表示している共有されたシフト表の共有した人の名前。
-    /// B の iPhone・Mac で、端末に残っている共有（fetchShares）からは名前が取れず「共有した人 —」になったが、
-    /// 同じ端末で Apple の共有の画面（iCloud から読み直した共有を渡している）には名前が出た
-    @ObservationIgnored private var serverOwner: (team: NSManagedObjectID, name: String)?
-
-    /// 共有の調べもの（Mac の「コンソール」や `log show --predicate 'subsystem == "com.bestdelight.eldiashift"'` で見る）
-    nonisolated static let log = Logger(subsystem: "com.bestdelight.eldiashift", category: "share")
-
-    /// 共有のリンクの情報（CKShare.Metadata）にある、共有した人の名前
-    nonisolated static func ownerNameFromMetadata(_ url: URL?, in ck: CKContainer) async -> String? {
-        guard let url else { return nil }
-        final class Box: @unchecked Sendable { var name: String?; var error: Error? }
-        let box = Box()
-        return await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
-            let op = CKFetchShareMetadataOperation(shareURLs: [url])
-            op.perShareMetadataResultBlock = { _, result in
-                switch result {
-                case .success(let m): box.name = name(of: m.share.owner)
-                case .failure(let e): box.error = e
-                }
-            }
-            op.fetchShareMetadataResultBlock = { _ in
-                if let e = box.error { log.notice("共有のリンクの情報を読めませんでした: \(String(describing: e), privacy: .public)") }
-                cont.resume(returning: box.name)
-            }
-            ck.add(op)
-        }
     }
 
     /// 共有の画面で参加者・権限を変えたあと（画面を開いたまま）。共有は Apple の共有の画面が iCloud に保存済み。
@@ -415,11 +363,6 @@ final class ShiftDatabase {
         if readOnly != locked { readOnly = locked }
     }
 
-    nonisolated static func name(of p: CKShare.Participant) -> String? {
-        guard let c = p.userIdentity.nameComponents else { return nil }
-        let s = PersonNameComponentsFormatter.localizedString(from: c, style: .default)
-        return s.isEmpty ? nil : s
-    }
 
     private static func makeContainer(iCloud: Bool, inMemory: Bool) -> NSPersistentCloudKitContainer {
         let c = NSPersistentCloudKitContainer(name: "EldiaShift", managedObjectModel: ShiftModel.model)

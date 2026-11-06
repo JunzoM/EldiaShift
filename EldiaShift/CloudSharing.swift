@@ -192,7 +192,7 @@ struct ShareSettingsView: View {
 
             Section {
                 if let active, active.sharedWithMe {
-                    LabeledContent("共有した人", value: active.ownerName.map { "\($0)さん" } ?? "—")
+                    LabeledContent("共有元", value: active.sourceName ?? "—")
                     LabeledContent("この端末でできること", value: active.canEdit ? "編集できる" : "見るだけ")
                     Button { manage() } label: { Label("参加者を見る・共有から抜ける", systemImage: "person.2") }
                         .disabled(working)
@@ -222,8 +222,6 @@ struct ShareSettingsView: View {
         .navigationTitle("シフト表の共有")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: refresh)
-        // 共有した人の名前・権限を iCloud から読み直す（アプリを開いた直後は、まだ読めていないことがある）
-        .task { await db.refreshAccessFromServer() }
         .onChange(of: db.changeToken) { refresh() }
         .errorAlert($error)
     }
