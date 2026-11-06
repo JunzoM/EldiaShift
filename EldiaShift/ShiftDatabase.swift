@@ -299,18 +299,17 @@ final class ShiftDatabase {
     }
 
     /// 表示しているチームが共有されたものか・編集できるかを調べ直す
+    /// 変わったときだけ書く（取り込みのたびに呼ぶので、同じ値で画面を描き直させない）
     private func refreshAccess() {
-        guard let team = try? ShiftRecords.existingCurrentTeam(viewContext), !team.objectID.isTemporaryID else {
-            readOnly = false
-            viewingSharedTeam = false
-            LaborCostLock.shared.sharedTeam = false
-            return
+        var theirs = false, locked = false
+        if let team = try? ShiftRecords.existingCurrentTeam(viewContext), !team.objectID.isTemporaryID {
+            theirs = Self.isShared(team.objectID.persistentStore)
+            locked = theirs && !container.canUpdateRecord(forManagedObjectWith: team.objectID)
         }
-        let theirs = Self.isShared(team.objectID.persistentStore)
-        viewingSharedTeam = theirs
+        if viewingSharedTeam != theirs { viewingSharedTeam = theirs }
         // 共有されたシフト表では、給与・人件費を出さない（「編集できる」でも「見るだけ」でも）
-        LaborCostLock.shared.sharedTeam = theirs
-        readOnly = theirs && !container.canUpdateRecord(forManagedObjectWith: team.objectID)
+        if LaborCostLock.shared.sharedTeam != theirs { LaborCostLock.shared.sharedTeam = theirs }
+        if readOnly != locked { readOnly = locked }
     }
 
     nonisolated static func name(of p: CKShare.Participant) -> String? {
@@ -379,6 +378,7 @@ final class ShiftDatabase {
         }
     }
 
+    /// iCloud から取り込み終えたら、権限を調べ直す。
     /// 共有された入れ物の同期の準備が「壊れている」で失敗したら、起動ごとに1回だけ作り直す
     private func observeSyncEvents() {
         if let eventObserver { NotificationCenter.default.removeObserver(eventObserver) }
@@ -388,8 +388,14 @@ final class ShiftDatabase {
             queue: .main
         ) { [weak self] note in
             guard let event = note.userInfo?[NSPersistentCloudKitContainer.eventNotificationUserInfoKey]
-                    as? NSPersistentCloudKitContainer.Event,
-                  event.type == .setup, event.endDate != nil, !event.succeeded,
+                    as? NSPersistentCloudKitContainer.Event, event.endDate != nil else { return }
+            if event.type == .import {
+                // 権限（共有の情報）だけが変わったときは、データが変わった知らせ（RemoteChange）が来ないことがある（Mac で、
+                // 開き直すまで「見るだけ」⇔「編集できる」が変わらなかった）。取り込みが終わるたびに調べ直す
+                if event.succeeded { Task { @MainActor in self?.refreshAccess() } }
+                return
+            }
+            guard event.type == .setup, !event.succeeded,
                   let error = event.error, Self.isBrokenSharedStore(error) else { return }
             let storeID = event.storeIdentifier
             Task { @MainActor in
