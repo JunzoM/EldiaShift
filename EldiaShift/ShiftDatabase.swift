@@ -1,6 +1,7 @@
 import CloudKit
 import CoreData
 import Observation
+import os
 
 /// 端末内のデータベース（Core Data）。サーバーは使わない。
 /// ・iCloud 同期オフ：この端末の中だけで完結
@@ -253,8 +254,19 @@ final class ShiftDatabase {
         guard let share = (try? await ck.sharedCloudDatabase.record(for: shareID)) as? CKShare,
               let me = share.currentUserParticipant else { return }
         serverAccess = (teamID, me.permission != .readWrite)
-        // 共有した人の名前も、iCloud にある共有から取る（端末に残っている共有には名前が入っていないことがある）
-        if let name = Self.name(of: share.owner), serverOwner?.team != teamID || serverOwner?.name != name {
+        // 共有した人の名前も、iCloud にある共有から取る（端末に残っている共有には名前が入っていないことがある）。
+        // それにも無ければ、共有のリンクの情報（招待を受けるときに読むもの）から取る
+        let serverName = Self.name(of: share.owner)
+        let metadataName = serverName == nil ? await Self.ownerNameFromMetadata(share.url, in: ck) : nil
+        let identity = share.owner.userIdentity
+        Self.log.notice("""
+            共有した人の名前: 端末=\(self.shareForActiveTeam().flatMap { Self.name(of: $0.owner) } != nil, privacy: .public) \
+            iCloud=\(serverName != nil, privacy: .public) リンク=\(metadataName != nil, privacy: .public) \
+            メール=\(identity.lookupInfo?.emailAddress != nil, privacy: .public) \
+            電話=\(identity.lookupInfo?.phoneNumber != nil, privacy: .public) \
+            iCloudあり=\(identity.hasiCloudAccount, privacy: .public) URL=\(share.url != nil, privacy: .public)
+            """)
+        if let name = serverName ?? metadataName, serverOwner?.team != teamID || serverOwner?.name != name {
             serverOwner = (teamID, name)
             changeToken += 1
         }
@@ -265,6 +277,30 @@ final class ShiftDatabase {
     /// B の iPhone・Mac で、端末に残っている共有（fetchShares）からは名前が取れず「共有した人 —」になったが、
     /// 同じ端末で Apple の共有の画面（iCloud から読み直した共有を渡している）には名前が出た
     @ObservationIgnored private var serverOwner: (team: NSManagedObjectID, name: String)?
+
+    /// 共有の調べもの（Mac の「コンソール」や `log show --predicate 'subsystem == "com.bestdelight.eldiashift"'` で見る）
+    nonisolated static let log = Logger(subsystem: "com.bestdelight.eldiashift", category: "share")
+
+    /// 共有のリンクの情報（CKShare.Metadata）にある、共有した人の名前
+    nonisolated static func ownerNameFromMetadata(_ url: URL?, in ck: CKContainer) async -> String? {
+        guard let url else { return nil }
+        final class Box: @unchecked Sendable { var name: String?; var error: Error? }
+        let box = Box()
+        return await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
+            let op = CKFetchShareMetadataOperation(shareURLs: [url])
+            op.perShareMetadataResultBlock = { _, result in
+                switch result {
+                case .success(let m): box.name = name(of: m.share.owner)
+                case .failure(let e): box.error = e
+                }
+            }
+            op.fetchShareMetadataResultBlock = { _ in
+                if let e = box.error { log.notice("共有のリンクの情報を読めませんでした: \(String(describing: e), privacy: .public)") }
+                cont.resume(returning: box.name)
+            }
+            ck.add(op)
+        }
+    }
 
     /// 共有の画面で参加者・権限を変えたあと（画面を開いたまま）。共有は Apple の共有の画面が iCloud に保存済み。
     /// ここで persistUpdatedShare を呼ぶと iCloud の共有も書き直され、開いたままの共有の画面が持つ共有が古くなって、
