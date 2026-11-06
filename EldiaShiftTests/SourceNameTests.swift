@@ -7,7 +7,9 @@ import Testing
 @Suite("共有元の名前")
 @MainActor
 struct SourceNameTests {
-    private func team(_ settings: TeamSettings?) throws -> NSManagedObject {
+    /// 設定を入れたチームを作り、その共有元の名前を返す。
+    /// データベース（container）は名前を読み終えるまで残す（先に解放されると、チームから設定が読めず nil になる）
+    private func sourceName(_ settings: TeamSettings?) throws -> String? {
         let c = NSPersistentContainer(name: "EldiaShift", managedObjectModel: ShiftModel.model)
         let d = NSPersistentStoreDescription(url: URL(fileURLWithPath: "/dev/null"))
         d.type = NSSQLiteStoreType
@@ -17,7 +19,7 @@ struct SourceNameTests {
         if let failure { throw failure }
         let t = NSEntityDescription.insertNewObject(forEntityName: ShiftModel.Entity.team, into: c.viewContext)
         if let settings { t.setValue(try JSONEncoder().encode(settings), forKey: "settings") }
-        return t
+        return withExtendedLifetime(c) { ShiftDatabase.sourceName(of: t) }
     }
 
     @Test("会社名があれば会社名")
@@ -27,7 +29,7 @@ struct SourceNameTests {
         info.name = "見本ホテルグループ"
         s.company = info
         s.stores = [Store(id: "main", name: "見本ホテル 本館", address: "", hours: "", colorIndex: 0, sortOrder: 0)]
-        #expect(ShiftDatabase.sourceName(of: try team(s)) == "見本ホテルグループ")
+        #expect(try sourceName(s) == "見本ホテルグループ")
     }
 
     @Test("会社名が空なら最初の店舗名")
@@ -35,11 +37,11 @@ struct SourceNameTests {
         var s = TeamSettings(breakRules: .laborStandard)
         s.company = CompanyInfo()
         s.stores = [Store(id: "main", name: "見本ホテル 本館", address: "", hours: "", colorIndex: 0, sortOrder: 0)]
-        #expect(ShiftDatabase.sourceName(of: try team(s)) == "見本ホテル 本館")
+        #expect(try sourceName(s) == "見本ホテル 本館")
     }
 
     @Test("設定が無ければ無し（「ほかの人のシフト表」と出る）")
     func none() throws {
-        #expect(ShiftDatabase.sourceName(of: try team(nil)) == nil)
+        #expect(try sourceName(nil) == nil)
     }
 }
