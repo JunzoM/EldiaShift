@@ -286,6 +286,8 @@ struct RootView: View {
             if phase == .active {
                 store.refreshIfNeeded()
                 store.refreshToday()
+                // 共有されたシフト表の権限は、端末の情報が古いことがあるので iCloud から調べ直す
+                Task { await db.refreshAccessFromServer() }
             }
             // アプリを離れたら、人件費はまた隠す
             if phase == .background { LaborCostLock.shared.lock() }

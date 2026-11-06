@@ -56,6 +56,21 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         config.delegateClass = ShareSceneDelegate.self
         return config
     }
+
+    /// iCloud の知らせ。共有されたシフト表（shared のデータベース）の知らせなら、自分の権限を iCloud から調べ直す。
+    /// 権限だけが変わったときは、Core Data は何も取り込まず、端末の共有の情報も古いままになるため
+    func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+                     fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+        guard let note = CKNotification(fromRemoteNotificationDictionary: userInfo),
+              (note as? CKDatabaseNotification)?.databaseScope == .shared else {
+            completionHandler(.noData)
+            return
+        }
+        Task { @MainActor in
+            await ShiftDatabase.current?.refreshAccessFromServer()
+            completionHandler(.noData)
+        }
+    }
 }
 
 /// Apple の共有の画面を、いちばん上の画面から出す（参加者の招待・権限・共有をやめる）

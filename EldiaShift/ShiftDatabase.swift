@@ -130,6 +130,7 @@ final class ShiftDatabase {
         ShiftRecords.activeTeamID = id
         refreshAccess()
         changeToken += 1
+        Task { await refreshAccessFromServer() }
     }
 
     /// 表示しているチームの共有（まだ共有していなければ nil）
@@ -221,6 +222,26 @@ final class ShiftDatabase {
         }
     }
 
+    /// iCloud から読んだ、表示している共有されたシフト表での自分の権限
+    @ObservationIgnored private var serverAccess: (team: NSManagedObjectID, readOnly: Bool)?
+
+    /// 共有されたシフト表での自分の権限を、iCloud にある共有から調べ直す。
+    /// 共有した人が権限を変えても、参加者の端末の共有の情報（canUpdateRecord が見るもの）は、アプリを開き直すまで
+    /// 古いままのことがある（Core Data の既知の制限。B の Mac で、知らせは届くが iCloud は「変わった区画なし」と返し、
+    /// 何も取り込まれなかった）。iCloud の知らせが届いたとき・アプリを前に出したときに呼ぶ
+    func refreshAccessFromServer() async {
+        guard let team = try? ShiftRecords.existingCurrentTeam(viewContext), !team.objectID.isTemporaryID,
+              Self.isShared(team.objectID.persistentStore),
+              let zoneID = container.recordID(for: team.objectID)?.zoneID else { return }
+        let teamID = team.objectID
+        let ck = CKContainer(identifier: Self.cloudContainerID)
+        let shareID = CKRecord.ID(recordName: CKRecordNameZoneWideShare, zoneID: zoneID)
+        guard let share = (try? await ck.sharedCloudDatabase.record(for: shareID)) as? CKShare,
+              let me = share.currentUserParticipant else { return }
+        serverAccess = (teamID, me.permission != .readWrite)
+        refreshAccess()
+    }
+
     /// 共有の画面で参加者・権限を変えたあと（画面を開いたまま）。共有は Apple の共有の画面が iCloud に保存済み。
     /// ここで persistUpdatedShare を呼ぶと iCloud の共有も書き直され、開いたままの共有の画面が持つ共有が古くなって、
     /// 2回目の変更が「オプションを変更できませんでした」と断られるので呼ばない。表示だけ読み直す
@@ -304,7 +325,14 @@ final class ShiftDatabase {
         var theirs = false, locked = false
         if let team = try? ShiftRecords.existingCurrentTeam(viewContext), !team.objectID.isTemporaryID {
             theirs = Self.isShared(team.objectID.persistentStore)
-            locked = theirs && !container.canUpdateRecord(forManagedObjectWith: team.objectID)
+            if theirs {
+                // iCloud から読んだ権限があればそれを使う（端末の共有の情報は、権限が変わっても開き直すまで古いことがある）
+                if let server = serverAccess, server.team == team.objectID {
+                    locked = server.readOnly
+                } else {
+                    locked = !container.canUpdateRecord(forManagedObjectWith: team.objectID)
+                }
+            }
         }
         if viewingSharedTeam != theirs { viewingSharedTeam = theirs }
         // 共有されたシフト表では、給与・人件費を出さない（「編集できる」でも「見るだけ」でも）
