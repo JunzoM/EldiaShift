@@ -57,10 +57,20 @@ struct MainTabsView: View {
     @AppStorage("viewMode") private var mode: GridMode = .month
     /// サイドバーをアイコンだけにする（AppSidebar と同じ設定）。iPad は向きで自動で切り替える
     @AppStorage("sidebarCompact") private var sidebarCompact = false
+    /// 折りたたみの iPhone（Duo）の開き具合と折り目の位置
+    @State private var duo = DuoInfo()
 
     var body: some View {
         Group {
             if sizeClass == .regular { split } else { tabs }
+        }
+        .background(HingeReader { duo = $0 }.allowsHitTesting(false).accessibilityHidden(true))
+        .environment(\.duo, duo)
+        // Duo を開いて見開きになったとき：閉じた画面で少し前まで見ていた日のシフト表を、見開きで出す（開くとつづき）
+        .onChange(of: duo.spread) { _, spread in
+            guard spread else { return }
+            fitSidebarToSpread()
+            continueOnOpen()
         }
         .onAppear {
             if DemoMode.enabled {
@@ -105,6 +115,20 @@ struct MainTabsView: View {
             .onAppear { fitSidebar(portrait: geo.size.height > geo.size.width, animated: false) }
             .onChange(of: geo.size.height > geo.size.width) { _, portrait in fitSidebar(portrait: portrait, animated: true) }
         }
+    }
+
+    /// Duo の見開き：左のページにサイドバーと月の表を入れるので、サイドバーはアイコンだけにする（そのあと手で広げてもよい）
+    private func fitSidebarToSpread() {
+        guard !sidebarCompact else { return }
+        withAnimation(.snappy(duration: 0.25)) { sidebarCompact = true }
+    }
+
+    /// Duo を開いたとき、閉じた画面で見ていた日（と人）のシフト表へ。日の表示だったら、見開きになる月の表示にする
+    private func continueOnOpen() {
+        guard let d = DuoFocus.shared.dayToContinue() else { return }
+        anchor = d
+        if mode == .day { mode = .month }
+        tab = .schedule
     }
 
     /// iPad の向きに合わせてサイドバーをたたむ・広げる（Mac はウインドウの形で変えない）
@@ -463,6 +487,14 @@ struct HomeView: View {
                     Text("\(w.shift.inTime)〜\(w.shift.outTime)").appFont(.subheadline).monospacedDigit()
                 }
                 .padding(.vertical, 6)
+                .contentShape(Rectangle())
+                // 押すと、その人に印を付けて今日のタイムラインへ（Duo を開くと、この人の見開きになる）
+                .onTapGesture {
+                    DuoFocus.shared.look(staffID: w.member.id, day: store.today)
+                    openDay(store.today)
+                }
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint("今日のタイムラインを開きます")
                 if w.id != info.working.last?.id { Divider() }
             }
         }
