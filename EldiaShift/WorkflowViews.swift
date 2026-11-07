@@ -37,8 +37,22 @@ struct ShortageTarget: Identifiable {
 
 struct CandidatesSheet: View {
     let target: ShortageTarget
-    @Environment(\.shiftStore) private var store
     @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            CandidatesList(target: target)
+                .navigationTitle("\(target.day.month)/\(target.day.day) \(target.department.name)の不足")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dismiss() } } }
+        }
+    }
+}
+
+/// 足りない時間と入れられる人の一覧（シートと、Duo の見開きの右のページで使う）
+struct CandidatesList: View {
+    let target: ShortageTarget
+    @Environment(\.shiftStore) private var store
     @State private var includeOthers = false
     @State private var error: String?
 
@@ -50,52 +64,47 @@ struct CandidatesSheet: View {
         let short = ShortageFinder.shortHours(book, department: dept.id, members: members, on: d)
         let list = ShortageFinder.candidates(book, department: dept.id, on: d, includeOthers: includeOthers)
 
-        NavigationStack {
-            List {
-                Section {
-                    if short.isEmpty {
-                        Label("必要な人数がそろいました", systemImage: "checkmark.circle.fill").foregroundStyle(StaffingStyle.ok)
-                    } else {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 6) {
-                                ForEach(short, id: \.self) { h in
-                                    let n = Headcount.working(members, on: d, hour: h, in: book)
-                                    let need = book.staffing.need(dept.id, on: d, hour: h) ?? 0
-                                    VStack(spacing: 1) {
-                                        Text("\(h)時").appFont(.caption2)
-                                        Text("\(n)/\(need)").appFont(.caption.weight(.heavy)).monospacedDigit()
-                                    }
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 8).padding(.vertical, 4)
-                                    .background(StaffingStyle.short, in: RoundedRectangle(cornerRadius: DS.chipRadius))
+        List {
+            Section {
+                if short.isEmpty {
+                    Label("必要な人数がそろいました", systemImage: "checkmark.circle.fill").foregroundStyle(StaffingStyle.ok)
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(short, id: \.self) { h in
+                                let n = Headcount.working(members, on: d, hour: h, in: book)
+                                let need = book.staffing.need(dept.id, on: d, hour: h) ?? 0
+                                VStack(spacing: 1) {
+                                    Text("\(h)時").appFont(.caption2)
+                                    Text("\(n)/\(need)").appFont(.caption.weight(.heavy)).monospacedDigit()
                                 }
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 8).padding(.vertical, 4)
+                                .background(StaffingStyle.short, in: RoundedRectangle(cornerRadius: DS.chipRadius))
                             }
                         }
                     }
-                } header: {
-                    Text("足りない時間（実際/必要）")
                 }
+            } header: {
+                Text("足りない時間（実際/必要）")
+            }
 
-                if !short.isEmpty {
-                    Section {
-                        Toggle("ほかの部門の人も出す", isOn: $includeOthers)
-                        if list.isEmpty {
-                            Text("この日に入れられる人がいません（全員が勤務・有休・希望休・退職後のいずれかです）")
-                                .appFont(.subheadline).foregroundStyle(.secondary)
-                        }
-                        ForEach(list) { c in row(c) }
-                    } header: {
-                        Text("入れられる人")
-                    } footer: {
-                        Text("この日に勤務が無い人を、注意（連勤・勤務の間隔など）が出ない人 → 足りない時間をたくさん埋める人 → 今月の時間が少ない人 の順に並べています。")
+            if !short.isEmpty {
+                Section {
+                    Toggle("ほかの部門の人も出す", isOn: $includeOthers)
+                    if list.isEmpty {
+                        Text("この日に入れられる人がいません（全員が勤務・有休・希望休・退職後のいずれかです）")
+                            .appFont(.subheadline).foregroundStyle(.secondary)
                     }
+                    ForEach(list) { c in row(c) }
+                } header: {
+                    Text("入れられる人")
+                } footer: {
+                    Text("この日に勤務が無い人を、注意（連勤・勤務の間隔など）が出ない人 → 足りない時間をたくさん埋める人 → 今月の時間が少ない人 の順に並べています。")
                 }
             }
-            .navigationTitle("\(d.month)/\(d.day) \(dept.name)の不足")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dismiss() } } }
-            .errorAlert($error)
         }
+        .errorAlert($error)
     }
 
     private func row(_ c: ShortageCandidate) -> some View {

@@ -59,12 +59,16 @@ struct MainTabsView: View {
     @AppStorage("sidebarCompact") private var sidebarCompact = false
     /// 折りたたみの iPhone（Duo）の開き具合と折り目の位置
     @State private var duo = DuoInfo()
+    /// 半分開いて立てたら自動で掲示にする（掲示の画面で切り替える）
+    @AppStorage("duoAutoPost") private var autoPost = true
 
     var body: some View {
         Group {
             if sizeClass == .regular { split } else { tabs }
         }
-        .background(HingeReader { duo = $0 }.allowsHitTesting(false).accessibilityHidden(true))
+        .background(GeometryReader { g in
+            HingeReader(size: g.size) { duo = $0 }.allowsHitTesting(false).accessibilityHidden(true)
+        })
         .environment(\.duo, duo)
         // Duo を開いて見開きになったとき：閉じた画面で少し前まで見ていた日のシフト表を、見開きで出す（開くとつづき）
         .onChange(of: duo.spread) { _, spread in
@@ -72,6 +76,15 @@ struct MainTabsView: View {
             fitSidebarToSpread()
             continueOnOpen()
         }
+        // 半分開いて横のまま少し置いたら掲示にする。開ききる・閉じると、自動で出した掲示はやめる
+        .onChange(of: duo.hinge) { _, hinge in postByHinge(hinge) }
+        .overlay {
+            if DuoPosting.shared.shown {
+                PostedBoard().transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: DuoPosting.shared.shown)
+        .onAppear { if DemoMode.flag("-demoPost") { DuoPosting.shared.show(byHinge: false) } }
         .onAppear {
             if DemoMode.enabled {
                 tab = DemoMode.flag("-demoHome") ? .home
@@ -114,6 +127,20 @@ struct MainTabsView: View {
             // iPad：縦にしたらサイドバーをたたみ、横にしたら広げる（向きを変えたときだけ。そのあと手で切り替えてもよい）
             .onAppear { fitSidebar(portrait: geo.size.height > geo.size.width, animated: false) }
             .onChange(of: geo.size.height > geo.size.width) { _, portrait in fitSidebar(portrait: portrait, animated: true) }
+        }
+    }
+
+    /// 半分開いて立てたとき：少し待っても半分開きのままなら掲示にする（開け閉めの途中は無視する）
+    private func postByHinge(_ hinge: HingeState) {
+        let posting = DuoPosting.shared
+        if hinge == .partiallyOpen {
+            guard autoPost, duo.landscape, !posting.shown else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: DuoPosting.settle)
+                if duo.hinge == .partiallyOpen, duo.landscape, !posting.shown { posting.show(byHinge: true) }
+            }
+        } else if posting.byHinge {
+            posting.hide()
         }
     }
 

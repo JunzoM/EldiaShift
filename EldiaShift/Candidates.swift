@@ -18,6 +18,27 @@ struct ShortageCandidate: Identifiable, Sendable {
     var entry: CellEntry { CellEntry(inTime: block.inTime, outTime: block.outTime, blockID: block.id, isOff: false) }
 }
 
+/// 人が足りない1日・1部門（Duo の見開きの左のページの1行）
+struct ShortageItem: Identifiable, Equatable, Sendable {
+    var department: Department
+    var day: DayKey
+    /// 足りない時台（0〜23）
+    var hours: [Int]
+    /// 足りない人×時間
+    var short: Int
+    var id: String { "\(department.id)-\(day)" }
+    var target: ShortageTarget { ShortageTarget(department: department, day: day) }
+
+    /// 続いている時台をまとめた時間帯（例：[9, 10, 21] → "9〜11時・21〜22時"）
+    var hoursLabel: String {
+        var ranges: [(Int, Int)] = []
+        for h in hours {
+            if let last = ranges.last, last.1 == h { ranges[ranges.count - 1].1 = h + 1 } else { ranges.append((h, h + 1)) }
+        }
+        return ranges.map { "\($0.0)〜\($0.1)時" }.joined(separator: "・")
+    }
+}
+
 enum ShortageFinder {
     /// その日・その部門で人が足りない時台
     static func shortHours(_ book: ShiftBook, department: String, members: [StaffMember], on d: DayKey) -> [Int] {
@@ -75,6 +96,27 @@ enum ShortageFinder {
             if a.covers != b.covers { return a.covers > b.covers }
             return a.monthHours < b.monthHours
         }
+    }
+
+    /// 人が足りない日・部門の一覧（Duo の見開きの「人が足りない」）。日付の順、同じ日は部門の並び順
+    static func items(_ book: ShiftBook, days: [DayKey]) -> [ShortageItem] {
+        guard !book.staffing.isEmpty, let first = days.first else { return [] }
+        let groups = book.staffByDepartment(visibleIn: MonthKey(first)).filter { book.staffing.hasPlan(for: $0.department.id) }
+        var out: [ShortageItem] = []
+        for d in days {
+            for g in groups {
+                let members = g.members.filter { !$0.hasLeft(on: d) }
+                var hours: [Int] = []
+                var short = 0
+                for h in 0..<24 {
+                    guard let need = book.staffing.need(g.department.id, on: d, hour: h) else { continue }
+                    let n = Headcount.working(members, on: d, hour: h, in: book)
+                    if n < need { hours.append(h); short += need - n }
+                }
+                if !hours.isEmpty { out.append(ShortageItem(department: g.department, day: d, hours: hours, short: short)) }
+            }
+        }
+        return out
     }
 
     private static func length(_ b: TimeBlock) -> Int {

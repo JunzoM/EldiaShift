@@ -57,6 +57,8 @@ extension EnvironmentValues {
 
 /// 見えない部品。折り目の状態（UIHingeInteraction、iOS 27.1 以降）と窓の大きさを調べて知らせる
 struct HingeReader: UIViewRepresentable {
+    /// 画面の大きさ（変わったら測り直す。横向きで起動したときなど、窓に入った時点ではまだ回る前の大きさのことがある）
+    var size: CGSize
     var onChange: (DuoInfo) -> Void
 
     func makeUIView(context: Context) -> HingeProbeView {
@@ -67,6 +69,7 @@ struct HingeReader: UIViewRepresentable {
 
     func updateUIView(_ v: HingeProbeView, context: Context) {
         v.onChange = onChange
+        v.measureWindow()
     }
 }
 
@@ -90,6 +93,8 @@ final class HingeProbeView: UIView {
         #if compiler(>=6.4.1) && !targetEnvironment(macCatalyst)
         if #available(iOS 27.1, *) {
             addInteraction(UIHingeInteraction { [weak self] _, update in
+                // 画面確認用に開いたことにしているときは、本物の折り目の知らせで上書きしない
+                guard !DuoInfo.demoForced else { return }
                 self?.info.hinge = HingeState(update.hinge)
             })
         }
@@ -99,6 +104,8 @@ final class HingeProbeView: UIView {
     override func didMoveToWindow() {
         super.didMoveToWindow()
         measureWindow()
+        // 窓に入った直後は回る前の大きさのことがあるので、次の描画のあとにもう一度測る
+        DispatchQueue.main.async { [weak self] in self?.measureWindow() }
     }
 
     override func layoutSubviews() {
@@ -107,7 +114,7 @@ final class HingeProbeView: UIView {
     }
 
     /// 折り目は画面のまん中。窓が画面いっぱいでないとき（ほかのアプリと並べたとき）も合うよう、画面の座標から窓の座標へ直す
-    private func measureWindow() {
+    func measureWindow() {
         guard let w = window else { return }
         let screen = w.windowScene?.screen ?? w.screen
         let mid = CGPoint(x: screen.bounds.midX, y: screen.bounds.midY)
@@ -179,7 +186,16 @@ final class DuoFocus {
 
 // MARK: - 見開きのシフト表
 
+/// 見開きの左のページに出すもの
+enum SpreadPage: String {
+    /// 月（週）の表。右のページはその日のタイムライン
+    case table
+    /// 人が足りない日の一覧。右のページはその日に入れられる人（案3：左右で穴埋め）
+    case fill
+}
+
 /// 開いた Duo のシフト表：左のページに月（週）の表、右のページに選んだ日のタイムライン。
+/// 左のページを「人が足りない」に切り替えると、左に足りない日・時間帯、右に入れられる人が出る。
 /// 右のページは折り目から始めるので、折り目の上に部品が来ない
 struct SpreadBoard: View {
     let mode: GridMode
@@ -187,31 +203,182 @@ struct SpreadBoard: View {
 
     @Environment(\.duo) private var duo
     @Environment(\.shiftStore) private var store
+    @Environment(\.shiftDatabase) private var db
+    @AppStorage("duoSpreadPage") private var page: SpreadPage = .table
+    /// 「人が足りない」で選んでいる行
+    @State private var gapID: ShortageItem.ID?
+
+    /// 「見るだけ」で共有されたシフト表では、穴埋め（勤務を入れる）を出さない
+    private var filling: Bool { page == .fill && !db.readOnly }
 
     var body: some View {
         let focus = DuoFocus.shared
+        let days = mode.days(around: anchor)
+        let gaps = filling ? ShortageFinder.items(store.book, days: days) : []
+        let gap = gaps.first { $0.id == gapID }
         GeometryReader { geo in
             let rightWidth = duo.rightPageWidth(in: geo.frame(in: .global))
             HStack(spacing: 0) {
-                MonthGridView(mode: mode, days: mode.days(around: anchor), selectedDay: anchor,
-                              highlightStaffID: focus.staffID,
-                              onPickCell: { _, d in anchor = d }) { d in
-                    // 日付を押したら、日の表示に切り替えずに右のページだけ変える
-                    anchor = d
+                VStack(spacing: 0) {
+                    pageBar
+                    if filling {
+                        GapList(items: gaps, today: store.today, selected: $gapID) { anchor = $0.day }
+                    } else {
+                        MonthGridView(mode: mode, days: days, selectedDay: anchor,
+                                      highlightStaffID: focus.staffID,
+                                      onPickCell: { _, d in anchor = d }) { d in
+                            // 日付を押したら、日の表示に切り替えずに右のページだけ変える
+                            anchor = d
+                        }
+                        // 左のページは iPhone くらいの幅なので、iPhone と同じ詰めた表にする
+                        .environment(\.horizontalSizeClass, .compact)
+                    }
                 }
-                // 左のページは iPhone くらいの幅なので、iPhone と同じ詰めた表にする
-                .environment(\.horizontalSizeClass, .compact)
                 .frame(width: max(0, geo.size.width - rightWidth))
 
-                DuoDayPage(day: $anchor)
-                    .frame(width: rightWidth)
+                Group {
+                    if filling {
+                        GapPanel(item: gap, hasPlan: !store.book.staffing.isEmpty, isEmpty: gaps.isEmpty)
+                    } else {
+                        DuoDayPage(day: $anchor)
+                    }
+                }
+                .frame(width: rightWidth)
+                .overlay(alignment: .leading) { Rectangle().fill(Color(.separator)).frame(width: 0.5) }
             }
         }
+        // 「人が足りない」に切り替えた・月を変えたら、いちばん上の行（選んでいる日があればその日）を選ぶ
+        .onChange(of: gaps.map(\.id)) { pickGap(gaps) }
         .onAppear {
+            pickGap(gaps)
             // 画面確認用（-demoSpreadFocus）：閉じた画面で2人目を見ていたことにする
             if DemoMode.flag("-demoSpreadFocus"), let m = store.book.staff.dropFirst().first {
                 DuoFocus.shared.look(staffID: m.id, day: anchor)
             }
+            if DemoMode.flag("-demoSpreadFill") { page = .fill }
+        }
+    }
+
+    private func pickGap(_ gaps: [ShortageItem]) {
+        guard !gaps.contains(where: { $0.id == gapID }) else { return }
+        gapID = (gaps.first { $0.day == anchor } ?? gaps.first)?.id
+    }
+
+    /// 左のページの上：表／人が足りない・掲示
+    private var pageBar: some View {
+        HStack(spacing: DS.gap) {
+            if !db.readOnly {
+                Picker("左のページ", selection: $page) {
+                    Text("表").tag(SpreadPage.table)
+                    Text("人が足りない").tag(SpreadPage.fill)
+                }
+                .segmented(2)
+                .frame(maxWidth: 260)
+            }
+            Spacer(minLength: 0)
+            Button { DuoPosting.shared.show(byHinge: false) } label: {
+                Label("掲示", systemImage: "rectangle.split.2x1")
+            }
+            .buttonStyle(.bordered).controlSize(.small)
+            .accessibilityHint("今日と明日の出勤を大きく出します")
+        }
+        .padding(.horizontal, 12).padding(.vertical, 6)
+        .background(.bar)
+        .overlay(alignment: .bottom) { Divider() }
+    }
+}
+
+/// 見開きの左のページ（人が足りない）：足りない日・部門・時間帯の一覧。押すと右のページにその日の入れられる人
+private struct GapList: View {
+    let items: [ShortageItem]
+    let today: DayKey
+    @Binding var selected: ShortageItem.ID?
+    var onPick: (ShortageItem) -> Void
+
+    var body: some View {
+        if items.isEmpty {
+            ContentUnavailableView("人は足りています", systemImage: "checkmark.circle",
+                                   description: Text("この期間に、必要な人数より少ない時間はありません。"))
+        } else {
+            List(items) { item in
+                Button {
+                    selected = item.id
+                    onPick(item)
+                } label: { row(item) }
+                .buttonStyle(.plain)
+                .listRowBackground(item.id == selected ? Color.accentColor.opacity(0.14) : Color(.systemBackground))
+            }
+            .listStyle(.plain)
+        }
+    }
+
+    private func row(_ item: ShortageItem) -> some View {
+        let past = item.day < today
+        return HStack(spacing: 10) {
+            Text(HomeView.dayLabel(item.day)).appFont(.subheadline.weight(.bold)).monospacedDigit()
+                .frame(width: 84, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Circle().fill(PaletteColor.fg(item.department.colorIndex)).frame(width: 8, height: 8)
+                    Text(item.department.name).appFont(.subheadline).lineLimit(1)
+                }
+                Text(item.hoursLabel).appFont(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(2)
+            }
+            Spacer(minLength: 0)
+            Text("−\(item.short)").appFont(.subheadline.weight(.heavy)).monospacedDigit()
+                .foregroundStyle(.white)
+                .padding(.horizontal, 8).padding(.vertical, 2)
+                .background(StaffingStyle.short, in: RoundedRectangle(cornerRadius: DS.chipRadius))
+                .accessibilityLabel("\(item.short)人時間足りない")
+                // 折り目のすぐ左なので、少し離す
+                .padding(.trailing, 8)
+        }
+        .opacity(past ? 0.5 : 1)
+        .contentShape(Rectangle())
+    }
+}
+
+/// 見開きの右のページ（人が足りない）：選んだ日・部門に入れられる人。押すと勤務が入る
+private struct GapPanel: View {
+    let item: ShortageItem?
+    let hasPlan: Bool
+    let isEmpty: Bool
+
+    @Environment(\.shiftStore) private var store
+
+    var body: some View {
+        if !hasPlan {
+            ContentUnavailableView("必要な人数が決まっていません", systemImage: "person.3",
+                                   description: Text("集計 → 適正人員 で時間帯ごとの必要な人数を決めると、足りない日がここに並びます。"))
+        } else if let item {
+            VStack(spacing: 0) {
+                HStack {
+                    Text("\(HomeView.dayLabel(item.day)) \(item.department.name)に入れられる人")
+                        .appFont(.headline).lineLimit(1).minimumScaleFactor(0.7)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(.bar)
+                .overlay(alignment: .bottom) { Divider() }
+                if !store.editing {
+                    HStack(spacing: 10) {
+                        Image(systemName: "lock.fill").foregroundStyle(.secondary)
+                        Text("ロック中のため、勤務は入れられません").appFont(.subheadline)
+                        Spacer(minLength: 0)
+                        Button("編集する") { store.editing = true }.buttonStyle(.borderedProminent).controlSize(.small)
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(Color.yellow.opacity(0.12))
+                    .overlay(alignment: .bottom) { Divider() }
+                }
+                CandidatesList(target: item.target)
+                    .id(item.id)
+                    .disabled(!store.editing)
+            }
+        } else if isEmpty {
+            ContentUnavailableView("入れる人を探す日はありません", systemImage: "checkmark.circle")
+        } else {
+            ContentUnavailableView("左で日を選んでください", systemImage: "hand.point.left")
         }
     }
 }
@@ -231,8 +398,6 @@ struct DuoDayPage: View {
             }
             DayTimelineView(day: day, highlightStaffID: focus.staffID)
         }
-        // 折り目のすぐ右なので、左に線を引いて左右のページを分ける
-        .overlay(alignment: .leading) { Rectangle().fill(Color(.separator)).frame(width: 0.5) }
     }
 
     private var header: some View {
@@ -279,5 +444,138 @@ struct DuoDayPage: View {
         .padding(.horizontal, 12).padding(.vertical, 6)
         .background(Color.accentColor.opacity(0.08))
         .overlay(alignment: .bottom) { Divider() }
+    }
+}
+
+// MARK: - 立てて掲示（案4）
+
+/// 掲示の画面を出しているか。半分開いて立てたとき（自動）と、見開きの「掲示」ボタンで出す
+@Observable @MainActor
+final class DuoPosting {
+    static let shared = DuoPosting()
+
+    private(set) var shown = false
+    /// 半分開いたので自動で出した（開ききったら自動で閉じる）
+    private(set) var byHinge = false
+
+    func show(byHinge: Bool) {
+        self.byHinge = byHinge
+        shown = true
+    }
+
+    func hide() {
+        shown = false
+        byHinge = false
+    }
+
+    /// 半分開いてから掲示にするまで待つ時間（開け閉めの途中で一瞬だけ半分開きになるのを無視する）
+    static let settle: Duration = .seconds(2)
+}
+
+/// 掲示の画面：左のページに今日、右のページに明日の出勤を大きく出す（朝礼・バックヤードに立てておく）。
+/// 出している間は画面が暗くならない
+struct PostedBoard: View {
+    @Environment(\.duo) private var duo
+    @Environment(\.shiftStore) private var store
+    /// 半分開いて立てたら自動で掲示にする（端末ごとに覚える）
+    @AppStorage("duoAutoPost") private var autoPost = true
+
+    var body: some View {
+        let today = store.today
+        GeometryReader { geo in
+            let rightWidth = duo.spread ? duo.rightPageWidth(in: geo.frame(in: .global)) : geo.size.width / 2
+            HStack(spacing: 0) {
+                page(today, title: "今日").frame(width: max(0, geo.size.width - rightWidth))
+                page(today.adding(days: 1), title: "明日").frame(width: rightWidth)
+                    .overlay(alignment: .leading) { Rectangle().fill(Color(.separator)).frame(width: 0.5) }
+            }
+        }
+        .background(Color(.systemBackground).ignoresSafeArea())
+        .safeAreaInset(edge: .bottom, spacing: 0) { footer }
+        .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
+        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+    }
+
+    private var footer: some View {
+        HStack(spacing: DS.gap) {
+            Toggle("半分開いて立てたら自動で出す", isOn: $autoPost)
+                .appFont(.footnote).fixedSize()
+            Spacer(minLength: 0)
+            Button { DuoPosting.shared.hide() } label: { Label("掲示をやめる", systemImage: "xmark") }
+                .buttonStyle(.bordered)
+        }
+        .padding(.horizontal, DS.page).padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    private func page(_ d: DayKey, title: String) -> some View {
+        let r = Self.roster(store.book, on: d)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(title).appFont(.largeTitle.weight(.heavy))
+                Text(HomeView.dayLabel(d)).appFont(.title2.weight(.bold)).foregroundStyle(.secondary).monospacedDigit()
+                Spacer(minLength: 0)
+                Text("\(r.working.count)人").appFont(.title2.weight(.bold)).monospacedDigit()
+            }
+            .padding(.horizontal, DS.page).padding(.top, DS.page).padding(.bottom, 8)
+            Divider()
+            if r.working.isEmpty {
+                ContentUnavailableView("出勤はありません", systemImage: "moon.zzz")
+            } else {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(r.working) { w in
+                            row(w)
+                            Divider().padding(.leading, DS.page)
+                        }
+                    }
+                }
+            }
+            if !r.off.isEmpty {
+                Text("休み：" + r.off.joined(separator: "・"))
+                    .appFont(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                    .padding(.horizontal, DS.page).padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(.secondarySystemBackground))
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func row(_ w: HomeInfo.Working) -> some View {
+        HStack(spacing: 12) {
+            InitialAvatar(name: w.member.name, colorIndex: w.department?.colorIndex ?? 8, size: 40, photo: w.member.photo)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(w.member.name).appFont(.title2.weight(.bold)).lineLimit(1).minimumScaleFactor(0.6)
+                HStack(spacing: 6) {
+                    // 勤務の記号は名前の下に置き、右の時間を削らない
+                    if let b = w.block {
+                        Text(b.label).appFont(.caption.weight(.bold))
+                            .foregroundStyle(PaletteColor.fg(b.colorIndex))
+                            .padding(.horizontal, 8).padding(.vertical, 2)
+                            .background(PaletteColor.bg(b.colorIndex), in: Capsule())
+                            .fixedSize()
+                    }
+                    Text(w.department?.name ?? "").appFont(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+            }
+            Spacer(minLength: 8)
+            Text("\(w.shift.inTime)〜\(w.shift.outTime)").appFont(.title3.weight(.semibold)).monospacedDigit()
+                .lineLimit(1).minimumScaleFactor(0.5)
+                .layoutPriority(1)
+        }
+        .padding(.horizontal, DS.page).padding(.vertical, 10)
+    }
+
+    /// その日の出勤（出勤の早い順）と休みの人の名前
+    static func roster(_ book: ShiftBook, on d: DayKey) -> (working: [HomeInfo.Working], off: [String]) {
+        let working = HomeInfo(book: book, today: d).working
+        let members = book.staffByDepartment(visibleIn: MonthKey(d)).flatMap(\.members)
+        let off = members.filter { m in
+            guard !m.hasLeft(on: d), let r = Schedule.resolve(m, on: d, in: book) else { return false }
+            return r.isOff
+        }.map(\.name)
+        return (working, off)
     }
 }
