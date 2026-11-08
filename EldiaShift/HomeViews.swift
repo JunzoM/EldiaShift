@@ -71,9 +71,9 @@ struct MainTabsView: View {
         })
         .environment(\.duo, duo)
         // Duo を開いて見開きになったとき：閉じた画面で少し前まで見ていた日のシフト表を、見開きで出す（開くとつづき）
-        .onChange(of: duo.spread) { _, spread in
-            guard spread else { return }
-            fitSidebarToSpread()
+        .onChange(of: duo.opened) { _, opened in
+            guard opened else { return }
+            if duo.spread { fitSidebarToSpread() }
             continueOnOpen()
         }
         // 半分開いて横のまま少し置いたら掲示にする。開ききる・閉じると、自動で出した掲示はやめる
@@ -84,7 +84,13 @@ struct MainTabsView: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: DuoPosting.shared.shown)
-        .onAppear { if DemoMode.flag("-demoPost") { DuoPosting.shared.show(byHinge: false) } }
+        .onAppear {
+            if DemoMode.flag("-demoPost") { DuoPosting.shared.show(byHinge: false) }
+            // 画面確認用（-demoLookRequest）：閉じた画面でいちばん新しい承認待ちの申請を受け取ったことにする（-demoOpenScript と使う）
+            if DemoMode.flag("-demoLookRequest"), let r = LeaveSpread.pending(in: store.book).last {
+                DuoFocus.shared.look(request: r.request, of: r.member)
+            }
+        }
         // 希望休を承認して代わりを探す：シフト表の見開きの「人が足りない」でその日を開く
         .onReceive(NotificationCenter.default.publisher(for: SpreadBoard.openFillNotification)) { n in
             guard let raw = n.object as? String, let d = DayKey(raw) else { return }
