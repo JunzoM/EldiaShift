@@ -494,6 +494,12 @@ struct LeaveRequestImportSheet: View {
         let note = form.map { $0.reason } ?? String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200))
         do {
             let added = try store.receiveLeaveRequests(days, note: note, for: member.id)
+            // Duo：閉じた画面で受け取ってから開くと、希望休の見開きでこの申請から始める
+            if let m = store.book.staff.first(where: { $0.id == member.id }),
+               let r = m.leaveRequests.filter({ $0.status == .pending && days.map(\.description).contains($0.day) })
+                   .max(by: { $0.receivedAt < $1.receivedAt }) {
+                DuoFocus.shared.look(request: r, of: m)
+            }
             let skipped = days.count - added
             result = "\(member.name)さんの \(added)日を承認待ちにしました。"
                 + (skipped > 0 ? "\n\(skipped)日は、すでに申請済みか希望休に入っています。" : "")

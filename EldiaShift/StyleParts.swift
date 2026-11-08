@@ -505,6 +505,12 @@ struct OffRequestListView: View {
         .shiftSheet(isPresented: $registering) { LeaveRequestProxySheet(month: month) }
         .shiftSheet(isPresented: $showingQR) { RequestQRSheet() }
         .shiftSheet(item: $reply) { LeaveReplySheet(reply: $0) }
+        // Duo：閉じた画面で承認待ちを見てから開くと、希望休の見開き（いちばん早い日の申請）から始める
+        .onAppear {
+            let first = store.book.staff.flatMap { m in m.leaveRequests.filter { $0.status == .pending }.map { (m, $0) } }
+                .min { $0.1.day < $1.1.day }
+            if let first { DuoFocus.shared.look(request: first.1, of: first.0) }
+        }
         .errorAlert($requestError)
     }
 

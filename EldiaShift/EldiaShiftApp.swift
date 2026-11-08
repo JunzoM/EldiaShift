@@ -635,6 +635,20 @@ enum DemoMode {
             b.stores[0].name = "ホテル神戸 本館"
             b.stores[1].name = "ホテル神戸 別館"
         }
+        if DemoMode.flag("-demoWages") {
+            // Duo の「人件費を見ながら」の確認用：全員に時給と予算
+            for i in b.staff.indices {
+                b.staff[i].wages = [WageEntry(id: "demo-wage-\(i)", from: "2020-01-01", kind: .hourly, amount: 1_200 + i * 50)]
+            }
+            for st in [String?](arrayLiteral: nil) + b.stores.map({ Optional($0.id) }) { b.pay.budgets[LaborBudget.key(store: st, month: nil)] = 2_200_000 }
+        }
+        if DemoMode.flag("-demoPublished") {
+            // Duo の「前回の公開と比べる」の確認用：今月を公開したことにして、そのあと3か所変える
+            b.published = [PublishedMonth.snapshot(of: b, month: MonthKey(today))]
+            b.cells[CellKey(staffID: "2", day: today.adding(days: 2))] = CellEntry(inTime: "", outTime: "", blockID: "off1", isOff: true)
+            b.cells[CellKey(staffID: "3", day: today.adding(days: 3))] = CellEntry(inTime: "09:00", outTime: "18:00", blockID: "t1", isOff: false)
+            b.cells[CellKey(staffID: "4", day: today.adding(days: 4))] = CellEntry(inTime: "13:00", outTime: "22:00", blockID: "t2", isOff: false)
+        }
         return b
     }
 }

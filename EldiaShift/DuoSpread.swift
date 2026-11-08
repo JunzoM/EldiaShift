@@ -32,7 +32,7 @@ struct DuoInfo: Equatable {
             && foldX >= Self.minPage && windowWidth - foldX >= Self.minPage
     }
 
-    /// 右のページの幅。`frame` は見開きにする画面の .global の位置（サイドバーの右など、窓の途中から始まってもよい）。
+    /// 右のページの幅。`frame` は見開きにする画面の位置（.global）（サイドバーの右など、窓の途中から始まってもよい）。
     /// 右のページは折り目から始める（左のページ＝サイドバー＋月の表、右のページ＝タイムライン）
     func rightPageWidth(in frame: CGRect) -> CGFloat {
         let w = frame.maxX - foldX
@@ -179,6 +179,8 @@ final class DuoFocus {
 
     /// 見ていた人（いなければ日だけ）
     private(set) var staffID: String?
+    /// 受け取った・見ていた希望休の申請（開くと希望休の見開きでこの申請を選ぶ）
+    private(set) var requestID: String?
     private(set) var day: DayKey?
     private(set) var at: Date = .distantPast
 
@@ -189,12 +191,28 @@ final class DuoFocus {
     func look(staffID: String?, day: DayKey) {
         self.staffID = staffID
         self.day = day
+        requestID = nil
         at = Date()
+    }
+
+    /// 希望休の申請を受け取った・見た（開くと希望休の見開きでこの申請から始める）
+    func look(request: LeaveRequest, of member: StaffMember) {
+        staffID = member.id
+        day = DayKey(request.day)
+        requestID = request.id
+        at = Date()
+    }
+
+    /// 開いたときに続きにする申請（少し前に受け取った・見たときだけ）
+    func requestToContinue(now: Date = Date()) -> String? {
+        guard let requestID, now.timeIntervalSince(at) < Self.keep else { return nil }
+        return requestID
     }
 
     /// 日だけ見た（タイムラインの日を変えた）。見ていた人はそのまま
     func look(day: DayKey) {
         self.day = day
+        requestID = nil
         at = Date()
     }
 
@@ -211,11 +229,39 @@ final class DuoFocus {
 // MARK: - 見開きのシフト表
 
 /// 見開きの左のページに出すもの
-enum SpreadPage: String {
+enum SpreadPage: String, CaseIterable, Identifiable {
     /// 月（週）の表。右のページはその日のタイムライン
     case table
-    /// 人が足りない日の一覧。右のページはその日に入れられる人（案3：左右で穴埋め）
+    /// 人が足りない日の一覧。右のページはその日に入れられる人（左右で穴埋め）
     case fill
+    /// 左に前回公開した表、右に今の表（変わったマスに枠）
+    case compare
+    /// 左に表、右に今月の人件費と予算
+    case cost
+    /// 左に表、右に来月・ほかの店舗の表（読むだけ）
+    case pair
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .table: "表とタイムライン"
+        case .fill: "人が足りない"
+        case .compare: "前回の公開と比べる"
+        case .cost: "人件費を見ながら"
+        case .pair: "来月・ほかの店舗と並べる"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .table: "calendar"
+        case .fill: "person.badge.plus"
+        case .compare: "arrow.left.arrow.right.square"
+        case .cost: "yensign.circle"
+        case .pair: "rectangle.split.2x1"
+        }
+    }
 }
 
 /// 開いた Duo のシフト表：左のページに月（週）の表、右のページに選んだ日のタイムライン。
@@ -232,19 +278,56 @@ struct SpreadBoard: View {
     /// 「人が足りない」で選んでいる行
     @State private var gapID: ShortageItem.ID?
 
-    /// 「見るだけ」で共有されたシフト表では、穴埋め（勤務を入れる）を出さない
-    private var filling: Bool { page == .fill && !db.readOnly }
+    /// 出せる見開き：「見るだけ」の共有では穴埋め（勤務を入れる）を、共有されたシフト表では人件費を出さない
+    private var pages: [SpreadPage] {
+        SpreadPage.allCases.filter { p in
+            switch p {
+            case .fill: !db.readOnly
+            case .cost: !LaborCostLock.shared.sharedTeam
+            default: true
+            }
+        }
+    }
+
+    /// いま出す見開き（出せないものを選んでいたら表）
+    private var shown: SpreadPage { pages.contains(page) ? page : .table }
+    private var filling: Bool { shown == .fill }
 
     var body: some View {
-        let focus = DuoFocus.shared
         let days = mode.days(around: anchor)
         let gaps = filling ? ShortageFinder.items(store.book, days: days) : []
         let gap = gaps.first { $0.id == gapID }
         GeometryReader { geo in
             let rightWidth = duo.rightPageWidth(in: geo.frame(in: .global))
-            HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                pageBar
+                if shown == .compare {
+                    CompareSpread(month: MonthKey(anchor), rightWidth: rightWidth, totalWidth: geo.size.width)
+                } else {
+                    pages(days: days, gaps: gaps, gap: gap, rightWidth: rightWidth, totalWidth: geo.size.width)
+                }
+            }
+        }
+        // 「人が足りない」に切り替えた・月を変えたら、いちばん上の行（選んでいる日があればその日）を選ぶ
+        .onChange(of: gaps.map(\.id)) { pickGap(gaps) }
+        .onAppear {
+            pickGap(gaps)
+            // 画面確認用（-demoSpreadFocus）：閉じた画面で2人目を見ていたことにする
+            if DemoMode.flag("-demoSpreadFocus"), let m = store.book.staff.dropFirst().first {
+                DuoFocus.shared.look(staffID: m.id, day: anchor)
+            }
+            if DemoMode.flag("-demoSpreadFill") { page = .fill }
+            if DemoMode.flag("-demoSpreadCompare") { page = .compare }
+            if DemoMode.flag("-demoSpreadCost") { page = .cost }
+            if DemoMode.flag("-demoSpreadPair") { page = .pair }
+        }
+    }
+
+    /// 左右のページ（比べる以外）
+    private func pages(days: [DayKey], gaps: [ShortageItem], gap: ShortageItem?, rightWidth: CGFloat, totalWidth: CGFloat) -> some View {
+        let focus = DuoFocus.shared
+        return HStack(spacing: 0) {
                 VStack(spacing: 0) {
-                    pageBar
                     if filling {
                         GapList(items: gaps, today: store.today, selected: $gapID) { anchor = $0.day }
                     } else {
@@ -258,29 +341,26 @@ struct SpreadBoard: View {
                         .environment(\.horizontalSizeClass, .compact)
                     }
                 }
-                .frame(width: max(0, geo.size.width - rightWidth))
+                .frame(width: max(0, totalWidth - rightWidth))
 
                 Group {
-                    if filling {
-                        GapPanel(item: gap, hasPlan: !store.book.staffing.isEmpty, isEmpty: gaps.isEmpty)
-                    } else {
-                        DuoDayPage(day: $anchor)
+                    switch shown {
+                    case .fill: GapPanel(item: gap, hasPlan: !store.book.staffing.isEmpty, isEmpty: gaps.isEmpty)
+                    case .cost: CostPanel(month: MonthKey(anchor))
+                    case .pair: PairPage(month: MonthKey(anchor))
+                    default: DuoDayPage(day: $anchor)
                     }
                 }
                 .frame(width: rightWidth)
                 .overlay(alignment: .leading) { Rectangle().fill(Color(.separator)).frame(width: 0.5) }
-            }
         }
-        // 「人が足りない」に切り替えた・月を変えたら、いちばん上の行（選んでいる日があればその日）を選ぶ
-        .onChange(of: gaps.map(\.id)) { pickGap(gaps) }
-        .onAppear {
-            pickGap(gaps)
-            // 画面確認用（-demoSpreadFocus）：閉じた画面で2人目を見ていたことにする
-            if DemoMode.flag("-demoSpreadFocus"), let m = store.book.staff.dropFirst().first {
-                DuoFocus.shared.look(staffID: m.id, day: anchor)
-            }
-            if DemoMode.flag("-demoSpreadFill") { page = .fill }
-        }
+    }
+
+    /// 「人が足りない」でその日を開く（希望休を承認して代わりを探すとき）。MainTabsView が受け取る
+    static let openFillNotification = Notification.Name("EldiaShift.duoOpenFill")
+    static func openFill(on day: DayKey) {
+        UserDefaults.standard.set(SpreadPage.fill.rawValue, forKey: "duoSpreadPage")
+        NotificationCenter.default.post(name: openFillNotification, object: day.description)
     }
 
     private func pickGap(_ gaps: [ShortageItem]) {
@@ -288,17 +368,19 @@ struct SpreadBoard: View {
         gapID = (gaps.first { $0.day == anchor } ?? gaps.first)?.id
     }
 
-    /// 左のページの上：表／人が足りない・掲示
+    /// 見開きの上：何を並べるか・掲示
     private var pageBar: some View {
         HStack(spacing: DS.gap) {
-            if !db.readOnly {
-                Picker("左のページ", selection: $page) {
-                    Text("表").tag(SpreadPage.table)
-                    Text("人が足りない").tag(SpreadPage.fill)
+            Menu {
+                Picker("見開き", selection: $page) {
+                    ForEach(pages) { p in Label(p.title, systemImage: p.systemImage).tag(p) }
                 }
-                .segmented(2)
-                .frame(maxWidth: 260)
+            } label: {
+                Label(shown.title, systemImage: shown.systemImage)
+                    .appFont(.subheadline.weight(.bold))
+                Image(systemName: "chevron.down").appFont(.caption.weight(.bold))
             }
+            .accessibilityLabel("見開きに並べるもの：\(shown.title)")
             Spacer(minLength: 0)
             Button { DuoPosting.shared.show(byHinge: false) } label: {
                 Label("掲示", systemImage: "rectangle.split.2x1")
