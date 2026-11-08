@@ -50,4 +50,25 @@ struct DuoSpreadTests {
         f.clearStaff()
         #expect(f.staffID == nil)
     }
+
+    @Test func continueRequestOnlyUntilAnotherLook() {
+        let f = DuoFocus()
+        let m = StaffMember(id: "s1", number: 1, name: "鈴木", departmentID: "d", active: true, joinDate: "", leaveDate: "",
+                            timeBlocks: [], patterns: [], activePatternID: nil, periodPatterns: [])
+        let r = LeaveRequest(id: "r1", day: "2026-11-14", note: "", status: .pending, receivedAt: Date(), decidedAt: nil)
+        f.look(request: r, of: m)
+        #expect(f.requestToContinue() == "r1")
+        #expect(f.dayToContinue() == DayKey(2026, 11, 14))
+        #expect(f.requestToContinue(now: Date().addingTimeInterval(DuoFocus.keep + 1)) == nil)
+        // そのあとシフト表を見たら、開いたときはシフト表のつづき
+        f.look(day: DayKey(2026, 11, 8))
+        #expect(f.requestToContinue() == nil)
+    }
+
+    @Test func miniGridShortLabels() {
+        #expect(MiniGrid.short("早番 9:00〜18:00") == "早番")
+        #expect(MiniGrid.short("9:00〜18:00（別館）") == "9:00〜")
+        #expect(MiniGrid.short("公休") == "公休")
+        #expect(MiniGrid.short("") == "")
+    }
 }

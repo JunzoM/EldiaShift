@@ -890,6 +890,26 @@ struct CandidateTests {
         #expect(items.first?.target.day == tue)
     }
 
+    @Test("Duo の希望休の承認：休ませると足りなくなる時間・同じ日に休む人・代わりの人を出す")
+    func leaveImpact() {
+        var b = miniBook()
+        b.staffing.bands = [StaffingBand(departmentID: "d", startHour: 9, endHour: 18, weekday: 2, saturday: 2, holiday: 2)]
+        let mon = DayKey(2026, 10, 5)
+        put(&b, "1", mon, "e")
+        put(&b, "2", mon, "e")
+        b.staff[2].offRequests = [mon.description]                  // 3人目はもう希望休
+        let i = LeaveImpact.of(b.staff[0], on: mon, in: b)
+        #expect(i.current?.isOff == false)
+        #expect(i.shortBefore == nil)                               // 今は2人そろっている
+        #expect(i.addedShort == 9)                                  // 休むと 9〜18時 が1人足りない
+        #expect(i.shortAfter == "9〜18時")
+        #expect(i.sameDay.map(\.name) == [b.staff[2].name])
+        #expect(i.alternatives.isEmpty)                             // 3人目は希望休なので代わりにならない
+        // 勤務が入っていない日なら、人数は変わらない
+        let tue = mon.adding(days: 1)
+        #expect(LeaveImpact.of(b.staff[0], on: tue, in: b).addedShort == 0)
+    }
+
     @Test("足りない時間帯は、続いている時台をまとめる")
     func hoursLabel() {
         let d = Department(id: "d", name: "ホール", colorIndex: 0, sortOrder: 0)

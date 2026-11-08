@@ -85,6 +85,13 @@ struct MainTabsView: View {
         }
         .animation(.easeInOut(duration: 0.25), value: DuoPosting.shared.shown)
         .onAppear { if DemoMode.flag("-demoPost") { DuoPosting.shared.show(byHinge: false) } }
+        // 希望休を承認して代わりを探す：シフト表の見開きの「人が足りない」でその日を開く
+        .onReceive(NotificationCenter.default.publisher(for: SpreadBoard.openFillNotification)) { n in
+            guard let raw = n.object as? String, let d = DayKey(raw) else { return }
+            anchor = d
+            if mode == .day { mode = .month }
+            tab = .schedule
+        }
         .onAppear {
             if DemoMode.enabled {
                 tab = DemoMode.flag("-demoHome") ? .home
@@ -152,6 +159,11 @@ struct MainTabsView: View {
 
     /// Duo を開いたとき、閉じた画面で見ていた日（と人）のシフト表へ。日の表示だったら、見開きになる月の表示にする
     private func continueOnOpen() {
+        // 閉じた画面で希望休の申請を受け取った・見た → 希望休の見開き（その申請を選ぶ）
+        if DuoFocus.shared.requestToContinue() != nil, !db.readOnly {
+            tab = .requests
+            return
+        }
         guard let d = DuoFocus.shared.dayToContinue() else { return }
         anchor = d
         if mode == .day { mode = .month }
@@ -231,6 +243,9 @@ struct MainTabsView: View {
                 SummaryView(month: MonthKey(anchor))
                     .toolbar { if storeInToolbar { ToolbarItem(placement: .topBarLeading) { StoreSwitcher() } } }
             }
+        case .requests where duo.spread && !db.readOnly:
+            // 開いた Duo：左に承認待ち、右にその日に休ませたらどうなるか
+            NavigationStack { LeaveSpread() }
         case .requests:
             NavigationStack {
                 OffRequestListView()
