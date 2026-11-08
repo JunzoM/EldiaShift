@@ -40,7 +40,11 @@ struct DuoInfo: Equatable {
     }
 
     /// 画面確認用（-demoLayout -demoSpread）：Duo でなくても見開きにする
-    static var demoForced: Bool { DemoMode.flag("-demoSpread") }
+    static var demoForced: Bool { DemoMode.flag("-demoSpread") || demoHingeScript }
+
+    /// 画面確認用（-demoLayout -demoHingeScript）：開き具合を 全開 → 一瞬だけ半分 → 半分のまま → 全開 と順に変える
+    /// （シミュレーターでは半分開きにできないため、半分開いたときの自動の掲示をこれで確かめる）
+    static var demoHingeScript: Bool { DemoMode.flag("-demoHingeScript") }
 }
 
 private struct DuoInfoKey: EnvironmentKey {
@@ -84,6 +88,26 @@ final class HingeProbeView: UIView {
         isUserInteractionEnabled = false
         isAccessibilityElement = false
         installHinge()
+        if DuoInfo.demoHingeScript { runHingeScript() }
+    }
+
+    /// 画面確認用の開き具合（-demoHingeScript のとき、本物の折り目の代わりに使う）
+    private var scriptedHinge: HingeState = .fullyOpen
+
+    private func runHingeScript() {
+        let steps: [(Double, HingeState)] = [
+            (4, .partiallyOpen), (4.8, .fullyOpen),   // 0.8秒だけ半分：掲示にしない
+            (8, .partiallyOpen),                      // 半分のまま：2秒後に掲示
+            (14, .fullyOpen),                         // 開ききる：掲示をやめる
+        ]
+        for (t, h) in steps {
+            DispatchQueue.main.asyncAfter(deadline: .now() + t) { [weak self] in
+                guard let self else { return }
+                print("demoHingeScript t=\(t) hinge=\(h)")
+                scriptedHinge = h
+                info.hinge = h
+            }
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -123,7 +147,7 @@ final class HingeProbeView: UIView {
         next.windowWidth = w.bounds.width
         next.landscape = screen.bounds.width > screen.bounds.height
         if DuoInfo.demoForced {
-            next.hinge = .fullyOpen
+            next.hinge = DuoInfo.demoHingeScript ? scriptedHinge : .fullyOpen
             next.foldX = w.bounds.midX
             next.landscape = true
         }
