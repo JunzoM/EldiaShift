@@ -5,6 +5,12 @@ import SwiftUI
 struct MonthGridView: View {
     let mode: GridMode
     let days: [DayKey]
+    /// 選んでいる日（Duo の見開き：右のページに出している日。日付に枠を付け、表をその日まで動かす）
+    var selectedDay: DayKey? = nil
+    /// 印を付ける人（Duo の見開き：閉じた画面で見ていた人）
+    var highlightStaffID: String? = nil
+    /// マスを押したとき（シートを開くのとは別に知らせる。Duo の見開きで右のページをその日にする）
+    var onPickCell: (StaffMember, DayKey) -> Void = { _, _ in }
     /// 日付を押したとき（その日のタイムラインへ）
     var onOpenDay: (DayKey) -> Void = { _ in }
 
@@ -385,7 +391,13 @@ struct MonthGridView: View {
     /// マスを押したとき：まとめて選んでいれば選ぶ・外す、ふだんはそのマスを開く
     private func tapCell(_ m: StaffMember, _ d: DayKey) {
         guard !m.hasLeft(on: d) else { return }
-        if selecting { togglePick(CellKey(staffID: m.id, day: d)) } else { selected = Selection(member: m, day: d) }
+        if selecting {
+            togglePick(CellKey(staffID: m.id, day: d))
+        } else {
+            selected = Selection(member: m, day: d)
+            DuoFocus.shared.look(staffID: m.id, day: d)
+            onPickCell(m, d)
+        }
     }
 
     private func togglePick(_ key: CellKey) {
@@ -488,6 +500,7 @@ struct MonthGridView: View {
             sectionLabel(d, count: n)
         case .staff(let m):
             nameCell(m, book: book)
+                .background(m.id == highlightStaffID ? Color.accentColor.opacity(0.14) : .clear)
         case .hourToggle(let d, _):
             Button { toggleHourly(d) } label: {
                 HStack(spacing: 6) {
@@ -612,7 +625,9 @@ struct MonthGridView: View {
         // 左には名前の列が重なるので、今日の数日前を左端に合わせる
         // 週は月曜から見せる（動かさない）。月は今日の数日前を左端に
         guard !isWeek else { return }
-        let target = days.contains(today) ? today.adding(days: -(compact ? 2 : 3)) : nil
+        // 選んでいる日があれば（Duo の見開き）その日を、なければ今日を見せる
+        let focus = selectedDay.flatMap { days.contains($0) ? $0 : nil } ?? today
+        let target = days.contains(focus) ? focus.adding(days: -(compact ? 2 : 3)) : nil
         if let target, days.contains(target) { proxy.scrollTo(target, anchor: .leading) }
         else if let first = days.first { proxy.scrollTo(first, anchor: .leading) }
     }
@@ -717,6 +732,11 @@ struct MonthGridView: View {
         .foregroundStyle(color)
         .frame(width: cellWidth, height: headerHeight)
         .background(d == today ? Color.accentColor.opacity(0.15) : .clear)
+        .overlay {
+            if d == selectedDay {
+                RoundedRectangle(cornerRadius: DS.chipRadius).strokeBorder(Color.accentColor, lineWidth: 2).padding(2)
+            }
+        }
         .overlay(alignment: .topTrailing) {
             if short { Circle().fill(StaffingStyle.short).frame(width: 6, height: 6).padding(3) }
         }

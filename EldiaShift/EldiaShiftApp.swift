@@ -314,6 +314,8 @@ struct ShiftBoardView: View {
     var storeInToolbar = true
 
     @AppStorage("viewMode") private var mode: GridMode = .month
+    /// 折りたたみの iPhone（Duo）を開いて横にしているとき：月・週は見開き（左に表、右にタイムライン）
+    @Environment(\.duo) private var duo
     @State private var showSettings = false
     @State private var importing = false
     @State private var showPrint = ProcessInfo.processInfo.arguments.contains("-demoPrint")
@@ -349,6 +351,8 @@ struct ShiftBoardView: View {
                 } else {
                     if mode == .day {
                         DayTimelineView(day: anchor)
+                    } else if duo.spread {
+                        SpreadBoard(mode: mode, anchor: $anchor)
                     } else {
                         MonthGridView(mode: mode, days: mode.days(around: anchor)) { d in
                             anchor = d

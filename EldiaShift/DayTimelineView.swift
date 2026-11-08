@@ -4,6 +4,8 @@ import SwiftUI
 /// 横幅は画面に収める（横スクロールにするとドラッグとぶつかるため）。空いているところを押すと8時間のシフトを作る
 struct DayTimelineView: View {
     let day: DayKey
+    /// 印を付ける人（Duo の見開き：閉じた画面で見ていた人）
+    var highlightStaffID: String? = nil
 
     @Environment(\.shiftStore) private var store
     @State private var drag: DragState?
@@ -110,6 +112,9 @@ struct DayTimelineView: View {
         }
         }
         .onAppear { if store.editing { CoachCenter.shared.show(.timeline("timelineBar")) } }
+        // 見ていた日を覚える（Duo を開いたとき、この日から見開きにする）
+        .onAppear { DuoFocus.shared.look(day: day) }
+        .onChange(of: day) { DuoFocus.shared.look(day: day) }
         .onChange(of: store.editing) { if store.editing { CoachCenter.shared.show(.timeline("timelineBar"), after: 0.6) } }
         .shiftSheet(item: $shortage) { t in CandidatesSheet(target: t).presentationDetents([.medium, .large]) }
         .shiftSheet(item: $editing) { e in
@@ -173,6 +178,7 @@ struct DayTimelineView: View {
             .clipped()
         }
         .frame(height: rowHeight)
+        .background(m.id == highlightStaffID ? Color.accentColor.opacity(0.10) : .clear)
         .overlay(alignment: .bottom) { Divider() }
         .accessibilityElement(children: .contain)
     }

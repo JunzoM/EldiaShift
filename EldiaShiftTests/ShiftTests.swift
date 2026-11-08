@@ -871,6 +871,31 @@ struct CandidateTests {
         put(&b, "2", mon, "off2")
         #expect(ShortageFinder.candidates(b, department: "d", on: mon, includeOthers: false).isEmpty)
     }
+
+    @Test("Duo の穴埋め：足りない日・部門を日付順に並べ、足りない人×時間と時間帯を出す")
+    func items() {
+        var b = miniBook()
+        let mon = DayKey(2026, 10, 5)
+        #expect(ShortageFinder.items(b, days: [mon]).isEmpty)          // 必要な人数を決めていなければ出さない
+        b.staffing.bands = [StaffingBand(departmentID: "d", startHour: 9, endHour: 18, weekday: 2, saturday: 2, holiday: 2)]
+        let tue = mon.adding(days: 1)
+        put(&b, "1", mon, "e")
+        put(&b, "2", mon, "e")
+        put(&b, "1", tue, "e")
+        let items = ShortageFinder.items(b, days: [mon, tue])
+        // 月曜は2人そろっている。火曜は1人足りない時間が9時間
+        #expect(items.map(\.day) == [tue])
+        #expect(items.first?.short == 9)
+        #expect(items.first?.hoursLabel == "9〜18時")
+        #expect(items.first?.target.day == tue)
+    }
+
+    @Test("足りない時間帯は、続いている時台をまとめる")
+    func hoursLabel() {
+        let d = Department(id: "d", name: "ホール", colorIndex: 0, sortOrder: 0)
+        let item = ShortageItem(department: d, day: DayKey(2026, 11, 7), hours: [9, 10, 13, 21, 22, 23], short: 6)
+        #expect(item.hoursLabel == "9〜11時・13〜14時・21〜24時")
+    }
 }
 
 @Suite("公開と変更点")
