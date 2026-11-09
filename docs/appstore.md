@@ -72,6 +72,15 @@ SHIFT は、ホテルや店舗の現場で使うシフト表アプリです。�
 ・会社の色を選んで、アプリ全体の色をそろえられます
 ・アプリの中のロゴ「〇〇 SHIFT」を、店舗ごとに自分の名前に
 
+### このバージョンの新機能（1.2）
+・折りたたみの iPhone（iPhone Duo）に対応：開いて横にすると、シフト表が見開きに。左に月の表、右に選んだ日のタイムライン
+・見開きの左右で、人が足りない日と入れられる人を並べて穴埋め。前回公開した表との見比べ、人件費を見ながらの調整、来月・ほかの店舗との並べ表示も
+・希望休の承認を見開きで：休ませるとその日の人数がどうなるか、代わりに入れられる人を見てから決められます
+・閉じた画面で見ていた日・人・申請の続きから、開いた画面で始まります
+・半分開いて立てると、今日と明日の出勤を大きく掲示
+・縦に開くと、上に表、下にその日の操作の2段に
+・共有を受けた人の画面に、共有元（会社名）を表示
+
 ### このバージョンの新機能（1.1）
 ・シフト表の共有：iCloud で、ほかの Apple ID の人と一緒に編集（見るだけも可）。給与・人件費は共有した相手には表示しません
 ・希望休の申請：事務所に貼るQRコードから、スタッフがスマホで申請。届いたリンクを押すだけで取り込み、承認・却下・返事まで
@@ -93,6 +102,9 @@ SHIFT は、ホテルや店舗の現場で使うシフト表アプリです。�
 ・希望休の申請：スタッフ用の申請ページ（https://facility-manager-phi.vercel.app/hotel-shift/request）は入力内容をサーバーに送らず、申請の内容を URL の「#」以降に入れたリンクを作るだけです。Associated Domains（applinks:facility-manager-phi.vercel.app）は、このリンクを押したときに SHIFT の「申請を受け取る」画面を開くために使います。お試し用のリンク（スタッフ「見本 花子」を登録すると名前が自動で選ばれます）：
 https://facility-manager-phi.vercel.app/hotel-shift/r?openExternalBrowser=1#eyJ2IjoxLCJuIjoi6KaL5pysIOiKseWtkCIsInMiOiLopovmnKzjg5vjg4bjg6sg5pys6aSoIiwiZCI6WyIyMDI2LTEyLTAzIiwiMjAyNi0xMi0xMCJdLCJyIjoi5a-p5p-755So44Gu6KaL5pysIn0
 ・Face ID：設定 → 人件費 →「この端末で人件費・給与を隠す」をオンにしたときだけ、人件費を表示する前の本人確認に使います（確認は iOS が行い、アプリは生体情報を受け取りません）。
+
+1.2 で追加した機能について：
+・折りたたみの iPhone（iPhone Duo）の見開き・掲示・上下の表示は、iOS 27.1 以降の折りたたみの iPhone で、開いたとき（UIHingeInteraction で開き具合を受け取る）だけ出ます。ほかの iPhone・iPad・Mac の画面は 1.1 と同じです。折りたたみの iPhone で確かめるときは、スタッフを数人追加してから開いて横にすると、シフト表が見開きになります。
 
 ## Mac 版の説明（App Store Connect の macOS の欄）
 iOS と同じ文章を元に、次のところだけ変える。
@@ -159,6 +171,14 @@ bash scripts/duo-screenshots.sh
 1. CloudKit Console で、開発環境のスキーマを本番へ反映（Deploy Schema Changes）
 2. Xcode：Product → Archive → Distribute App → App Store Connect → Upload
 3. App Store Connect でビルドを選び、上の内容と画面写真を入れて「審査へ提出」
+
+### 1.2（ビルド 17）
+- Duo の見開き・開くとつづき・左右で穴埋め・立てて掲示・希望休の承認・比べる・人件費・並べる・縦に開いた上下（#116〜#119）と、1.1.1 の共有元の表示を入れる
+- UIHingeInteraction は iOS 27.1 の SDK にしか無いので、Xcode 27.2（iOS 27.2 SDK）の Mac で Archive する。GitHub の CI（Xcode 26）で作ると Duo の開き具合を受け取らないビルドになる
+- CloudKit のスキーマは変えていない（反映は不要）
+- 画面写真：iPhone・iPad は 1.1 のまま。Duo の画面写真は任意（`scripts/duo-screenshots.sh`）
+- 実機で確かめること：本物の折り目で開く・半分開いて立てる・縦に開く・開いたまま回す
+- 2026年11月9日：Xcode 27.2（iOS 27.2 SDK）で Archive し、iOS 版のビルド 17 を App Store Connect へアップロードした（`xcodebuild -exportArchive`、App Store Connect へ直接）。Mac 版はまだ
 
 ### 1.1.1（ビルド 16）
 - 共有を受けた人の「共有した人 —」を、「共有元」（会社名、無ければ最初の店舗名）に変える。共有した人の名前は iCloud が参加者のアプリに渡さない（ビルド 13〜15 で確かめた。Apple の共有の画面には出るが、アプリからは取れない）
