@@ -356,10 +356,10 @@ struct ShiftBoardView: View {
                     } else if duo.stacked {
                         StackedBoard(mode: mode, anchor: $anchor)
                     } else {
-                        MonthGridView(mode: mode, days: mode.days(around: anchor)) { d in
+                        MonthGridView(mode: mode, days: mode.days(around: anchor), onOpenDay: { d in
                             anchor = d
                             mode = .day
-                        }
+                        })
                     }
                 }
             }

@@ -397,10 +397,9 @@ struct SpreadBoard: View {
                     } else {
                         MonthGridView(mode: mode, days: days, selectedDay: anchor,
                                       highlightStaffID: focus.staffID, hidesIdleToolbar: true,
-                                      onPickCell: { _, d in anchor = d }) { d in
-                            // 日付を押したら、日の表示に切り替えずに右のページだけ変える
-                            anchor = d
-                        }
+                                      onPickCell: { _, d in anchor = d },
+                                      // 日付を押したら、日の表示に切り替えずに右のページだけ変える
+                                      onOpenDay: { d in anchor = d })
                         // 左のページは iPhone くらいの幅なので、iPhone と同じ詰めた表にする
                         .environment(\.horizontalSizeClass, .compact)
                     }

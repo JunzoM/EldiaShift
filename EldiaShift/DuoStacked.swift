@@ -56,10 +56,9 @@ struct StackedBoard: View {
             VStack(spacing: 0) {
                 MonthGridView(mode: mode, days: mode.days(around: anchor), selectedDay: anchor,
                               highlightStaffID: focus.staffID, hidesIdleToolbar: true,
-                              onPickCell: { _, d in anchor = d }) { d in
-                    // 日付を押したら、日の表示に切り替えずに下のページだけ変える
-                    anchor = d
-                }
+                              onPickCell: { _, d in anchor = d },
+                              // 日付を押したら、日の表示に切り替えずに下のページだけ変える
+                              onOpenDay: { d in anchor = d })
                 .frame(height: max(0, geo.size.height - bottom))
 
                 VStack(spacing: 0) {
