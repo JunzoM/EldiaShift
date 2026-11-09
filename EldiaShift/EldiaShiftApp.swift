@@ -353,6 +353,8 @@ struct ShiftBoardView: View {
                         DayTimelineView(day: anchor)
                     } else if duo.spread {
                         SpreadBoard(mode: mode, anchor: $anchor)
+                    } else if duo.stacked {
+                        StackedBoard(mode: mode, anchor: $anchor)
                     } else {
                         MonthGridView(mode: mode, days: mode.days(around: anchor)) { d in
                             anchor = d
@@ -648,6 +650,17 @@ enum DemoMode {
             b.cells[CellKey(staffID: "2", day: today.adding(days: 2))] = CellEntry(inTime: "", outTime: "", blockID: "off1", isOff: true)
             b.cells[CellKey(staffID: "3", day: today.adding(days: 3))] = CellEntry(inTime: "09:00", outTime: "18:00", blockID: "t1", isOff: false)
             b.cells[CellKey(staffID: "4", day: today.adding(days: 4))] = CellEntry(inTime: "13:00", outTime: "22:00", blockID: "t2", isOff: false)
+        }
+        if DemoMode.flag("-demoPendingShort") {
+            // Duo の「承認して代わりを探す」の確認用：休ませると人が足りなくなる申請を1件、いちばん上に来るよう明日以降で探して入れる
+            search: for k in 1...14 {
+                let d = today.adding(days: k)
+                for i in b.staff.indices where LeaveImpact.of(b.staff[i], on: d, in: b).addedShort > 0 {
+                    b.staff[i].leaveRequests.append(LeaveRequest(id: "demo-short", day: d.description, note: "急用のため",
+                                                                 status: .pending, receivedAt: Date()))
+                    break search
+                }
+            }
         }
         return b
     }

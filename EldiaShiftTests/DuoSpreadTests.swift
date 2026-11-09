@@ -34,6 +34,33 @@ struct DuoSpreadTests {
         #expect(d.rightPageWidth(in: CGRect(x: 400, y: 0, width: 551, height: 600)) == 280)
     }
 
+    /// 開いた Duo の縦向き（669 × 951 ポイント、折り目はまん中）
+    private func tall(_ hinge: HingeState = .fullyOpen) -> DuoInfo {
+        DuoInfo(hinge: hinge, foldX: 334.5, windowWidth: 669, landscape: false, foldY: 475.5, windowHeight: 951)
+    }
+
+    @Test func stackedOnlyWhenOpenAndPortrait() {
+        #expect(tall().stacked)
+        #expect(tall(.partiallyOpen).stacked)
+        #expect(!tall().spread)
+        #expect(tall().opened)
+        #expect(!tall(.closed).stacked)
+        #expect(!tall(.none).stacked)
+        // 横向きは左右の見開き
+        #expect(!open().stacked)
+        #expect(open().opened)
+        // 窓が折り目の上だけのとき
+        #expect(!DuoInfo(hinge: .fullyOpen, landscape: false, foldY: 480, windowHeight: 470).stacked)
+    }
+
+    @Test func bottomPageStartsAtFold() {
+        let d = tall()
+        // ナビゲーションバーの下（y=100）から窓の下まで
+        #expect(d.bottomPageHeight(in: CGRect(x: 0, y: 100, width: 669, height: 851)) == 475.5)
+        // 折り目の上が低すぎるときは、上のページを 240 残して、下のページを折り目より上から始める
+        #expect(d.bottomPageHeight(in: CGRect(x: 0, y: 400, width: 669, height: 551)) == 311)
+    }
+
     @Test func continueOnlyRecentLook() {
         let f = DuoFocus()
         #expect(f.dayToContinue() == nil)

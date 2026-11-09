@@ -22,6 +22,10 @@ struct DuoInfo: Equatable {
     var windowWidth: CGFloat = 0
     /// 画面が横向き（折り目が縦に通っている）
     var landscape = false
+    /// 折り目の y（窓の上から）。縦に開いたとき（折り目が横に通る）に使う
+    var foldY: CGFloat = 0
+    /// 窓の高さ
+    var windowHeight: CGFloat = 0
 
     /// 左右のページの、いちばん狭くてよい幅（これより狭くなる窓では見開きにしない）
     static let minPage: CGFloat = 280
@@ -32,6 +36,25 @@ struct DuoInfo: Equatable {
             && foldX >= Self.minPage && windowWidth - foldX >= Self.minPage
     }
 
+    /// 上下のページの、いちばん低くてよい高さ（これより低くなる窓では上下に分けない）
+    static let minRow: CGFloat = 240
+
+    /// 上下に分ける：開いていて、縦向き（折り目が横に通る）で、折り目が窓の中にあり、上下に1ページずつ取れる。
+    /// 半分開いて机に置けば、ノート PC のように上で表を見て、下で操作する
+    var stacked: Bool {
+        hinge.isOpen && !landscape
+            && foldY >= Self.minRow && windowHeight - foldY >= Self.minRow
+    }
+
+    /// 開いて2ページにしている（左右でも上下でも）。開くとつづき に使う
+    var opened: Bool { spread || stacked }
+
+    /// 下のページの高さ。`frame` は上下に分ける画面の位置（.global）。下のページは折り目から始める
+    func bottomPageHeight(in frame: CGRect) -> CGFloat {
+        let h = frame.maxY - foldY
+        return min(max(h, Self.minRow), max(Self.minRow, frame.height - Self.minRow))
+    }
+
     /// 右のページの幅。`frame` は見開きにする画面の位置（.global）（サイドバーの右など、窓の途中から始まってもよい）。
     /// 右のページは折り目から始める（左のページ＝サイドバー＋月の表、右のページ＝タイムライン）
     func rightPageWidth(in frame: CGRect) -> CGFloat {
@@ -40,7 +63,13 @@ struct DuoInfo: Equatable {
     }
 
     /// 画面確認用（-demoLayout -demoSpread）：Duo でなくても見開きにする
-    static var demoForced: Bool { DemoMode.flag("-demoSpread") || demoHingeScript }
+    static var demoForced: Bool { DemoMode.flag("-demoSpread") || demoHingeScript || demoStacked || demoOpenScript }
+
+    /// 画面確認用（-demoLayout -demoStacked）：縦に開いたことにする（上下の2ページ）
+    static var demoStacked: Bool { DemoMode.flag("-demoStacked") }
+
+    /// 画面確認用（-demoLayout -demoOpenScript）：閉じた画面で始めて、5秒後に開く（開くとつづき を確かめる）
+    static var demoOpenScript: Bool { DemoMode.flag("-demoOpenScript") }
 
     /// 画面確認用（-demoLayout -demoHingeScript）：開き具合を 全開 → 一瞬だけ半分 → 半分のまま → 全開 と順に変える
     /// （シミュレーターでは半分開きにできないため、半分開いたときの自動の掲示をこれで確かめる）
@@ -74,13 +103,22 @@ struct HingeReader: UIViewRepresentable {
     func updateUIView(_ v: HingeProbeView, context: Context) {
         v.onChange = onChange
         v.measureWindow()
+        v.measureSoon()
     }
 }
 
 final class HingeProbeView: UIView {
     var onChange: ((DuoInfo) -> Void)?
     private var info = DuoInfo() {
-        didSet { if info != oldValue { onChange?(info) } }
+        // SwiftUI が画面を更新している最中（updateUIView・回している途中）に知らせると、状態の変更が捨てられて
+        // 見開き・上下に切り替わらないことがあるので、更新が終わってから知らせる
+        didSet {
+            guard info != oldValue else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                onChange?(info)
+            }
+        }
     }
 
     override init(frame: CGRect) {
@@ -88,14 +126,14 @@ final class HingeProbeView: UIView {
         isUserInteractionEnabled = false
         isAccessibilityElement = false
         installHinge()
-        if DuoInfo.demoHingeScript { runHingeScript() }
+        if DuoInfo.demoHingeScript || DuoInfo.demoOpenScript { runHingeScript() }
     }
 
-    /// 画面確認用の開き具合（-demoHingeScript のとき、本物の折り目の代わりに使う）
-    private var scriptedHinge: HingeState = .fullyOpen
+    /// 画面確認用の開き具合（-demoHingeScript・-demoOpenScript のとき、本物の折り目の代わりに使う）
+    private var scriptedHinge: HingeState = DuoInfo.demoOpenScript ? .closed : .fullyOpen
 
     private func runHingeScript() {
-        let steps: [(Double, HingeState)] = [
+        let steps: [(Double, HingeState)] = DuoInfo.demoOpenScript ? [(5, .fullyOpen)] : [
             (4, .partiallyOpen), (4.8, .fullyOpen),   // 0.8秒だけ半分：掲示にしない
             (8, .partiallyOpen),                      // 半分のまま：2秒後に掲示
             (14, .fullyOpen),                         // 開ききる：掲示をやめる
@@ -135,6 +173,20 @@ final class HingeProbeView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         measureWindow()
+        // 回している途中は、窓と画面の大きさがまだ回る前のことがあるので、回り終わったあとにもう一度測る
+        measureSoon()
+    }
+
+    private var measureScheduled = false
+
+    /// 少しあとに測り直す（何度呼んでも1回にまとめる）
+    func measureSoon() {
+        guard !measureScheduled else { return }
+        measureScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            self?.measureScheduled = false
+            self?.measureWindow()
+        }
     }
 
     /// 折り目は画面のまん中。窓が画面いっぱいでないとき（ほかのアプリと並べたとき）も合うよう、画面の座標から窓の座標へ直す
@@ -143,13 +195,17 @@ final class HingeProbeView: UIView {
         let screen = w.windowScene?.screen ?? w.screen
         let mid = CGPoint(x: screen.bounds.midX, y: screen.bounds.midY)
         var next = info
-        next.foldX = w.convert(mid, from: screen.coordinateSpace).x
+        let fold = w.convert(mid, from: screen.coordinateSpace)
+        next.foldX = fold.x
+        next.foldY = fold.y
         next.windowWidth = w.bounds.width
+        next.windowHeight = w.bounds.height
         next.landscape = screen.bounds.width > screen.bounds.height
         if DuoInfo.demoForced {
-            next.hinge = DuoInfo.demoHingeScript ? scriptedHinge : .fullyOpen
+            next.hinge = DuoInfo.demoHingeScript || DuoInfo.demoOpenScript ? scriptedHinge : .fullyOpen
             next.foldX = w.bounds.midX
-            next.landscape = true
+            next.foldY = w.bounds.midY
+            next.landscape = !DuoInfo.demoStacked
         }
         info = next
     }
@@ -406,15 +462,24 @@ private struct GapList: View {
             ContentUnavailableView("人は足りています", systemImage: "checkmark.circle",
                                    description: Text("この期間に、必要な人数より少ない時間はありません。"))
         } else {
-            List(items) { item in
-                Button {
-                    selected = item.id
-                    onPick(item)
-                } label: { row(item) }
-                .buttonStyle(.plain)
-                .listRowBackground(item.id == selected ? Color.accentColor.opacity(0.14) : Color(.systemBackground))
+            ScrollViewReader { proxy in
+                List(items) { item in
+                    Button {
+                        selected = item.id
+                        onPick(item)
+                    } label: { row(item) }
+                    .buttonStyle(.plain)
+                    .listRowBackground(item.id == selected ? Color.accentColor.opacity(0.14) : Color(.systemBackground))
+                    .id(item.id)
+                }
+                .listStyle(.plain)
+                // 選んでいる行を見えるところへ（希望休を承認して代わりを探すときなど、月の途中の日を開いたとき）
+                .onAppear { if let selected { proxy.scrollTo(selected, anchor: .center) } }
+                .onChange(of: selected) { _, id in
+                    guard let id else { return }
+                    withAnimation { proxy.scrollTo(id, anchor: .center) }
+                }
             }
-            .listStyle(.plain)
         }
     }
 
@@ -445,7 +510,7 @@ private struct GapList: View {
 }
 
 /// 見開きの右のページ（人が足りない）：選んだ日・部門に入れられる人。押すと勤務が入る
-private struct GapPanel: View {
+struct GapPanel: View {
     let item: ShortageItem?
     let hasPlan: Bool
     let isEmpty: Bool
