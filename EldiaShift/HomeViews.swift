@@ -73,9 +73,10 @@ struct MainTabsView: View {
         // Duo を開いて見開きになったとき：閉じた画面で少し前まで見ていた日のシフト表を、見開きで出す（開くとつづき）
         .onChange(of: duo.opened) { _, opened in
             guard opened else { return }
-            if duo.spread { fitSidebarToSpread() }
             continueOnOpen()
         }
+        // 見開きになったら（開いたとき・開いたまま縦から横にしたとき）サイドバーをたたむ
+        .onChange(of: duo.spread) { _, spread in if spread { fitSidebarToSpread() } }
         // 半分開いて横のまま少し置いたら掲示にする。開ききる・閉じると、自動で出した掲示はやめる
         .onChange(of: duo.hinge) { _, hinge in postByHinge(hinge) }
         .overlay {
@@ -146,10 +147,14 @@ struct MainTabsView: View {
     /// 半分開いて立てたとき：少し待っても半分開きのままなら掲示にする（開け閉めの途中は無視する）
     private func postByHinge(_ hinge: HingeState) {
         let posting = DuoPosting.shared
+        posting.hingeChanged()
         if hinge == .partiallyOpen {
             guard autoPost, duo.landscape, !posting.shown else { return }
+            let mark = posting.hingeChanges
             Task { @MainActor in
                 try? await Task.sleep(for: DuoPosting.settle)
+                // 待っている間に一度でも開き具合が変わっていたら（半分 → 全開 → 半分 など）、ここでは出さない
+                guard posting.hingeChanges == mark else { return }
                 if duo.hinge == .partiallyOpen, duo.landscape, !posting.shown { posting.show(byHinge: true) }
             }
         } else if posting.byHinge {

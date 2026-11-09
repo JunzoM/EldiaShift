@@ -898,7 +898,7 @@ struct CandidateTests {
         put(&b, "1", mon, "e")
         put(&b, "2", mon, "e")
         b.staff[2].offRequests = [mon.description]                  // 3人目はもう希望休
-        let i = LeaveImpact.of(b.staff[0], on: mon, in: b)
+        let i = LeaveImpact.of(b.staff[0], on: mon, in: b, offBlockID: "off1")
         #expect(i.current?.isOff == false)
         #expect(i.shortBefore == nil)                               // 今は2人そろっている
         #expect(i.addedShort == 9)                                  // 休むと 9〜18時 が1人足りない
@@ -907,7 +907,12 @@ struct CandidateTests {
         #expect(i.alternatives.isEmpty)                             // 3人目は希望休なので代わりにならない
         // 勤務が入っていない日なら、人数は変わらない
         let tue = mon.adding(days: 1)
-        #expect(LeaveImpact.of(b.staff[0], on: tue, in: b).addedShort == 0)
+        #expect(LeaveImpact.of(b.staff[0], on: tue, in: b, offBlockID: "off1").addedShort == 0)
+        // 「シフトも休みにする」が切（休みの種類なし）なら、承認しても勤務は残るので人数は変わらない
+        let keep = LeaveImpact.of(b.staff[0], on: mon, in: b, offBlockID: nil)
+        #expect(keep.addedShort == 0)
+        #expect(keep.shortAfter == nil)
+        #expect(keep.alternatives.isEmpty)
     }
 
     @Test("足りない時間帯は、続いている時台をまとめる")

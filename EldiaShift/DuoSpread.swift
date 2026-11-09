@@ -71,7 +71,7 @@ struct DuoInfo: Equatable {
     /// 画面確認用（-demoLayout -demoOpenScript）：閉じた画面で始めて、5秒後に開く（開くとつづき を確かめる）
     static var demoOpenScript: Bool { DemoMode.flag("-demoOpenScript") }
 
-    /// 画面確認用（-demoLayout -demoHingeScript）：開き具合を 全開 → 一瞬だけ半分 → 半分のまま → 全開 と順に変える
+    /// 画面確認用（-demoLayout -demoHingeScript）：開き具合を 全開 → 一瞬だけ半分 → 半分・全開と揺れてから半分のまま → 全開 と順に変える
     /// （シミュレーターでは半分開きにできないため、半分開いたときの自動の掲示をこれで確かめる）
     static var demoHingeScript: Bool { DemoMode.flag("-demoHingeScript") }
 }
@@ -135,13 +135,14 @@ final class HingeProbeView: UIView {
     private func runHingeScript() {
         let steps: [(Double, HingeState)] = DuoInfo.demoOpenScript ? [(5, .fullyOpen)] : [
             (4, .partiallyOpen), (4.8, .fullyOpen),   // 0.8秒だけ半分：掲示にしない
-            (8, .partiallyOpen),                      // 半分のまま：2秒後に掲示
+            (8, .partiallyOpen), (8.5, .fullyOpen),   // 半分 → 全開 → 半分 と揺れたら、
+            (8.9, .partiallyOpen),                    // 最後に半分にしてから2秒後（10.9秒）に掲示
             (14, .fullyOpen),                         // 開ききる：掲示をやめる
         ]
         for (t, h) in steps {
             DispatchQueue.main.asyncAfter(deadline: .now() + t) { [weak self] in
                 guard let self else { return }
-                print("demoHingeScript t=\(t) hinge=\(h)")
+                print("demoHingeScript t=\(t) hinge=\(h) at \(Date().timeIntervalSince1970)")
                 scriptedHinge = h
                 info.hinge = h
             }
@@ -366,6 +367,11 @@ struct SpreadBoard: View {
         }
         // 「人が足りない」に切り替えた・月を変えたら、いちばん上の行（選んでいる日があればその日）を選ぶ
         .onChange(of: gaps.map(\.id)) { pickGap(gaps) }
+        // 日が変わったら（希望休を承認して代わりを探すときなど）、その日の行を選ぶ
+        .onChange(of: anchor) { _, d in
+            guard gaps.first(where: { $0.id == gapID })?.day != d, let g = gaps.first(where: { $0.day == d }) else { return }
+            gapID = g.id
+        }
         .onAppear {
             pickGap(gaps)
             // 画面確認用（-demoSpreadFocus）：閉じた画面で2人目を見ていたことにする
@@ -632,7 +638,12 @@ final class DuoPosting {
     func show(byHinge: Bool) {
         self.byHinge = byHinge
         shown = true
+        if DuoInfo.demoHingeScript { print("demoHingeScript show byHinge=\(byHinge) at \(Date().timeIntervalSince1970)") }
     }
+
+    /// 開き具合が変わるたびに増やす。半分開いてから待っている間に開き具合が変わったら、その待ちは掲示にしない
+    private(set) var hingeChanges = 0
+    func hingeChanged() { hingeChanges += 1 }
 
     func hide() {
         shown = false
