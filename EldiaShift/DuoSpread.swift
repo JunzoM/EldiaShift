@@ -310,6 +310,17 @@ enum SpreadPage: String, CaseIterable, Identifiable {
         }
     }
 
+    /// 出せる見開き：「見るだけ」の共有では穴埋め（勤務を入れる）を、共有されたシフト表では人件費を出さない
+    @MainActor static func available(readOnly: Bool) -> [SpreadPage] {
+        allCases.filter { p in
+            switch p {
+            case .fill: !readOnly
+            case .cost: !LaborCostLock.shared.sharedTeam
+            default: true
+            }
+        }
+    }
+
     var systemImage: String {
         switch self {
         case .table: "calendar"
@@ -335,16 +346,7 @@ struct SpreadBoard: View {
     /// 「人が足りない」で選んでいる行
     @State private var gapID: ShortageItem.ID?
 
-    /// 出せる見開き：「見るだけ」の共有では穴埋め（勤務を入れる）を、共有されたシフト表では人件費を出さない
-    private var pages: [SpreadPage] {
-        SpreadPage.allCases.filter { p in
-            switch p {
-            case .fill: !db.readOnly
-            case .cost: !LaborCostLock.shared.sharedTeam
-            default: true
-            }
-        }
-    }
+    private var pages: [SpreadPage] { SpreadPage.available(readOnly: db.readOnly) }
 
     /// いま出す見開き（出せないものを選んでいたら表）
     private var shown: SpreadPage { pages.contains(page) ? page : .table }
@@ -356,8 +358,8 @@ struct SpreadBoard: View {
         let gap = gaps.first { $0.id == gapID }
         GeometryReader { geo in
             let rightWidth = duo.rightPageWidth(in: geo.frame(in: .global))
+            // 何を並べるか・掲示は、表の上の年月の帯に入れる（SpreadPageControls。帯を1段減らして表を広くする）
             VStack(spacing: 0) {
-                pageBar
                 if shown == .compare {
                     CompareSpread(month: MonthKey(anchor), rightWidth: rightWidth, totalWidth: geo.size.width)
                 } else {
@@ -394,11 +396,10 @@ struct SpreadBoard: View {
                         GapList(items: gaps, today: store.today, selected: $gapID) { anchor = $0.day }
                     } else {
                         MonthGridView(mode: mode, days: days, selectedDay: anchor,
-                                      highlightStaffID: focus.staffID,
-                                      onPickCell: { _, d in anchor = d }) { d in
-                            // 日付を押したら、日の表示に切り替えずに右のページだけ変える
-                            anchor = d
-                        }
+                                      highlightStaffID: focus.staffID, hidesIdleToolbar: true,
+                                      onPickCell: { _, d in anchor = d },
+                                      // 日付を押したら、日の表示に切り替えずに右のページだけ変える
+                                      onOpenDay: { d in anchor = d })
                         // 左のページは iPhone くらいの幅なので、iPhone と同じ詰めた表にする
                         .environment(\.horizontalSizeClass, .compact)
                     }
@@ -430,29 +431,38 @@ struct SpreadBoard: View {
         gapID = (gaps.first { $0.day == anchor } ?? gaps.first)?.id
     }
 
-    /// 見開きの上：何を並べるか・掲示
-    private var pageBar: some View {
+}
+
+/// 見開きの操作：何を並べるか・掲示。シフト表の上の年月の帯に入れる（見開きのときだけ）
+struct SpreadPageControls: View {
+    @Environment(\.shiftDatabase) private var db
+    @AppStorage("duoSpreadPage") private var page: SpreadPage = .table
+
+    var body: some View {
+        let pages = SpreadPage.available(readOnly: db.readOnly)
+        let shown = pages.contains(page) ? page : .table
         HStack(spacing: DS.gap) {
             Menu {
                 Picker("見開き", selection: $page) {
                     ForEach(pages) { p in Label(p.title, systemImage: p.systemImage).tag(p) }
                 }
             } label: {
-                Label(shown.title, systemImage: shown.systemImage)
-                    .appFont(.subheadline.weight(.bold))
-                Image(systemName: "chevron.down").appFont(.caption.weight(.bold))
+                HStack(spacing: 4) {
+                    Label(shown.title, systemImage: shown.systemImage)
+                        .appFont(.subheadline.weight(.bold))
+                        .lineLimit(1)
+                    Image(systemName: "chevron.down").appFont(.caption.weight(.bold))
+                }
             }
+            .fixedSize()
             .accessibilityLabel("見開きに並べるもの：\(shown.title)")
-            Spacer(minLength: 0)
             Button { DuoPosting.shared.show(byHinge: false) } label: {
                 Label("掲示", systemImage: "rectangle.split.2x1")
             }
             .buttonStyle(.bordered).controlSize(.small)
+            .fixedSize()
             .accessibilityHint("今日と明日の出勤を大きく出します")
         }
-        .padding(.horizontal, 12).padding(.vertical, 6)
-        .background(.bar)
-        .overlay(alignment: .bottom) { Divider() }
     }
 }
 

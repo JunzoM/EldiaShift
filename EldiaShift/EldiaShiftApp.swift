@@ -356,10 +356,10 @@ struct ShiftBoardView: View {
                     } else if duo.stacked {
                         StackedBoard(mode: mode, anchor: $anchor)
                     } else {
-                        MonthGridView(mode: mode, days: mode.days(around: anchor)) { d in
+                        MonthGridView(mode: mode, days: mode.days(around: anchor), onOpenDay: { d in
                             anchor = d
                             mode = .day
-                        }
+                        })
                     }
                 }
             }
@@ -405,9 +405,14 @@ struct ShiftBoardView: View {
 }
 
 extension ShiftBoardView {
-    /// 表のすぐ上の帯：‹ 2026年10月 ›・今月・月／週／日（狭いときは2段）
-    var periodBar: some View {
-        let nav = HStack(spacing: 6) {
+    /// Duo の見開き（月・週）：表の上の帯に、年月と一緒に 何を並べるか・掲示 も入れて1段にする
+    /// （帯を重ねると、横にした Duo では上が広くなりすぎて表が狭くなるため。
+    /// 年月は上のバーに移さない：低い横向きの画面では、表を動かすと iOS が上のバーを隠すことがある）
+    var spreadHeader: Bool { duo.spread && mode != .day }
+
+    /// ‹ 2026年10月 ›・今月
+    var periodNav: some View {
+        HStack(spacing: 6) {
             Button { anchor = mode.step(anchor, by: -1) } label: { Image(systemName: "chevron.left").frame(width: 32, height: 32) }
                 .accessibilityLabel(mode.previousLabel)
             // 週・日にも年を付ける（月は「2026年10月」のまま）
@@ -420,6 +425,11 @@ extension ShiftBoardView {
                 .buttonStyle(.bordered).controlSize(.small)
                 .disabled(mode.days(around: anchor).contains(.today))
         }
+    }
+
+    /// 表のすぐ上の帯：‹ 2026年10月 ›・今月・月／週／日（狭いときは2段）。Duo の見開きでは 何を並べるか・掲示・月週日
+    var periodBar: some View {
+        let nav = periodNav
         let picker = Picker("表示", selection: $mode) {
             Text("月").tag(GridMode.month)
             Text("週").tag(GridMode.week)
@@ -427,15 +437,47 @@ extension ShiftBoardView {
         }
         .segmented(3)
         .labelsHidden()
-        return ViewThatFits(in: .horizontal) {
-            HStack(spacing: DS.gap) {
-                nav
-                Spacer(minLength: DS.gap)
-                picker.fixedSize()
-            }
-            VStack(spacing: 8) {
-                nav.frame(maxWidth: .infinity)
-                picker
+        // 見開きの帯の月週日は詰める（1段に収めるため）
+        let smallPicker = Picker("表示", selection: $mode) {
+            Text("月").tag(GridMode.month)
+            Text("週").tag(GridMode.week)
+            Text("日").tag(GridMode.day)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(width: 156)
+        return Group {
+            if spreadHeader {
+                ViewThatFits(in: .horizontal) {
+                    // 開いた Duo の横（幅 950 くらい）：1段
+                    HStack(spacing: DS.gap) {
+                        nav
+                        Spacer(minLength: DS.gap)
+                        SpreadPageControls()
+                        smallPicker
+                    }
+                    // 狭いとき：2段（年月 ／ 並べるもの・掲示・月週日）
+                    VStack(spacing: 6) {
+                        nav.frame(maxWidth: .infinity)
+                        HStack(spacing: DS.gap) {
+                            SpreadPageControls()
+                            Spacer(minLength: DS.gap)
+                            smallPicker
+                        }
+                    }
+                }
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: DS.gap) {
+                        nav
+                        Spacer(minLength: DS.gap)
+                        picker.fixedSize()
+                    }
+                    VStack(spacing: 8) {
+                        nav.frame(maxWidth: .infinity)
+                        picker
+                    }
+                }
             }
         }
         .padding(.horizontal, DS.page).padding(.vertical, 8)
@@ -541,15 +583,20 @@ enum DemoMode {
     static var printLandscape: Bool { ProcessInfo.processInfo.arguments.contains("-demoLandscapePage") }
 
     #if targetEnvironment(macCatalyst)
-    /// Mac の App Store 用の画面写真：-demoSnapshot <保存先.png> のとき、窓を 1280×800 にして自分の画面を書き出し、終わる
+    /// Mac の App Store 用の画面写真：-demoSnapshot <保存先.png> のとき、窓を 1280×800（-demoSnapshotSize で変えられる）にして自分の画面を書き出し、終わる
     /// （2560×1600 の PNG。画面収録の許可が無くても撮れる）
     static func macSnapshotIfRequested() {
         let args = ProcessInfo.processInfo.arguments
         guard let i = args.firstIndex(of: "-demoSnapshot"), i + 1 < args.count else { return }
         let url = URL(fileURLWithPath: args[i + 1])
         func scene() -> UIWindowScene? { UIApplication.shared.connectedScenes.first as? UIWindowScene }
+        // -demoSnapshotSize 幅x高さ（Mac のポイント）：Duo の開いた画面などを、決まった大きさの窓で確かめるとき
+        var size = CGSize(width: 1280, height: 800)
+        if let j = args.firstIndex(of: "-demoSnapshotSize"), j + 1 < args.count {
+            let wh = args[j + 1].split(separator: "x").compactMap { Double($0) }
+            if wh.count == 2 { size = CGSize(width: wh[0], height: wh[1]) }
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-            let size = CGSize(width: 1280, height: 800)
             scene()?.sizeRestrictions?.minimumSize = size
             scene()?.sizeRestrictions?.maximumSize = size
         }
@@ -562,6 +609,7 @@ enum DemoMode {
                 window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
             }
             try? image.pngData()?.write(to: url)
+            print("demoSnapshot window=\(window.bounds.size)")
             exit(0)
         }
     }

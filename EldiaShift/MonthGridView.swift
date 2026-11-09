@@ -9,6 +9,9 @@ struct MonthGridView: View {
     var selectedDay: DayKey? = nil
     /// 印を付ける人（Duo の見開き：閉じた画面で見ていた人）
     var highlightStaffID: String? = nil
+    /// 編集していないときは表の上の操作の帯（スタッフを追加・退職者も表示・ロック中）を出さない
+    /// （Duo の見開き・上下：画面の高さが限られるので、表を広くする。編集を始めると元に戻る）
+    var hidesIdleToolbar = false
     /// マスを押したとき（シートを開くのとは別に知らせる。Duo の見開きで右のページをその日にする）
     var onPickCell: (StaffMember, DayKey) -> Void = { _, _ in }
     /// 日付を押したとき（その日のタイムラインへ）
@@ -138,7 +141,9 @@ struct MonthGridView: View {
         // 画面の幅は外から受け取る（表の中身の幅を測ると、広がった幅をまた使ってしまい、名前の列が画面の外に出る）
         GeometryReader { geo in
         VStack(spacing: 0) {
-            toolbarRow(table: table, shown: shown)
+            if !(hidesIdleToolbar && !store.editing) {
+                toolbarRow(table: table, shown: shown)
+            }
             HStack(spacing: 0) {
                 HStack(spacing: 0) {
                     Text("No").frame(width: 26 * zoom)
