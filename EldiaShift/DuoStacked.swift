@@ -55,7 +55,7 @@ struct StackedBoard: View {
             let bottom = duo.bottomPageHeight(in: geo.frame(in: .global))
             VStack(spacing: 0) {
                 MonthGridView(mode: mode, days: mode.days(around: anchor), selectedDay: anchor,
-                              highlightStaffID: focus.staffID,
+                              highlightStaffID: focus.staffID, hidesIdleToolbar: true,
                               onPickCell: { _, d in anchor = d }) { d in
                     // 日付を押したら、日の表示に切り替えずに下のページだけ変える
                     anchor = d
