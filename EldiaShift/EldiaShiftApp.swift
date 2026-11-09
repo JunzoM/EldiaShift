@@ -655,7 +655,7 @@ enum DemoMode {
             // Duo の「承認して代わりを探す」の確認用：休ませると人が足りなくなる申請を1件、いちばん上に来るよう明日以降で探して入れる
             search: for k in 1...14 {
                 let d = today.adding(days: k)
-                for i in b.staff.indices where LeaveImpact.of(b.staff[i], on: d, in: b).addedShort > 0 {
+                for i in b.staff.indices where LeaveImpact.of(b.staff[i], on: d, in: b, offBlockID: "off1").addedShort > 0 {
                     b.staff[i].leaveRequests.append(LeaveRequest(id: "demo-short", day: d.description, note: "急用のため",
                                                                  status: .pending, receivedAt: Date()))
                     break search

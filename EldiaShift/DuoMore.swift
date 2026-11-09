@@ -22,13 +22,13 @@ struct LeaveImpact: Equatable {
             && a.sameDay.map(\.name) == b.sameDay.map(\.name) && a.alternatives == b.alternatives
     }
 
-    /// その人がその日に休んだことにして、部門の人数を比べる
-    static func of(_ member: StaffMember, on day: DayKey, in book: ShiftBook, offBlockID: String? = nil) -> LeaveImpact {
+    /// その人がその日に休んだことにして、部門の人数を比べる。
+    /// `offBlockID` は承認するとき勤務を休みにする休みの種類（「シフトも休みにする」が切なら nil：勤務はそのまま残るので人数は変わらない）
+    static func of(_ member: StaffMember, on day: DayKey, in book: ShiftBook, offBlockID: String?) -> LeaveImpact {
         let current = Schedule.resolve(member, on: day, in: book)
         var trial = book
-        if current.map({ !$0.isOff }) ?? false {
-            trial.cells[CellKey(staffID: member.id, day: day)] = CellEntry(inTime: "", outTime: "", blockID: offBlockID ?? "off1",
-                                                                          isOff: true, storeID: book.scopeStoreID)
+        if let offBlockID, current.map({ !$0.isOff }) ?? false {
+            trial.cells[CellKey(staffID: member.id, day: day)] = CellEntry(inTime: "", outTime: "", blockID: offBlockID, isOff: true)
         }
         if let i = trial.staff.firstIndex(where: { $0.id == member.id }), !trial.staff[i].offRequests.contains(day.description) {
             trial.staff[i].offRequests.append(day.description)
@@ -153,7 +153,7 @@ struct LeaveSpread: View {
                 .overlay(alignment: .bottom) { Divider() }
                 List {
                     Section("その日の予定") {
-                        Label(currentText(impact.current, member: r.member), systemImage: "calendar")
+                        Label(currentText(impact.current, member: r.member, becomesOff: offBlockID() != nil), systemImage: "calendar")
                     }
                     Section("人数") {
                         if impact.addedShort > 0 {
@@ -214,11 +214,13 @@ struct LeaveSpread: View {
         .overlay(alignment: .top) { Divider() }
     }
 
-    private func currentText(_ r: ResolvedShift?, member: StaffMember) -> String {
+    private func currentText(_ r: ResolvedShift?, member: StaffMember, becomesOff: Bool) -> String {
         guard let r else { return "勤務は入っていません" }
         if r.isOff { return "もう休みになっています（\(store.book.block(r.blockID, for: member)?.label ?? "休み")）" }
         let label = store.book.block(r.blockID, for: member)?.label
-        return "\(label.map { $0 + " " } ?? "")\(r.inTime)〜\(r.outTime) の勤務 → 承認すると休みになります"
+        let shift = "\(label.map { $0 + " " } ?? "")\(r.inTime)〜\(r.outTime) の勤務"
+        // 希望休の画面の「シフトも休みにする」が切なら、承認しても勤務はそのまま
+        return shift + (becomesOff ? " → 承認すると休みになります" : " → 承認しても勤務はそのまま（「シフトも休みにする」が切）")
     }
 
     /// 承認・却下（一覧の画面と同じ決め方）。代わりを探すときは、シフト表の見開きの「人が足りない」でその日を開く
@@ -427,9 +429,15 @@ struct CostPanel: View {
     let month: MonthKey
 
     @Environment(\.shiftStore) private var store
-    @State private var lastTotal: Int?
     @State private var delta: Int?
     @State private var deltaTitle: String?
+
+    /// 増えた・減ったを比べる相手。月・店舗が変わったときは比べない（勤務を変えたのではないため）
+    private struct Watched: Equatable {
+        var month: MonthKey
+        var storeID: String?
+        var total: Int
+    }
 
     var body: some View {
         let lock = LaborCostLock.shared
@@ -469,12 +477,15 @@ struct CostPanel: View {
                     }
                 }
             }
-            .onAppear { lastTotal = total }
-            // 勤務を変えるたびに、増えた・減った金額を出す
-            .onChange(of: total) { old, new in
-                delta = new - old
+            // 勤務を変えるたびに、増えた・減った金額を出す（月・店舗を変えたときは消す）
+            .onChange(of: Watched(month: month, storeID: book.scopeStoreID, total: total)) { old, new in
+                guard old.month == new.month, old.storeID == new.storeID else {
+                    delta = nil
+                    deltaTitle = nil
+                    return
+                }
+                delta = new.total - old.total
                 deltaTitle = store.lastChange?.title
-                lastTotal = new
             }
         }
     }
@@ -506,9 +517,9 @@ struct PairPage: View {
         VStack(spacing: 0) {
             HStack {
                 Menu {
-                    Button { target = "next" } label: { Label("来月（\(month.adding(months: 1).month)月）", systemImage: isNext ? "checkmark" : "") }
-                    ForEach(others) { st in
-                        Button { target = st.id } label: { Label("\(st.name)の\(month.month)月", systemImage: target == st.id ? "checkmark" : "") }
+                    Picker("並べるもの", selection: Binding(get: { isNext ? "next" : target }, set: { target = $0 })) {
+                        Text("来月（\(month.adding(months: 1).month)月）").tag("next")
+                        ForEach(others) { st in Text("\(st.name)の\(month.month)月").tag(st.id) }
                     }
                 } label: {
                     Label(isNext ? "来月（\(shownMonth.month)月）" : "\(book.store(target)?.name ?? "")の\(month.month)月",
