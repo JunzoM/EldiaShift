@@ -173,6 +173,10 @@ bash scripts/duo-screenshots.sh
 2. Xcode：Product → Archive → Distribute App → App Store Connect → Upload
 3. App Store Connect でビルドを選び、上の内容と画面写真を入れて「審査へ提出」
 
+### 1.2（ビルド 18）
+- ビルド 17 のあとに直したもの：横に開いた見開きの上を詰めた（#121。何を並べるか・掲示を年月の帯に入れて1段に、編集していないときは操作の帯を出さない）
+- 2026年11月10日：Xcode 27.2（iOS 27.2 SDK）で Archive し、iOS 版のビルド 18 を App Store Connect へアップロードした。審査に出すときはビルド 18 を選ぶ（17 は使わない）
+
 ### 1.2（ビルド 17）
 - Duo の見開き・開くとつづき・左右で穴埋め・立てて掲示・希望休の承認・比べる・人件費・並べる・縦に開いた上下（#116〜#119）と、1.1.1 の共有元の表示を入れる
 - UIHingeInteraction は iOS 27.1 の SDK にしか無いので、Xcode 27.2（iOS 27.2 SDK）の Mac で Archive する。GitHub の CI（Xcode 26）で作ると Duo の開き具合を受け取らないビルドになる
